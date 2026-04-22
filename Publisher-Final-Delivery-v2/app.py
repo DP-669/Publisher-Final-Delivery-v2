@@ -76,7 +76,7 @@ with st.sidebar:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(base_dir, "01_VISUAL_REFERENCES", catalog, logo_map[catalog])
         if os.path.exists(logo_path):
-            st.image(logo_path, use_container_width=True)
+            st.image(logo_path, width=200)
     except Exception:
         pass
 
@@ -97,7 +97,7 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("Reset Session", use_container_width=True):
+    if st.button("Reset Session"):
         st.session_state.app_data = {
             "tracks": [], "album_description": "",
             "album_name": "", "cover_art": "", "mailchimp_intro": "",
@@ -277,7 +277,7 @@ elif active_tab == tabs[1]:
 
     if st.session_state.app_data["tracks"]:
         df = pd.DataFrame(st.session_state.app_data["tracks"])
-        edited_df = st.data_editor(df, use_container_width=True, key="editor_tab1", num_rows="dynamic")
+        edited_df = st.data_editor(df, key="editor_tab1", num_rows="dynamic")
         st.session_state.app_data["tracks"] = edited_df.to_dict("records")
         csv = edited_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download Keywords CSV", csv, "Keywords.csv", "text/csv")
@@ -341,7 +341,7 @@ elif active_tab == tabs[2]:
         st.subheader("Edit & Export")
         df = pd.DataFrame(st.session_state.app_data["tracks"])
         edited_df = st.data_editor(
-            df, use_container_width=True, key="editor_tab2",
+            df, key="editor_tab2",
             disabled=["Title", "Keywords"],
         )
         st.session_state.app_data["tracks"] = edited_df.to_dict("records")
@@ -641,7 +641,6 @@ elif active_tab == tabs[8]:
             file_name=f"{catalog}_Final_Delivery.zip",
             mime="application/zip",
             type="primary",
-            use_container_width=True,
         )
 
         if dropbox_token:
