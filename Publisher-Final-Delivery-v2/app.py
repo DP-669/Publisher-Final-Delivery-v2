@@ -1,9 +1,10 @@
 """
 Publisher Final Delivery App v2
-- Gemini 2.5 Pro: audio analysis (Tab 01)
+- Gemini 3.1 Pro: audio analysis (Tab 01)
 - Claude Sonnet: all writing (Tabs 02-06)
 - Dropbox: cloud folder integration
 - Manual Refinement: fix any existing copy inline
+- Light theme: clean Streamlit default
 """
 import streamlit as st
 import pandas as pd
@@ -17,102 +18,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# ── Custom Styling ─────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'DM Sans', sans-serif;
-    }
-    .stApp { background-color: #0f0f0f; color: #e8e8e8; }
-    .block-container { padding: 2rem 2.5rem; }
-
-    h1, h2, h3 { font-family: 'DM Mono', monospace; letter-spacing: -0.02em; }
-    h1 { font-size: 1.4rem; color: #ff3c3c; border-bottom: 1px solid #2a2a2a; padding-bottom: 0.75rem; margin-bottom: 1.5rem; }
-    h2, h3 { font-size: 1rem; color: #e8e8e8; margin-bottom: 0.75rem; }
-
-    .stButton > button {
-        background-color: #1a1a1a;
-        color: #e8e8e8;
-        border: 1px solid #333;
-        border-radius: 4px;
-        font-family: 'DM Mono', monospace;
-        font-size: 0.8rem;
-        letter-spacing: 0.05em;
-        padding: 0.5rem 1.2rem;
-        transition: all 0.15s ease;
-    }
-    .stButton > button:hover {
-        background-color: #ff3c3c;
-        border-color: #ff3c3c;
-        color: #fff;
-    }
-    .stButton > button[kind="primary"] {
-        background-color: #ff3c3c;
-        border-color: #ff3c3c;
-        color: #fff;
-    }
-
-    .stTextArea textarea, .stTextInput input {
-        background-color: #1a1a1a;
-        color: #e8e8e8;
-        border: 1px solid #2a2a2a;
-        border-radius: 4px;
-        font-family: 'DM Mono', monospace;
-        font-size: 0.82rem;
-    }
-    .stTextArea textarea:focus, .stTextInput input:focus {
-        border-color: #ff3c3c;
-        box-shadow: none;
-    }
-
-    .stSelectbox > div > div {
-        background-color: #1a1a1a;
-        border: 1px solid #2a2a2a;
-        color: #e8e8e8;
-    }
-
-    .stDataFrame { border: 1px solid #2a2a2a; }
-
-    .stSidebar { background-color: #0a0a0a; border-right: 1px solid #1e1e1e; }
-    .stSidebar .stRadio label { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: #888; }
-    .stSidebar .stRadio label:hover { color: #ff3c3c; }
-
-    .status-badge {
-        display: inline-block;
-        padding: 0.2rem 0.6rem;
-        border-radius: 3px;
-        font-family: 'DM Mono', monospace;
-        font-size: 0.7rem;
-        letter-spacing: 0.08em;
-        font-weight: 500;
-        margin-bottom: 1rem;
-    }
-    .badge-ok { background: #1a2e1a; color: #4caf50; border: 1px solid #2d4a2d; }
-    .badge-warn { background: #2e1a1a; color: #ff3c3c; border: 1px solid #4a2d2d; }
-    .badge-info { background: #1a1e2e; color: #5b8cff; border: 1px solid #2d354a; }
-
-    .copy-success { color: #4caf50; font-family: 'DM Mono', monospace; font-size: 0.75rem; }
-    .prompt-block {
-        background: #141414;
-        border: 1px solid #2a2a2a;
-        border-left: 3px solid #ff3c3c;
-        border-radius: 4px;
-        padding: 1rem 1.2rem;
-        font-family: 'DM Mono', monospace;
-        font-size: 0.78rem;
-        line-height: 1.6;
-        color: #c8c8c8;
-        margin-bottom: 1rem;
-        white-space: pre-wrap;
-    }
-    .divider { border: none; border-top: 1px solid #1e1e1e; margin: 1.5rem 0; }
-    .stExpander { border: 1px solid #1e1e1e; border-radius: 4px; }
-    .stAlert { border-radius: 4px; }
-</style>
-""", unsafe_allow_html=True)
 
 # ── Engine Init ────────────────────────────────────────────────────────────────
 if "engine" not in st.session_state:
@@ -136,9 +41,8 @@ if "dropbox_files" not in st.session_state:
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### PUBLISHER FINAL DELIVERY")
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.divider()
 
-    # API Keys
     gemini_api_key = st.secrets.get("GEMINI_API_KEY", None) or st.text_input(
         "Gemini API Key", type="password", key="gemini_key_input",
         placeholder="For audio analysis (Tab 01)"
@@ -152,21 +56,17 @@ with st.sidebar:
         placeholder="Optional — for cloud folder"
     )
 
-    # Status badges
-    gemini_status = "badge-ok" if gemini_api_key else "badge-warn"
-    claude_status = "badge-ok" if claude_api_key else "badge-warn"
-    dropbox_status = "badge-ok" if dropbox_token else "badge-info"
-    st.markdown(f"""
-        <div class='status-badge {gemini_status}'>GEMINI {'✓' if gemini_api_key else '✗'}</div>
-        <div class='status-badge {claude_status}'>CLAUDE {'✓' if claude_api_key else '✗'}</div>
-        <div class='status-badge {dropbox_status}'>DROPBOX {'✓' if dropbox_token else '—'}</div>
-    """, unsafe_allow_html=True)
+    st.divider()
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns(3)
+    col1.markdown(f"**Gemini** {'✅' if gemini_api_key else '❌'}")
+    col2.markdown(f"**Claude** {'✅' if claude_api_key else '❌'}")
+    col3.markdown(f"**Dropbox** {'✅' if dropbox_token else '—'}")
+
+    st.divider()
 
     catalog = st.selectbox("Active Catalog", ["EPP", "redCola", "SSC"])
 
-    # Logo
     logo_map = {
         "redCola": "redCola logo 200x2001934x751.jpg",
         "SSC": "SSC 200x200 8.27.08#U202fPM.jpg",
@@ -180,7 +80,7 @@ with st.sidebar:
     except Exception:
         pass
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.divider()
 
     tabs = [
         "00 · Flight Deck",
@@ -195,7 +95,7 @@ with st.sidebar:
     ]
     active_tab = st.radio("Navigate", tabs, label_visibility="collapsed")
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.divider()
 
     if st.button("Reset Session", use_container_width=True):
         st.session_state.app_data = {
@@ -213,13 +113,10 @@ def copy_button(text: str, key: str, label: str = "Copy to Clipboard"):
     <button onclick="navigator.clipboard.writeText(`{escaped}`).then(()=>{{
         document.getElementById('cb_{key}').style.display='inline';
         setTimeout(()=>document.getElementById('cb_{key}').style.display='none', 2000);
-    }})" style="background:#1a1a1a;color:#888;border:1px solid #333;border-radius:3px;
-    padding:4px 12px;font-family:'DM Mono',monospace;font-size:0.72rem;cursor:pointer;
-    letter-spacing:0.06em;margin-bottom:8px;">
+    }})" style="cursor:pointer;padding:4px 12px;font-size:0.8rem;margin-bottom:8px;">
         {label}
     </button>
-    <span id="cb_{key}" style="display:none;color:#4caf50;font-family:'DM Mono',monospace;
-    font-size:0.72rem;margin-left:8px;">Copied ✓</span>
+    <span id="cb_{key}" style="display:none;color:green;font-size:0.8rem;margin-left:8px;">Copied ✓</span>
     """, unsafe_allow_html=True)
 
 
@@ -231,17 +128,17 @@ if active_tab == tabs[0]:
     st.markdown("""
     **Never Guess. Always Reference.**
 
-    This app uses two AI models for two distinct jobs:
-    - **Gemini 2.5 Pro** — Audio analysis. It listens, extracts structure and sonic detail.
+    Two AI models. Two distinct jobs:
+    - **Gemini 3.1 Pro** — Audio analysis. Listens, extracts structure and sonic detail.
     - **Claude Sonnet** — All writing. Track descriptions, album copy, MailChimp intros, MidJourney prompts.
-
-    **The flow:**
     """)
+
+    st.subheader("The Flow")
     flow = [
         ("01", "Ingest Audio", "Upload files or pull from Dropbox. Gemini analyses each track."),
         ("02", "Track Descriptions", "Claude refines raw Gemini output through the Council filter."),
         ("03", "Album Description", "Claude synthesises the album arc from all track descriptions."),
-        ("04", "Album Name", "Claude generates tail-end title concepts for your selection."),
+        ("04", "Album Name", "Claude generates original title concepts for your selection."),
         ("05", "Cover Art Prompts", "Claude writes MidJourney v7 prompts with copy buttons."),
         ("06", "MailChimp Intro", "Claude writes the editorial memo for supervisors."),
         ("07", "Fix Existing Copy", "Paste any bad copy — Claude rewrites it through the Council."),
@@ -250,8 +147,8 @@ if active_tab == tabs[0]:
     for num, name, desc in flow:
         st.markdown(f"`{num}` **{name}** — {desc}")
 
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    st.info("Start by configuring your API keys in the sidebar, then select your catalog.")
+    st.divider()
+    st.info("Configure API keys in the sidebar, then select your catalog to begin.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -266,7 +163,6 @@ elif active_tab == tabs[1]:
 
     col_upload, col_dropbox = st.columns([1, 1])
 
-    # ── Direct Upload ──────────────────────────────────────────────────────────
     with col_upload:
         st.subheader("Upload Files")
         uploaded_files = st.file_uploader(
@@ -310,7 +206,6 @@ elif active_tab == tabs[1]:
         if st.button("Analyse with Gemini", disabled=not uploaded_files):
             run_analysis_dialog()
 
-    # ── Dropbox Integration ────────────────────────────────────────────────────
     with col_dropbox:
         st.subheader("From Dropbox")
         if not dropbox_token:
@@ -346,7 +241,6 @@ elif active_tab == tabs[1]:
                         progress = st.progress(0)
                         for idx, f in enumerate(selected):
                             clean_title = os.path.splitext(f["name"])[0]
-                            file_ext = os.path.splitext(f["name"])[1]
                             local_path = f"/tmp/{f['name']}"
                             try:
                                 st.session_state.engine.download_from_dropbox(
@@ -372,15 +266,13 @@ elif active_tab == tabs[1]:
                         st.success("Dropbox analysis complete.")
                         st.rerun()
 
-    # ── Error display ──────────────────────────────────────────────────────────
     if st.session_state.ingestion_error:
         st.error(st.session_state.ingestion_error)
         if st.button("Dismiss"):
             st.session_state.ingestion_error = None
             st.rerun()
 
-    # ── Data Editor ───────────────────────────────────────────────────────────
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.divider()
     st.subheader("Track Data")
 
     if st.session_state.app_data["tracks"]:
@@ -431,7 +323,7 @@ elif active_tab == tabs[2]:
             st.success("All descriptions refined.")
             st.rerun()
 
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.divider()
         st.subheader("Refine Single Track")
         track_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
         selected_track = st.selectbox("Select track", track_titles)
@@ -515,10 +407,10 @@ elif active_tab == tabs[4]:
     col_action, col_output = st.columns([1, 1])
 
     with col_action:
-        st.subheader("Tail-End Sampling")
-        st.write("5 concepts from the 0.01-0.09 probability range. No clichés allowed through.")
+        st.subheader("Generate Title Concepts")
+        st.write("5 original concepts. No clichés allowed through.")
         if st.button("Generate Name Concepts", type="primary"):
-            with st.spinner("Sampling the tails..."):
+            with st.spinner("Generating concepts..."):
                 result = st.session_state.engine.generate_album_names(
                     st.session_state.app_data["album_description"], catalog, claude_api_key
                 )
@@ -552,7 +444,7 @@ elif active_tab == tabs[5]:
 
     with col_action:
         st.subheader("Generate MidJourney v7 Prompts")
-        st.write("4 prompts. Different framing, texture, and light source each. Copy directly into MidJourney.")
+        st.write("4 prompts. Different framing, texture, and light source each.")
 
         if st.button("Generate Prompts", type="primary"):
             with st.spinner("Art Director working..."):
@@ -570,16 +462,30 @@ elif active_tab == tabs[5]:
                     refs = ["https://dummy.url/ref1.jpg"] * 4
                 selected_refs = random.choices(refs, k=4)
 
+                track_descriptions = [
+                    t.get("Track Description", "")
+                    for t in st.session_state.app_data["tracks"]
+                ]
+                keywords = ", ".join([
+                    t.get("Keywords", "")
+                    for t in st.session_state.app_data["tracks"]
+                    if t.get("Keywords")
+                ])
+
                 result = st.session_state.engine.generate_cover_art_prompts(
                     st.session_state.app_data["album_name"],
                     st.session_state.app_data["album_description"],
-                    catalog, selected_refs, claude_api_key
+                    catalog,
+                    selected_refs,
+                    claude_api_key,
+                    track_descriptions=track_descriptions,
+                    keywords=keywords,
                 )
                 st.session_state.app_data["cover_art"] = result
             st.rerun()
 
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-        st.caption("ℹ️ Replace `--sref [URL]` placeholders with actual reference image URLs from your 01_VISUAL_REFERENCES folder before using in MidJourney.")
+        st.divider()
+        st.caption("Replace `--sref [URL]` placeholders with actual reference image URLs before using in MidJourney.")
 
     with col_output:
         st.subheader("Prompts")
@@ -592,7 +498,6 @@ elif active_tab == tabs[5]:
         st.session_state.app_data["cover_art"] = edited
 
         if edited:
-            # Individual copy buttons per prompt
             prompts = [p.strip() for p in edited.split("\n\n") if p.strip()]
             for i, p in enumerate(prompts):
                 copy_button(p, f"prompt_{i}", f"Copy Prompt {i+1}")
@@ -615,10 +520,16 @@ elif active_tab == tabs[6]:
         st.write("Identifies the editor's pain point first. No sales pitch. No 'proud to announce'.")
         if st.button("Write MailChimp Intro", type="primary"):
             with st.spinner("Copywriter drafting..."):
+                track_descriptions = [
+                    t.get("Track Description", "")
+                    for t in st.session_state.app_data["tracks"]
+                ]
                 result = st.session_state.engine.generate_mailchimp_intro(
                     st.session_state.app_data["album_name"],
                     st.session_state.app_data["album_description"],
-                    catalog, claude_api_key,
+                    catalog,
+                    claude_api_key,
+                    track_descriptions=track_descriptions,
                 )
                 st.session_state.app_data["mailchimp_intro"] = result
             st.rerun()
@@ -641,7 +552,7 @@ elif active_tab == tabs[6]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 07 · FIX EXISTING COPY (Manual Refinement)
+# TAB 07 · FIX EXISTING COPY
 # ══════════════════════════════════════════════════════════════════════════════
 elif active_tab == tabs[7]:
     st.title("07 · FIX EXISTING COPY")
@@ -650,7 +561,7 @@ elif active_tab == tabs[7]:
         st.error("Claude API key required.")
         st.stop()
 
-    st.write("Paste any copy that isn't working — over-hyped, sales-y, wrong for the catalog. Claude rewrites it through the full Council filter.")
+    st.write("Paste any copy that isn't working — over-hyped, wrong catalog language, too generic. Claude rewrites it through the full Council filter.")
 
     col_input, col_output = st.columns([1, 1])
 
@@ -659,7 +570,10 @@ elif active_tab == tabs[7]:
             "Content type",
             ["Track Description", "Album Description", "MailChimp Intro", "Album Name", "Other"],
         )
-        bad_copy = st.text_area("Paste the copy here", height=250, placeholder="Paste the text that needs fixing...")
+        bad_copy = st.text_area(
+            "Paste the copy here", height=250,
+            placeholder="Paste the text that needs fixing..."
+        )
         if st.button("Run Council Filter", type="primary", disabled=not bad_copy):
             with st.spinner("Council reviewing..."):
                 st.session_state["refined_copy"] = st.session_state.engine.manual_refinement(
@@ -670,7 +584,7 @@ elif active_tab == tabs[7]:
         st.subheader("Refined Output")
         if "refined_copy" in st.session_state and st.session_state["refined_copy"]:
             result = st.session_state["refined_copy"]
-            st.markdown(f'<div class="prompt-block">{result}</div>', unsafe_allow_html=True)
+            st.text_area("Refined", value=result, height=250, label_visibility="collapsed")
             copy_button(result, "manual_refine")
 
             st.markdown("**Apply this output to:**")
@@ -708,7 +622,9 @@ elif active_tab == tabs[8]:
     st.subheader("Clean Room Validator")
     st.write("Checking data integrity before allowing export...")
 
-    passed, errors = st.session_state.engine.validate_data(st.session_state.app_data)
+    passed, errors = st.session_state.engine.validate_data(
+        st.session_state.app_data, catalog
+    )
 
     if not passed:
         st.error(f"{len(errors)} error(s) blocking export:")
@@ -728,9 +644,8 @@ elif active_tab == tabs[8]:
             use_container_width=True,
         )
 
-        # Optional Dropbox upload
         if dropbox_token:
-            st.markdown('<hr class="divider">', unsafe_allow_html=True)
+            st.divider()
             st.subheader("Save to Dropbox")
             output_folder = st.text_input(
                 "Dropbox output folder",
@@ -755,8 +670,7 @@ elif active_tab == tabs[8]:
                     except Exception as e:
                         st.error(str(e))
 
-    # ── Data summary ───────────────────────────────────────────────────────────
-    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.divider()
     st.subheader("Session Summary")
     data = st.session_state.app_data
     cols = st.columns(4)
