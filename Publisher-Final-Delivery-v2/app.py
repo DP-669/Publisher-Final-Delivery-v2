@@ -19,6 +19,45 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Responsive Centered Layout ────────────────────────────────────────────────
+st.markdown("""
+<style>
+    /* Center the main content with max-width for desktop */
+    .block-container {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+    }
+    /* Full width on mobile */
+    @media (max-width: 768px) {
+        .block-container {
+            max-width: 100%;
+            padding: 1rem 0.75rem;
+        }
+    }
+    /* Center sidebar content */
+    .stSidebar .block-container {
+        max-width: 100%;
+        margin: 0;
+    }
+    /* Responsive data editor */
+    .stDataFrame, .stDataEditor {
+        width: 100% !important;
+    }
+    /* Responsive text areas */
+    .stTextArea textarea {
+        width: 100% !important;
+    }
+    /* Responsive columns on mobile */
+    @media (max-width: 640px) {
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ── Engine Init ────────────────────────────────────────────────────────────────
 if "engine" not in st.session_state:
     st.session_state.engine = IngestionEngine()
