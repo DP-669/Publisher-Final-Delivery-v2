@@ -254,10 +254,10 @@ with st.sidebar:
             "Dropbox Token", type="password", key="dropbox_key_input",
             placeholder="Optional"
         )
-else:
-    gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
-    claude_api_key = st.secrets.get("ANTHROPIC_API_KEY", None)
-    dropbox_token = st.secrets.get("DROPBOX_TOKEN", None)
+
+gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
+claude_api_key = st.secrets.get("ANTHROPIC_API_KEY", None)
+dropbox_token = st.secrets.get("DROPBOX_TOKEN", None)
 
 active_tab_index = st.session_state.active_tab_index
 
