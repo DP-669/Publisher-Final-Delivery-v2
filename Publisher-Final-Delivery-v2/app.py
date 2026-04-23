@@ -31,9 +31,8 @@ st.set_page_config(
 st.markdown("""
 <style>
     .block-container {
-        max-width: 960px;
-        margin: 0 auto;
-        padding: 2rem 1.5rem;
+        max-width: 860px;
+        padding: 2rem 2rem 2rem 2rem;
     }
     @media (max-width: 768px) {
         .block-container {
@@ -41,7 +40,7 @@ st.markdown("""
             padding: 1rem 0.75rem;
         }
     }
-    .stSidebar .block-container { max-width: 100%; margin: 0; }
+    .stSidebar .block-container { max-width: 100%; }
     .stDataFrame, .stDataEditor { width: 100% !important; }
     .stTextArea textarea { width: 100% !important; }
     @media (max-width: 640px) {
@@ -190,12 +189,6 @@ with st.sidebar:
     )
 
     st.divider()
-    col1, col2, col3 = st.columns(3)
-    col1.markdown(f"**Gemini** {'✅' if gemini_api_key else '❌'}")
-    col2.markdown(f"**Claude** {'✅' if claude_api_key else '❌'}")
-    col3.markdown(f"**Dropbox** {'✅' if dropbox_token else '—'}")
-
-    st.divider()
     catalog = st.selectbox("Active Catalog", ["EPP", "redCola", "SSC"])
 
     logo_map = {
@@ -207,13 +200,13 @@ with st.sidebar:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(base_dir, "01_VISUAL_REFERENCES", catalog, logo_map[catalog])
         if os.path.exists(logo_path):
-            st.image(logo_path, use_container_width=True)
+            st.image(logo_path, width=180)
     except Exception:
         pass
 
     st.divider()
     tabs = [
-        "00 · Flight Deck",
+        "00 · Home",
         "01 · Ingest Audio",
         "02 · Track Descriptions",
         "03 · Album Description",
@@ -226,7 +219,7 @@ with st.sidebar:
     active_tab = st.radio("Navigate", tabs, label_visibility="collapsed")
 
     st.divider()
-    if st.button("Reset Session", use_container_width=True):
+    if st.button("Reset Session"):
         st.session_state.app_data = {
             "tracks": [], "album_description": "",
             "album_name": "", "album_name_selected": "",
@@ -238,18 +231,16 @@ with st.sidebar:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 00 · FLIGHT DECK
+# TAB 00 · HOME
 # ══════════════════════════════════════════════════════════════════════════════
 if active_tab == tabs[0]:
-    st.title("THE FLIGHT DECK")
     st.markdown("""
-    **Never Guess. Always Reference.**
-
-    Two AI models. Two distinct jobs:
-    - **Gemini 3.1 Pro** — Audio analysis. Listens, extracts structure and sonic detail.
-    - **Claude Sonnet** — All writing. Track descriptions, album copy, MailChimp intros, MidJourney prompts.
-    """)
-    st.subheader("The Flow")
+    <h1 style='color:#cc0000; font-size:2.2rem; font-weight:800;
+    letter-spacing:-0.02em; margin-bottom:0.25rem;'>
+    PUBLISHER FINAL DELIVERY
+    </h1>
+    """, unsafe_allow_html=True)
+    st.divider()
     flow = [
         ("01", "Ingest Audio", "Upload files or pull from Dropbox. Gemini analyses each track."),
         ("02", "Track Descriptions", "Claude refines raw Gemini output through the Council filter."),
@@ -262,8 +253,6 @@ if active_tab == tabs[0]:
     ]
     for num, name, desc in flow:
         st.markdown(f"`{num}` **{name}** — {desc}")
-    st.divider()
-    st.info("Configure API keys in the sidebar, then select your catalog to begin.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -393,7 +382,7 @@ elif active_tab == tabs[1]:
     st.subheader("Track Data")
     if st.session_state.app_data["tracks"]:
         df = pd.DataFrame(st.session_state.app_data["tracks"])
-        edited_df = st.data_editor(df, use_container_width=True, key="editor_tab1", num_rows="dynamic")
+        edited_df = st.data_editor(df, key="editor_tab1", num_rows="dynamic")
         st.session_state.app_data["tracks"] = edited_df.to_dict("records")
         csv = edited_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download Keywords CSV", csv, "Keywords.csv", "text/csv")
@@ -812,7 +801,6 @@ elif active_tab == tabs[8]:
             file_name=f"{catalog}_{album_name_safe}_Final_Delivery.zip",
             mime="application/zip",
             type="primary",
-            use_container_width=True,
         )
 
         if dropbox_token:
