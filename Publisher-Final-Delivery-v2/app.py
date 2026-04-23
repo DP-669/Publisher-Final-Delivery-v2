@@ -5,13 +5,9 @@ Publisher Final Delivery App v2
 - Dropbox: cloud folder integration
 - Manual Refinement: fix any existing copy inline
 - Light theme: clean Streamlit default
-
-Tier 2 improvements:
-- MailChimp line break preservation
-- Inline contamination flags in Tab 02
-- Album name selection UI in Tab 04
-- Sparse/full mix detection and handling
-- Version history per track in Tab 02
+- Flow navigation: Next button at bottom of each tab
+- Catalog selector on Tab 01
+- API keys in collapsed sidebar expander
 """
 import streamlit as st
 import pandas as pd
@@ -27,27 +23,21 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Responsive Centered Layout ────────────────────────────────────────────────
+# ── Styling ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
     .block-container {
         max-width: 860px;
-        padding: 2rem 2rem 2rem 2rem;
+        padding: 2rem 2rem;
     }
     @media (max-width: 768px) {
-        .block-container {
-            max-width: 100%;
-            padding: 1rem 0.75rem;
-        }
+        .block-container { max-width: 100%; padding: 1rem 0.75rem; }
     }
     .stSidebar .block-container { max-width: 100%; }
     .stDataFrame, .stDataEditor { width: 100% !important; }
     .stTextArea textarea { width: 100% !important; }
     @media (max-width: 640px) {
-        [data-testid="column"] {
-            width: 100% !important;
-            flex: 1 1 100% !important;
-        }
+        [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; }
     }
     .mailchimp-output {
         white-space: pre-wrap;
@@ -71,25 +61,35 @@ st.markdown("""
         margin-bottom: 0.5rem;
     }
     .mix-badge-full {
-        background: #e3f2fd;
-        color: #1565c0;
-        border-radius: 3px;
-        padding: 2px 8px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-left: 6px;
+        background: #e3f2fd; color: #1565c0;
+        border-radius: 3px; padding: 2px 8px;
+        font-size: 0.75rem; font-weight: 600; margin-left: 6px;
     }
     .mix-badge-sparse {
-        background: #f3e5f5;
-        color: #6a1b9a;
-        border-radius: 3px;
-        padding: 2px 8px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-left: 6px;
+        background: #f3e5f5; color: #6a1b9a;
+        border-radius: 3px; padding: 2px 8px;
+        font-size: 0.75rem; font-weight: 600; margin-left: 6px;
+    }
+    .next-button-container {
+        margin-top: 2.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #e0e0e0;
     }
 </style>
 """, unsafe_allow_html=True)
+
+# ── Tab definitions ────────────────────────────────────────────────────────────
+TABS = [
+    "00 · Home",
+    "01 · Ingest Audio",
+    "02 · Track Descriptions",
+    "03 · Album Description",
+    "04 · Album Name",
+    "05 · Cover Art Prompts",
+    "06 · MailChimp Intro",
+    "07 · Fix Existing Copy",
+    "08 · Export",
+]
 
 # ── Engine Init ────────────────────────────────────────────────────────────────
 if "engine" not in st.session_state:
@@ -103,7 +103,11 @@ if "app_data" not in st.session_state:
         "album_name_selected": "",
         "cover_art": "",
         "mailchimp_intro": "",
+        "catalog": "EPP",
     }
+
+if "active_tab_index" not in st.session_state:
+    st.session_state.active_tab_index = 0
 
 if "ingestion_error" not in st.session_state:
     st.session_state.ingestion_error = None
@@ -116,6 +120,22 @@ if "track_history" not in st.session_state:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+def go_to_tab(index: int):
+    st.session_state.active_tab_index = index
+    st.rerun()
+
+
+def next_button(label_override: str = None):
+    current = st.session_state.active_tab_index
+    if current < len(TABS) - 1:
+        next_name = TABS[current + 1]
+        label = label_override or f"Next → {next_name}"
+        st.markdown('<div class="next-button-container">', unsafe_allow_html=True)
+        if st.button(label, type="primary", key=f"next_btn_{current}"):
+            go_to_tab(current + 1)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
 def detect_mix_type(title: str) -> str:
     t = title.lower()
     if any(x in t for x in ["sparse", "sprs", "sp_"]):
@@ -171,26 +191,13 @@ def copy_button(text: str, key: str, label: str = "Copy to Clipboard"):
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
+catalog = st.session_state.app_data.get("catalog", "EPP")
+
 with st.sidebar:
     st.markdown("### PUBLISHER FINAL DELIVERY")
     st.divider()
 
-    gemini_api_key = st.secrets.get("GEMINI_API_KEY", None) or st.text_input(
-        "Gemini API Key", type="password", key="gemini_key_input",
-        placeholder="For audio analysis (Tab 01)"
-    )
-    claude_api_key = st.secrets.get("ANTHROPIC_API_KEY", None) or st.text_input(
-        "Claude API Key", type="password", key="claude_key_input",
-        placeholder="For all writing (Tabs 02-06)"
-    )
-    dropbox_token = st.secrets.get("DROPBOX_TOKEN", None) or st.text_input(
-        "Dropbox Access Token", type="password", key="dropbox_key_input",
-        placeholder="Optional — for cloud folder"
-    )
-
-    st.divider()
-    catalog = st.selectbox("Active Catalog", ["EPP", "redCola", "SSC"])
-
+    # Logo — based on current catalog
     logo_map = {
         "redCola": "redCola logo 200x2001934x751.jpg",
         "SSC": "SSC 200x200 8.27.08#U202fPM.jpg",
@@ -200,40 +207,65 @@ with st.sidebar:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(base_dir, "01_VISUAL_REFERENCES", catalog, logo_map[catalog])
         if os.path.exists(logo_path):
-            st.image(logo_path, width=180)
+            st.image(logo_path, width=160)
     except Exception:
         pass
 
-    st.divider()
-    tabs = [
-        "00 · Home",
-        "01 · Ingest Audio",
-        "02 · Track Descriptions",
-        "03 · Album Description",
-        "04 · Album Name",
-        "05 · Cover Art Prompts",
-        "06 · MailChimp Intro",
-        "07 · Fix Existing Copy",
-        "08 · Export",
-    ]
-    active_tab = st.radio("Navigate", tabs, label_visibility="collapsed")
+    if catalog:
+        st.caption(f"Catalog: **{catalog}**")
 
     st.divider()
+
+    # Navigation
+    active_tab = st.radio(
+        "Navigate", TABS,
+        index=st.session_state.active_tab_index,
+        label_visibility="collapsed"
+    )
+    if TABS.index(active_tab) != st.session_state.active_tab_index:
+        st.session_state.active_tab_index = TABS.index(active_tab)
+        st.rerun()
+
+    st.divider()
+
     if st.button("Reset Session"):
         st.session_state.app_data = {
             "tracks": [], "album_description": "",
             "album_name": "", "album_name_selected": "",
             "cover_art": "", "mailchimp_intro": "",
+            "catalog": "EPP",
         }
         st.session_state.dropbox_files = []
         st.session_state.track_history = {}
+        st.session_state.active_tab_index = 0
         st.success("Session cleared.")
+
+    # API keys — collapsed, only needed if secrets not configured
+    with st.expander("⚙️ Configuration"):
+        gemini_api_key = st.secrets.get("GEMINI_API_KEY", None) or st.text_input(
+            "Gemini API Key", type="password", key="gemini_key_input",
+            placeholder="For audio analysis"
+        )
+        claude_api_key = st.secrets.get("ANTHROPIC_API_KEY", None) or st.text_input(
+            "Claude API Key", type="password", key="claude_key_input",
+            placeholder="For all writing"
+        )
+        dropbox_token = st.secrets.get("DROPBOX_TOKEN", None) or st.text_input(
+            "Dropbox Token", type="password", key="dropbox_key_input",
+            placeholder="Optional"
+        )
+else:
+    gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
+    claude_api_key = st.secrets.get("ANTHROPIC_API_KEY", None)
+    dropbox_token = st.secrets.get("DROPBOX_TOKEN", None)
+
+active_tab_index = st.session_state.active_tab_index
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 00 · HOME
 # ══════════════════════════════════════════════════════════════════════════════
-if active_tab == tabs[0]:
+if active_tab_index == 0:
     st.markdown("""
     <h1 style='color:#cc0000; font-size:2.2rem; font-weight:800;
     letter-spacing:-0.02em; margin-bottom:0.25rem;'>
@@ -241,7 +273,7 @@ if active_tab == tabs[0]:
     </h1>
     """, unsafe_allow_html=True)
     st.divider()
-    flow = [
+    for num, name, desc in [
         ("01", "Ingest Audio", "Upload files or pull from Dropbox. Gemini analyses each track."),
         ("02", "Track Descriptions", "Claude refines raw Gemini output through the Council filter."),
         ("03", "Album Description", "Claude synthesises the album arc from all track descriptions."),
@@ -250,26 +282,42 @@ if active_tab == tabs[0]:
         ("06", "MailChimp Intro", "Claude writes the editorial memo for supervisors."),
         ("07", "Fix Existing Copy", "Paste any bad copy — Claude rewrites it through the Council."),
         ("08", "Export", "Clean Room validation → ZIP file."),
-    ]
-    for num, name, desc in flow:
+    ]:
         st.markdown(f"`{num}` **{name}** — {desc}")
+
+    next_button("Start → 01 · Ingest Audio")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 01 · INGEST AUDIO
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[1]:
+elif active_tab_index == 1:
     st.title("01 · INGEST AUDIO")
 
+    # Catalog selector lives here — top of the flow
+    st.subheader("Select Catalog")
+    catalog_choice = st.selectbox(
+        "Active Catalog", ["EPP", "redCola", "SSC"],
+        index=["EPP", "redCola", "SSC"].index(st.session_state.app_data.get("catalog", "EPP")),
+        label_visibility="collapsed"
+    )
+    if catalog_choice != st.session_state.app_data.get("catalog"):
+        st.session_state.app_data["catalog"] = catalog_choice
+        catalog = catalog_choice
+        st.rerun()
+
+    catalog = st.session_state.app_data.get("catalog", "EPP")
+    st.divider()
+
     if not gemini_api_key:
-        st.error("Gemini API key required for audio analysis. Add it in the sidebar.")
+        st.error("Gemini API key required. Open ⚙️ Configuration in the sidebar.")
         st.stop()
 
     col_upload, col_dropbox = st.columns([1, 1])
 
     with col_upload:
         st.subheader("Upload Files")
-        st.caption("File names containing 'sparse' or 'full' are tagged automatically for mix-aware refinement.")
+        st.caption("File names containing 'sparse' or 'full' are tagged automatically.")
         uploaded_files = st.file_uploader(
             "Drag audio files here", type=["mp3", "wav", "aiff", "flac"],
             accept_multiple_files=True, label_visibility="collapsed"
@@ -315,23 +363,22 @@ elif active_tab == tabs[1]:
     with col_dropbox:
         st.subheader("From Dropbox")
         if not dropbox_token:
-            st.info("Add your Dropbox token in the sidebar to enable cloud folder access.")
+            st.info("Add Dropbox token in ⚙️ Configuration to enable.")
         else:
             dropbox_folder = st.text_input(
-                "Dropbox folder path", value="", placeholder="/Music/New Album",
-                help="Leave empty for root folder"
+                "Dropbox folder path", value="", placeholder="/Music/New Album"
             )
             col_list, col_analyse = st.columns([1, 1])
             with col_list:
                 if st.button("List Files"):
-                    with st.spinner("Connecting to Dropbox..."):
+                    with st.spinner("Connecting..."):
                         try:
                             files = st.session_state.engine.list_dropbox_audio_files(
                                 dropbox_token, dropbox_folder
                             )
                             st.session_state.dropbox_files = files
                             if not files:
-                                st.warning("No audio files found in that folder.")
+                                st.warning("No audio files found.")
                         except Exception as e:
                             st.error(str(e))
 
@@ -387,20 +434,23 @@ elif active_tab == tabs[1]:
         csv = edited_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download Keywords CSV", csv, "Keywords.csv", "text/csv")
     else:
-        st.info("No tracks ingested yet. Upload files or connect Dropbox above.")
+        st.info("No tracks ingested yet.")
+
+    next_button()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 02 · TRACK DESCRIPTIONS
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[2]:
+elif active_tab_index == 2:
     st.title("02 · TRACK DESCRIPTIONS")
+    catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not st.session_state.app_data["tracks"]:
         st.warning("Ingest tracks in Tab 01 first.")
         st.stop()
     if not claude_api_key:
-        st.error("Claude API key required. Add it in the sidebar.")
+        st.error("Claude API key required. Open ⚙️ Configuration in the sidebar.")
         st.stop()
 
     col_action, col_editor = st.columns([1, 1])
@@ -423,8 +473,7 @@ elif active_tab == tabs[2]:
                     refined = st.session_state.engine.refine_track_description(
                         track["Title"],
                         track.get("Track Description", ""),
-                        catalog,
-                        claude_api_key,
+                        catalog, claude_api_key,
                         mix_type=track.get("Mix Type", "unknown"),
                     )
                     track["Track Description"] = refined
@@ -488,18 +537,20 @@ elif active_tab == tabs[2]:
                             save_to_history(title, desc)
                             track["Track Description"] = old_desc
                             st.rerun()
-
             st.divider()
 
         csv = pd.DataFrame(st.session_state.app_data["tracks"]).to_csv(index=False).encode("utf-8")
         st.download_button("Download Descriptions CSV", csv, "Descriptions.csv", "text/csv")
 
+    next_button()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 03 · ALBUM DESCRIPTION
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[3]:
+elif active_tab_index == 3:
     st.title("03 · ALBUM DESCRIPTION")
+    catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not claude_api_key:
         st.error("Claude API key required.")
@@ -532,12 +583,15 @@ elif active_tab == tabs[3]:
             copy_button(edited, "album_desc")
             st.download_button("Download TXT", edited.encode("utf-8"), "Album_Description.txt", "text/plain")
 
+    next_button()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 04 · ALBUM NAME
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[4]:
+elif active_tab_index == 4:
     st.title("04 · ALBUM NAME")
+    catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not claude_api_key:
         st.error("Claude API key required.")
@@ -583,21 +637,24 @@ elif active_tab == tabs[4]:
                     st.session_state.app_data["album_name_selected"] = selected
                     if rationales.get(selected):
                         st.caption(rationales[selected])
-                    st.success(f"Selected: **{selected}** — will be used for cover art and MailChimp.")
+                    st.success(f"Selected: **{selected}**")
                 copy_button(selected or "", "album_name")
             else:
                 edited = st.text_area("Concepts", value=raw, height=220, label_visibility="collapsed")
                 st.session_state.app_data["album_name"] = edited
                 copy_button(edited, "album_name")
         else:
-            st.info("Generate concepts first using the button on the left.")
+            st.info("Generate concepts first.")
+
+    next_button()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 05 · COVER ART PROMPTS
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[5]:
+elif active_tab_index == 5:
     st.title("05 · COVER ART PROMPTS")
+    catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not claude_api_key:
         st.error("Claude API key required.")
@@ -660,12 +717,15 @@ elif active_tab == tabs[5]:
             for i, p in enumerate(prompts):
                 copy_button(p, f"prompt_{i}", f"Copy Prompt {i+1}")
 
+    next_button()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 06 · MAILCHIMP INTRO
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[6]:
+elif active_tab_index == 6:
     st.title("06 · MAILCHIMP INTRO")
+    catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not claude_api_key:
         st.error("Claude API key required.")
@@ -682,7 +742,7 @@ elif active_tab == tabs[6]:
         st.subheader("Generate Editorial Memo")
         if album_name_for_mail:
             st.caption(f"Using album name: **{album_name_for_mail}**")
-        st.write("Identifies the editor's pain point first. No sales pitch. No 'proud to announce'.")
+        st.write("Identifies the editor's pain point first. No sales pitch.")
         if st.button("Write MailChimp Intro", type="primary"):
             with st.spinner("Copywriter drafting..."):
                 track_descriptions = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
@@ -710,18 +770,21 @@ elif active_tab == tabs[6]:
         if edited != intro:
             st.session_state.app_data["mailchimp_intro"] = edited
 
+    next_button()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 07 · FIX EXISTING COPY
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[7]:
+elif active_tab_index == 7:
     st.title("07 · FIX EXISTING COPY")
+    catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not claude_api_key:
         st.error("Claude API key required.")
         st.stop()
 
-    st.write("Paste any copy that isn't working — over-hyped, wrong catalog language, too generic. Claude rewrites it through the full Council filter.")
+    st.write("Paste any copy that isn't working. Claude rewrites it through the full Council filter.")
 
     col_input, col_output = st.columns([1, 1])
 
@@ -770,16 +833,17 @@ elif active_tab == tabs[7]:
         else:
             st.info("Refined output will appear here.")
 
+    next_button()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 08 · EXPORT
 # ══════════════════════════════════════════════════════════════════════════════
-elif active_tab == tabs[8]:
+elif active_tab_index == 8:
     st.title("08 · EXPORT")
+    catalog = st.session_state.app_data.get("catalog", "EPP")
 
     st.subheader("Clean Room Validator")
-    st.write("Checking data integrity before allowing export...")
-
     passed, errors = st.session_state.engine.validate_data(st.session_state.app_data, catalog)
 
     if not passed:
