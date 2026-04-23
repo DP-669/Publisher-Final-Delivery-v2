@@ -260,10 +260,11 @@ class IngestionEngine:
             return f"Claude Error: {str(e)}"
 
     def refine_track_description(
-        self, title: str, raw_desc: str, catalog: str, claude_api_key: str
+        self, title: str, raw_desc: str, catalog: str, claude_api_key: str,
+        mix_type: str = "unknown"
     ) -> str:
         sys_instr, prompt = self.prompts.generate_track_description_prompt(
-            title, raw_desc, catalog
+            title, raw_desc, catalog, mix_type=mix_type
         )
         return self.call_claude(sys_instr, prompt, claude_api_key)
 
