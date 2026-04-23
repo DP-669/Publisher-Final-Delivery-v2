@@ -261,10 +261,28 @@ Required JSON output:
 
     # ── TAB 02: Track Description refinement (Claude) ─────────────────────────
     def generate_track_description_prompt(
-        self, title: str, raw_description: str, catalog: str
+        self, title: str, raw_description: str, catalog: str,
+        mix_type: str = "unknown"
     ) -> tuple[str, str]:
         cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
         forbidden = ", ".join(cat["forbidden"]) if cat["forbidden"] else "none"
+
+        # Mix-type specific guidance
+        if mix_type == "sparse":
+            mix_note = (
+                "MIX TYPE — SPARSE: This is a sparse/stripped mix. "
+                "Descriptions should reflect reduced instrumentation, more space, and greater dialogue-friendliness. "
+                "Placement tags may lean toward intimate scenes, documentary vignettes, or underscore where the full mix would overwhelm. "
+                "Do not describe elements that are only present in the full mix."
+            )
+        elif mix_type == "full":
+            mix_note = (
+                "MIX TYPE — FULL: This is a full mix. "
+                "Descriptions should reflect the complete arrangement and full dynamic range. "
+                "Placement tags can lean toward higher-energy contexts where the full arrangement is an asset."
+            )
+        else:
+            mix_note = ""
 
         system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
 
@@ -274,6 +292,7 @@ CATALOG: {catalog} — {cat['identity']}
 PRIMARY USAGE: {cat['usage']}
 VALID PLACEMENT TAGS: {cat['placement_tags']}
 CATALOG-SPECIFIC FORBIDDEN WORDS: {forbidden}
+{mix_note}
 
 FORMAT — three-part structure:
 - Part 1: Genre and texture label

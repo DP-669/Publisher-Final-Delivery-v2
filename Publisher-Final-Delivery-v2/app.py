@@ -5,10 +5,18 @@ Publisher Final Delivery App v2
 - Dropbox: cloud folder integration
 - Manual Refinement: fix any existing copy inline
 - Light theme: clean Streamlit default
+
+Tier 2 improvements:
+- MailChimp line break preservation
+- Inline contamination flags in Tab 02
+- Album name selection UI in Tab 04
+- Sparse/full mix detection and handling
+- Version history per track in Tab 02
 """
 import streamlit as st
 import pandas as pd
 import os
+import re
 import random
 from engine import IngestionEngine
 
@@ -22,38 +30,64 @@ st.set_page_config(
 # ── Responsive Centered Layout ────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Center the main content with max-width for desktop */
     .block-container {
         max-width: 960px;
         margin: 0 auto;
         padding: 2rem 1.5rem;
     }
-    /* Full width on mobile */
     @media (max-width: 768px) {
         .block-container {
             max-width: 100%;
             padding: 1rem 0.75rem;
         }
     }
-    /* Center sidebar content */
-    .stSidebar .block-container {
-        max-width: 100%;
-        margin: 0;
-    }
-    /* Responsive data editor */
-    .stDataFrame, .stDataEditor {
-        width: 100% !important;
-    }
-    /* Responsive text areas */
-    .stTextArea textarea {
-        width: 100% !important;
-    }
-    /* Responsive columns on mobile */
+    .stSidebar .block-container { max-width: 100%; margin: 0; }
+    .stDataFrame, .stDataEditor { width: 100% !important; }
+    .stTextArea textarea { width: 100% !important; }
     @media (max-width: 640px) {
         [data-testid="column"] {
             width: 100% !important;
             flex: 1 1 100% !important;
         }
+    }
+    .mailchimp-output {
+        white-space: pre-wrap;
+        font-family: Georgia, serif;
+        font-size: 1rem;
+        line-height: 1.8;
+        padding: 1.5rem;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        background: #fafafa;
+        margin-bottom: 1rem;
+    }
+    .contamination-warn {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-left: 4px solid #ff6b35;
+        border-radius: 4px;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.8rem;
+        margin-top: 0.3rem;
+        margin-bottom: 0.5rem;
+    }
+    .mix-badge-full {
+        background: #e3f2fd;
+        color: #1565c0;
+        border-radius: 3px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 6px;
+    }
+    .mix-badge-sparse {
+        background: #f3e5f5;
+        color: #6a1b9a;
+        border-radius: 3px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 6px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -67,6 +101,7 @@ if "app_data" not in st.session_state:
         "tracks": [],
         "album_description": "",
         "album_name": "",
+        "album_name_selected": "",
         "cover_art": "",
         "mailchimp_intro": "",
     }
@@ -76,6 +111,65 @@ if "ingestion_error" not in st.session_state:
 
 if "dropbox_files" not in st.session_state:
     st.session_state.dropbox_files = []
+
+if "track_history" not in st.session_state:
+    st.session_state.track_history = {}
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def detect_mix_type(title: str) -> str:
+    t = title.lower()
+    if any(x in t for x in ["sparse", "sprs", "sp_"]):
+        return "sparse"
+    if any(x in t for x in ["full", "fl_", "master"]):
+        return "full"
+    return "unknown"
+
+
+def check_contamination(desc: str, catalog: str) -> list:
+    try:
+        from engine import THEATRICAL_TERMS, COMMERCIAL_TERMS, THEATRICAL_CATALOGS, COMMERCIAL_CATALOGS
+        issues = []
+        desc_lower = desc.lower()
+        catalog_lower = catalog.lower()
+        is_theatrical = any(c in catalog_lower for c in THEATRICAL_CATALOGS)
+        is_commercial = any(c in catalog_lower for c in COMMERCIAL_CATALOGS)
+        if is_commercial:
+            found = [t for t in THEATRICAL_TERMS if t in desc_lower]
+            if found:
+                issues.append(f"Theatrical language in EPP: {', '.join(found)}")
+        if is_theatrical:
+            found = [t for t in COMMERCIAL_TERMS if t in desc_lower]
+            if found:
+                issues.append(f"Commercial language in {catalog}: {', '.join(found)}")
+        return issues
+    except Exception:
+        return []
+
+
+def save_to_history(title: str, desc: str):
+    if desc and desc.strip():
+        if title not in st.session_state.track_history:
+            st.session_state.track_history[title] = []
+        history = st.session_state.track_history[title]
+        if not history or history[-1] != desc:
+            history.append(desc)
+            if len(history) > 5:
+                history.pop(0)
+
+
+def copy_button(text: str, key: str, label: str = "Copy to Clipboard"):
+    escaped = text.replace("`", "\\`").replace("\\", "\\\\")
+    st.markdown(f"""
+    <button onclick="navigator.clipboard.writeText(`{escaped}`).then(()=>{{
+        document.getElementById('cb_{key}').style.display='inline';
+        setTimeout(()=>document.getElementById('cb_{key}').style.display='none', 2000);
+    }})" style="cursor:pointer;padding:4px 12px;font-size:0.8rem;margin-bottom:8px;">
+        {label}
+    </button>
+    <span id="cb_{key}" style="display:none;color:green;font-size:0.8rem;margin-left:8px;">Copied ✓</span>
+    """, unsafe_allow_html=True)
+
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -96,14 +190,12 @@ with st.sidebar:
     )
 
     st.divider()
-
     col1, col2, col3 = st.columns(3)
     col1.markdown(f"**Gemini** {'✅' if gemini_api_key else '❌'}")
     col2.markdown(f"**Claude** {'✅' if claude_api_key else '❌'}")
     col3.markdown(f"**Dropbox** {'✅' if dropbox_token else '—'}")
 
     st.divider()
-
     catalog = st.selectbox("Active Catalog", ["EPP", "redCola", "SSC"])
 
     logo_map = {
@@ -115,12 +207,11 @@ with st.sidebar:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(base_dir, "01_VISUAL_REFERENCES", catalog, logo_map[catalog])
         if os.path.exists(logo_path):
-            st.image(logo_path, width=200)
+            st.image(logo_path, use_container_width=True)
     except Exception:
         pass
 
     st.divider()
-
     tabs = [
         "00 · Flight Deck",
         "01 · Ingest Audio",
@@ -135,28 +226,15 @@ with st.sidebar:
     active_tab = st.radio("Navigate", tabs, label_visibility="collapsed")
 
     st.divider()
-
-    if st.button("Reset Session"):
+    if st.button("Reset Session", use_container_width=True):
         st.session_state.app_data = {
             "tracks": [], "album_description": "",
-            "album_name": "", "cover_art": "", "mailchimp_intro": "",
+            "album_name": "", "album_name_selected": "",
+            "cover_art": "", "mailchimp_intro": "",
         }
         st.session_state.dropbox_files = []
+        st.session_state.track_history = {}
         st.success("Session cleared.")
-
-
-# ── Helper: copy button ────────────────────────────────────────────────────────
-def copy_button(text: str, key: str, label: str = "Copy to Clipboard"):
-    escaped = text.replace("`", "\\`").replace("\\", "\\\\")
-    st.markdown(f"""
-    <button onclick="navigator.clipboard.writeText(`{escaped}`).then(()=>{{
-        document.getElementById('cb_{key}').style.display='inline';
-        setTimeout(()=>document.getElementById('cb_{key}').style.display='none', 2000);
-    }})" style="cursor:pointer;padding:4px 12px;font-size:0.8rem;margin-bottom:8px;">
-        {label}
-    </button>
-    <span id="cb_{key}" style="display:none;color:green;font-size:0.8rem;margin-left:8px;">Copied ✓</span>
-    """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -171,13 +249,12 @@ if active_tab == tabs[0]:
     - **Gemini 3.1 Pro** — Audio analysis. Listens, extracts structure and sonic detail.
     - **Claude Sonnet** — All writing. Track descriptions, album copy, MailChimp intros, MidJourney prompts.
     """)
-
     st.subheader("The Flow")
     flow = [
         ("01", "Ingest Audio", "Upload files or pull from Dropbox. Gemini analyses each track."),
         ("02", "Track Descriptions", "Claude refines raw Gemini output through the Council filter."),
         ("03", "Album Description", "Claude synthesises the album arc from all track descriptions."),
-        ("04", "Album Name", "Claude generates original title concepts for your selection."),
+        ("04", "Album Name", "Claude generates original title concepts. Select one to carry forward."),
         ("05", "Cover Art Prompts", "Claude writes MidJourney v7 prompts with copy buttons."),
         ("06", "MailChimp Intro", "Claude writes the editorial memo for supervisors."),
         ("07", "Fix Existing Copy", "Paste any bad copy — Claude rewrites it through the Council."),
@@ -185,7 +262,6 @@ if active_tab == tabs[0]:
     ]
     for num, name, desc in flow:
         st.markdown(f"`{num}` **{name}** — {desc}")
-
     st.divider()
     st.info("Configure API keys in the sidebar, then select your catalog to begin.")
 
@@ -204,6 +280,7 @@ elif active_tab == tabs[1]:
 
     with col_upload:
         st.subheader("Upload Files")
+        st.caption("File names containing 'sparse' or 'full' are tagged automatically for mix-aware refinement.")
         uploaded_files = st.file_uploader(
             "Drag audio files here", type=["mp3", "wav", "aiff", "flac"],
             accept_multiple_files=True, label_visibility="collapsed"
@@ -229,6 +306,7 @@ elif active_tab == tabs[1]:
                             if clean_title not in existing_titles:
                                 st.session_state.app_data["tracks"].append({
                                     "Title": clean_title,
+                                    "Mix Type": detect_mix_type(clean_title),
                                     "Keywords": metadata.get("Keywords", ""),
                                     "Track Description": metadata.get("Description", ""),
                                 })
@@ -274,7 +352,6 @@ elif active_tab == tabs[1]:
                 for f in st.session_state.dropbox_files:
                     if st.checkbox(f["name"], key=f"dbx_{f['path']}"):
                         selected.append(f)
-
                 with col_analyse:
                     if st.button("Analyse Selected", disabled=not selected):
                         progress = st.progress(0)
@@ -293,6 +370,7 @@ elif active_tab == tabs[1]:
                                     if clean_title not in existing_titles:
                                         st.session_state.app_data["tracks"].append({
                                             "Title": clean_title,
+                                            "Mix Type": detect_mix_type(clean_title),
                                             "Keywords": metadata.get("Keywords", ""),
                                             "Track Description": metadata.get("Description", ""),
                                         })
@@ -313,10 +391,9 @@ elif active_tab == tabs[1]:
 
     st.divider()
     st.subheader("Track Data")
-
     if st.session_state.app_data["tracks"]:
         df = pd.DataFrame(st.session_state.app_data["tracks"])
-        edited_df = st.data_editor(df, key="editor_tab1", num_rows="dynamic")
+        edited_df = st.data_editor(df, use_container_width=True, key="editor_tab1", num_rows="dynamic")
         st.session_state.app_data["tracks"] = edited_df.to_dict("records")
         csv = edited_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download Keywords CSV", csv, "Keywords.csv", "text/csv")
@@ -333,7 +410,6 @@ elif active_tab == tabs[2]:
     if not st.session_state.app_data["tracks"]:
         st.warning("Ingest tracks in Tab 01 first.")
         st.stop()
-
     if not claude_api_key:
         st.error("Claude API key required. Add it in the sidebar.")
         st.stop()
@@ -342,18 +418,25 @@ elif active_tab == tabs[2]:
 
     with col_action:
         st.subheader("Refine All Descriptions")
-        st.write("Claude runs all raw Gemini descriptions through the Council filter.")
+        tracks = st.session_state.app_data["tracks"]
+        full_count = sum(1 for t in tracks if t.get("Mix Type") == "full")
+        sparse_count = sum(1 for t in tracks if t.get("Mix Type") == "sparse")
+        unknown_count = sum(1 for t in tracks if t.get("Mix Type") not in ["full", "sparse"])
+        if full_count or sparse_count:
+            st.caption(f"Detected: {full_count} full mix · {sparse_count} sparse · {unknown_count} undetected")
+
         if st.button("Run Council Refinement", type="primary"):
             with st.spinner("Council working..."):
                 updated = []
                 prog = st.progress(0)
-                tracks = st.session_state.app_data["tracks"]
                 for idx, track in enumerate(tracks):
+                    save_to_history(track["Title"], track.get("Track Description", ""))
                     refined = st.session_state.engine.refine_track_description(
                         track["Title"],
                         track.get("Track Description", ""),
                         catalog,
                         claude_api_key,
+                        mix_type=track.get("Mix Type", "unknown"),
                     )
                     track["Track Description"] = refined
                     updated.append(track)
@@ -364,27 +447,62 @@ elif active_tab == tabs[2]:
 
         st.divider()
         st.subheader("Refine Single Track")
-        track_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
+        track_titles = [t["Title"] for t in tracks]
         selected_track = st.selectbox("Select track", track_titles)
         if st.button("Refine Selected"):
             with st.spinner("Refining..."):
-                track = next(t for t in st.session_state.app_data["tracks"] if t["Title"] == selected_track)
+                track = next(t for t in tracks if t["Title"] == selected_track)
+                save_to_history(track["Title"], track.get("Track Description", ""))
                 refined = st.session_state.engine.refine_track_description(
-                    track["Title"], track.get("Track Description", ""), catalog, claude_api_key
+                    track["Title"], track.get("Track Description", ""),
+                    catalog, claude_api_key,
+                    mix_type=track.get("Mix Type", "unknown"),
                 )
                 track["Track Description"] = refined
             st.success(f"'{selected_track}' updated.")
             st.rerun()
 
     with col_editor:
-        st.subheader("Edit & Export")
-        df = pd.DataFrame(st.session_state.app_data["tracks"])
-        edited_df = st.data_editor(
-            df, key="editor_tab2",
-            disabled=["Title", "Keywords"],
-        )
-        st.session_state.app_data["tracks"] = edited_df.to_dict("records")
-        csv = edited_df.to_csv(index=False).encode("utf-8")
+        st.subheader("Descriptions")
+        for track in st.session_state.app_data["tracks"]:
+            title = track["Title"]
+            mix_type = track.get("Mix Type", "unknown")
+            desc = track.get("Track Description", "")
+
+            badge = ""
+            if mix_type == "full":
+                badge = "<span class='mix-badge-full'>FULL</span>"
+            elif mix_type == "sparse":
+                badge = "<span class='mix-badge-sparse'>SPARSE</span>"
+
+            st.markdown(f"**{title}**{badge}", unsafe_allow_html=True)
+
+            if desc:
+                issues = check_contamination(desc, catalog)
+                for issue in issues:
+                    st.markdown(f"<div class='contamination-warn'>⚠️ {issue}</div>", unsafe_allow_html=True)
+
+            new_desc = st.text_area(
+                f"desc_{title}", value=desc, height=100,
+                label_visibility="collapsed", key=f"desc_edit_{title}"
+            )
+            if new_desc != desc:
+                track["Track Description"] = new_desc
+
+            history = st.session_state.track_history.get(title, [])
+            if history:
+                with st.expander(f"Previous versions ({len(history)})"):
+                    for i, old_desc in enumerate(reversed(history)):
+                        st.caption(f"Version {len(history) - i}")
+                        st.text(old_desc)
+                        if st.button("Restore", key=f"restore_{title}_{i}"):
+                            save_to_history(title, desc)
+                            track["Track Description"] = old_desc
+                            st.rerun()
+
+            st.divider()
+
+        csv = pd.DataFrame(st.session_state.app_data["tracks"]).to_csv(index=False).encode("utf-8")
         st.download_button("Download Descriptions CSV", csv, "Descriptions.csv", "text/csv")
 
 
@@ -410,27 +528,20 @@ elif active_tab == tabs[3]:
             if st.button("Generate Album Description", type="primary"):
                 with st.spinner("Council synthesising..."):
                     descs = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
-                    result = st.session_state.engine.generate_album_description(
-                        descs, catalog, claude_api_key
-                    )
+                    result = st.session_state.engine.generate_album_description(descs, catalog, claude_api_key)
                     st.session_state.app_data["album_description"] = result
                 st.rerun()
 
     with col_output:
         st.subheader("Output")
         edited = st.text_area(
-            "Album Description",
-            value=st.session_state.app_data["album_description"],
-            height=150,
-            label_visibility="collapsed",
+            "Album Description", value=st.session_state.app_data["album_description"],
+            height=150, label_visibility="collapsed",
         )
         st.session_state.app_data["album_description"] = edited
         if edited:
             copy_button(edited, "album_desc")
-            st.download_button(
-                "Download TXT", edited.encode("utf-8"),
-                "Album_Description.txt", "text/plain"
-            )
+            st.download_button("Download TXT", edited.encode("utf-8"), "Album_Description.txt", "text/plain")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -454,19 +565,43 @@ elif active_tab == tabs[4]:
                     st.session_state.app_data["album_description"], catalog, claude_api_key
                 )
                 st.session_state.app_data["album_name"] = result
+                st.session_state.app_data["album_name_selected"] = ""
             st.rerun()
 
     with col_output:
-        st.subheader("Concepts")
-        edited = st.text_area(
-            "Album Name Concepts",
-            value=st.session_state.app_data["album_name"],
-            height=220,
-            label_visibility="collapsed",
-        )
-        st.session_state.app_data["album_name"] = edited
-        if edited:
-            copy_button(edited, "album_name")
+        st.subheader("Select a Title")
+        raw = st.session_state.app_data.get("album_name", "")
+
+        if raw:
+            lines = [l.strip() for l in raw.split("\n") if l.strip()]
+            options = []
+            rationales = {}
+            current_title = None
+            for line in lines:
+                m = re.match(r"^\d+[\.\)]\s*(.+)$", line)
+                if m:
+                    current_title = m.group(1).strip()
+                    options.append(current_title)
+                    rationales[current_title] = ""
+                elif current_title and line and not re.match(r"^\d+[\.\)]", line):
+                    rationales[current_title] = line
+
+            if options:
+                current_selection = st.session_state.app_data.get("album_name_selected", "")
+                default_idx = options.index(current_selection) if current_selection in options else 0
+                selected = st.radio("Choose the title to carry forward:", options, index=default_idx)
+                if selected:
+                    st.session_state.app_data["album_name_selected"] = selected
+                    if rationales.get(selected):
+                        st.caption(rationales[selected])
+                    st.success(f"Selected: **{selected}** — will be used for cover art and MailChimp.")
+                copy_button(selected or "", "album_name")
+            else:
+                edited = st.text_area("Concepts", value=raw, height=220, label_visibility="collapsed")
+                st.session_state.app_data["album_name"] = edited
+                copy_button(edited, "album_name")
+        else:
+            st.info("Generate concepts first using the button on the left.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -479,18 +614,25 @@ elif active_tab == tabs[5]:
         st.error("Claude API key required.")
         st.stop()
 
+    album_name_for_art = (
+        st.session_state.app_data.get("album_name_selected") or
+        st.session_state.app_data.get("album_name", "")
+    )
+
     col_action, col_output = st.columns([1, 1])
 
     with col_action:
         st.subheader("Generate MidJourney v7 Prompts")
+        if album_name_for_art:
+            st.caption(f"Using album name: **{album_name_for_art}**")
+        else:
+            st.warning("No album name selected. Complete Tab 04 first.")
         st.write("4 prompts. Different framing, texture, and light source each.")
 
         if st.button("Generate Prompts", type="primary"):
             with st.spinner("Art Director working..."):
                 refs = []
-                cat_folder = (
-                    st.session_state.engine.root_path / "01_VISUAL_REFERENCES" / catalog
-                )
+                cat_folder = st.session_state.engine.root_path / "01_VISUAL_REFERENCES" / catalog
                 if cat_folder.exists():
                     refs = [
                         f"https://placeholder.url/{f.name}"
@@ -501,22 +643,13 @@ elif active_tab == tabs[5]:
                     refs = ["https://dummy.url/ref1.jpg"] * 4
                 selected_refs = random.choices(refs, k=4)
 
-                track_descriptions = [
-                    t.get("Track Description", "")
-                    for t in st.session_state.app_data["tracks"]
-                ]
-                keywords = ", ".join([
-                    t.get("Keywords", "")
-                    for t in st.session_state.app_data["tracks"]
-                    if t.get("Keywords")
-                ])
+                track_descriptions = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
+                keywords = ", ".join([t.get("Keywords", "") for t in st.session_state.app_data["tracks"] if t.get("Keywords")])
 
                 result = st.session_state.engine.generate_cover_art_prompts(
-                    st.session_state.app_data["album_name"],
+                    album_name_for_art,
                     st.session_state.app_data["album_description"],
-                    catalog,
-                    selected_refs,
-                    claude_api_key,
+                    catalog, selected_refs, claude_api_key,
                     track_descriptions=track_descriptions,
                     keywords=keywords,
                 )
@@ -529,13 +662,10 @@ elif active_tab == tabs[5]:
     with col_output:
         st.subheader("Prompts")
         edited = st.text_area(
-            "MidJourney Prompts",
-            value=st.session_state.app_data["cover_art"],
-            height=400,
-            label_visibility="collapsed",
+            "MidJourney Prompts", value=st.session_state.app_data["cover_art"],
+            height=400, label_visibility="collapsed",
         )
         st.session_state.app_data["cover_art"] = edited
-
         if edited:
             prompts = [p.strip() for p in edited.split("\n\n") if p.strip()]
             for i, p in enumerate(prompts):
@@ -552,22 +682,25 @@ elif active_tab == tabs[6]:
         st.error("Claude API key required.")
         st.stop()
 
+    album_name_for_mail = (
+        st.session_state.app_data.get("album_name_selected") or
+        st.session_state.app_data.get("album_name", "")
+    )
+
     col_action, col_output = st.columns([1, 1])
 
     with col_action:
         st.subheader("Generate Editorial Memo")
+        if album_name_for_mail:
+            st.caption(f"Using album name: **{album_name_for_mail}**")
         st.write("Identifies the editor's pain point first. No sales pitch. No 'proud to announce'.")
         if st.button("Write MailChimp Intro", type="primary"):
             with st.spinner("Copywriter drafting..."):
-                track_descriptions = [
-                    t.get("Track Description", "")
-                    for t in st.session_state.app_data["tracks"]
-                ]
+                track_descriptions = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
                 result = st.session_state.engine.generate_mailchimp_intro(
-                    st.session_state.app_data["album_name"],
+                    album_name_for_mail,
                     st.session_state.app_data["album_description"],
-                    catalog,
-                    claude_api_key,
+                    catalog, claude_api_key,
                     track_descriptions=track_descriptions,
                 )
                 st.session_state.app_data["mailchimp_intro"] = result
@@ -575,19 +708,18 @@ elif active_tab == tabs[6]:
 
     with col_output:
         st.subheader("Output")
-        edited = st.text_area(
-            "MailChimp Copy",
-            value=st.session_state.app_data["mailchimp_intro"],
-            height=200,
-            label_visibility="collapsed",
-        )
-        st.session_state.app_data["mailchimp_intro"] = edited
-        if edited:
-            copy_button(edited, "mailchimp")
-            st.download_button(
-                "Download TXT", edited.encode("utf-8"),
-                "MailChimp_Intro.txt", "text/plain"
+        intro = st.session_state.app_data.get("mailchimp_intro", "")
+        if intro:
+            st.markdown(
+                f'<div class="mailchimp-output">{intro.replace(chr(10), "<br>")}</div>',
+                unsafe_allow_html=True
             )
+            copy_button(intro, "mailchimp")
+            st.download_button("Download TXT", intro.encode("utf-8"), "MailChimp_Intro.txt", "text/plain")
+
+        edited = st.text_area("Edit if needed", value=intro, height=200)
+        if edited != intro:
+            st.session_state.app_data["mailchimp_intro"] = edited
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -609,10 +741,7 @@ elif active_tab == tabs[7]:
             "Content type",
             ["Track Description", "Album Description", "MailChimp Intro", "Album Name", "Other"],
         )
-        bad_copy = st.text_area(
-            "Paste the copy here", height=250,
-            placeholder="Paste the text that needs fixing..."
-        )
+        bad_copy = st.text_area("Paste the copy here", height=250, placeholder="Paste the text that needs fixing...")
         if st.button("Run Council Filter", type="primary", disabled=not bad_copy):
             with st.spinner("Council reviewing..."):
                 st.session_state["refined_copy"] = st.session_state.engine.manual_refinement(
@@ -637,7 +766,7 @@ elif active_tab == tabs[7]:
                     st.success("Applied.")
             with apply_col2:
                 if st.button("→ Album Name"):
-                    st.session_state.app_data["album_name"] = result
+                    st.session_state.app_data["album_name_selected"] = result
                     st.success("Applied.")
                 if content_type == "Track Description":
                     track_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
@@ -646,6 +775,7 @@ elif active_tab == tabs[7]:
                         if st.button("→ Apply to Track"):
                             for t in st.session_state.app_data["tracks"]:
                                 if t["Title"] == apply_track:
+                                    save_to_history(apply_track, t.get("Track Description", ""))
                                     t["Track Description"] = result
                             st.success(f"Applied to '{apply_track}'.")
         else:
@@ -661,9 +791,7 @@ elif active_tab == tabs[8]:
     st.subheader("Clean Room Validator")
     st.write("Checking data integrity before allowing export...")
 
-    passed, errors = st.session_state.engine.validate_data(
-        st.session_state.app_data, catalog
-    )
+    passed, errors = st.session_state.engine.validate_data(st.session_state.app_data, catalog)
 
     if not passed:
         st.error(f"{len(errors)} error(s) blocking export:")
@@ -672,27 +800,26 @@ elif active_tab == tabs[8]:
     else:
         st.success("Clean Room passed ✓ — all checks clear.")
 
-        zip_buffer = st.session_state.engine.compile_final_package(st.session_state.app_data)
+        album_name_safe = (
+            st.session_state.app_data.get("album_name_selected") or
+            st.session_state.app_data.get("album_name", "album")
+        ).split("\n")[0][:30].strip()
 
+        zip_buffer = st.session_state.engine.compile_final_package(st.session_state.app_data)
         st.download_button(
             label="Download Final Delivery ZIP",
             data=zip_buffer,
-            file_name=f"{catalog}_Final_Delivery.zip",
+            file_name=f"{catalog}_{album_name_safe}_Final_Delivery.zip",
             mime="application/zip",
             type="primary",
+            use_container_width=True,
         )
 
         if dropbox_token:
             st.divider()
             st.subheader("Save to Dropbox")
-            output_folder = st.text_input(
-                "Dropbox output folder",
-                value="/Publisher Output",
-                help="Where to save the ZIP in your Dropbox"
-            )
-            album_name_safe = st.session_state.app_data.get("album_name", "album").split("\n")[0][:30].strip()
+            output_folder = st.text_input("Dropbox output folder", value="/Publisher Output")
             dest_path = f"{output_folder}/{catalog}_{album_name_safe}_Final_Delivery.zip"
-
             if st.button("Upload ZIP to Dropbox"):
                 with st.spinner("Uploading..."):
                     try:
@@ -700,9 +827,7 @@ elif active_tab == tabs[8]:
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
                             tmp.write(zip_buffer.read())
                             tmp_path = tmp.name
-                        st.session_state.engine.upload_to_dropbox(
-                            dropbox_token, tmp_path, dest_path
-                        )
+                        st.session_state.engine.upload_to_dropbox(dropbox_token, tmp_path, dest_path)
                         os.remove(tmp_path)
                         st.success(f"Uploaded to Dropbox: `{dest_path}`")
                     except Exception as e:
