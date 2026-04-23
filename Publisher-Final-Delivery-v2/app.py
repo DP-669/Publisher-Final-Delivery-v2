@@ -448,9 +448,11 @@ elif active_tab_index == 2:
 
     if not st.session_state.app_data["tracks"]:
         st.warning("Ingest tracks in Tab 01 first.")
+        next_button()
         st.stop()
     if not claude_api_key:
         st.error("Claude API key required. Open ⚙️ Configuration in the sidebar.")
+        next_button()
         st.stop()
 
     col_action, col_editor = st.columns([1, 1])
