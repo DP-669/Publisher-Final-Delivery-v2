@@ -2,6 +2,11 @@
 Publisher Final Delivery App - Prompt Engine v2
 Claude handles all writing. Gemini handles audio analysis only.
 Full Council DNA embedded. Revised per editorial session March 2026.
+
+Tier 2 fixes applied (2026-08-13):
+- _normalize_catalog() added — maps name variants to canonical CATALOG_DNA keys,
+  preventing catalog contamination caused by case/abbreviation mismatches
+- Tab 02 refinement prompt rewritten to preserve Gemini audio-specific observations
 """
 import json
 from typing import Dict, List, Optional
@@ -127,6 +132,27 @@ CATALOG_DNA = {
 }
 
 
+def _normalize_catalog(catalog: str) -> str:
+    """
+    Map any catalog name variant to the canonical CATALOG_DNA key.
+
+    Prevents contamination when the UI passes "rC", "redcola", "Red Cola", etc.
+    instead of the exact key "redCola", "SSC", or "EPP".
+    Falls back to the original string (which will then fall back to EPP in
+    CATALOG_DNA.get()) if no known variant matches — so the existing
+    default-to-EPP behaviour is preserved for unknown catalogs.
+    """
+    c = catalog.strip().lower().replace(" ", "").replace("_", "").replace("-", "")
+    if c in ("rc", "redcola"):
+        return "redCola"
+    if c in ("ssc", "shortstorycollective"):
+        return "SSC"
+    if c in ("epp", "ekonomicpropaganda"):
+        return "EPP"
+    # Already a canonical key or unknown — pass through unchanged
+    return catalog
+
+
 class PromptEngine:
     """Generates prompts for all Council tasks."""
 
@@ -198,9 +224,9 @@ class PromptEngine:
 
     # ── TAB 01: Audio Analysis prompt (used by Gemini) ────────────────────────
     def generate_keywords_analysis_prompt(self, catalog: str, clean_title: str) -> str:
-        cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
 
-        if catalog == "EPP":
+        if _normalize_catalog(catalog) == "EPP":
             placement_boundary = (
                 "CATALOG BOUNDARY — EPP: Placement tags must reference commercial contexts ONLY: "
                 "advertising, reality TV, corporate video, retail campaigns, digital platforms, YouTube. "
@@ -264,7 +290,7 @@ Required JSON output:
         self, title: str, raw_description: str, catalog: str,
         mix_type: str = "unknown"
     ) -> tuple[str, str]:
-        cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
         forbidden = ", ".join(cat["forbidden"]) if cat["forbidden"] else "none"
 
         # Mix-type specific guidance
@@ -286,7 +312,18 @@ Required JSON output:
 
         system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
 
-CURRENT TASK: Refine a raw Gemini-generated track description into a polished Council-approved arc.
+CURRENT TASK: Polish a Gemini-generated track description — preserve all audio-specific detail, apply Council standards.
+
+CRITICAL: Gemini analyzed the actual audio file. Its output contains specific sonic observations
+(instruments heard, rhythmic events, dynamic shifts, timbres, structural moments). These specifics
+are the most valuable part of the raw description. DO NOT replace them with generic descriptors.
+If Gemini says "a ticking mechanical rhythm" or "fractured piano breakdown" or "sub-bass swell",
+keep those exact images. Your job is to:
+  1. Polish sentence structure and active voice (Hemingway Rule)
+  2. Apply the Cliché Test — replace only words that fail it
+  3. Fix Antigravity Protocol violations (first word cannot be A, An, The)
+  4. Tighten and verify placement tags against the catalog's valid territory
+  5. NOT rewrite the substance — if it sounds specific to this track, keep it
 
 CATALOG: {catalog} — {cat['identity']}
 PRIMARY USAGE: {cat['usage']}
@@ -296,27 +333,26 @@ CATALOG-SPECIFIC FORBIDDEN WORDS: {forbidden}
 
 FORMAT — three-part structure:
 - Part 1: Genre and texture label
-- Part 2: Sonic elements and instrumentation integrated into the vibe
+- Part 2: Sonic elements and instrumentation integrated into the vibe (PRESERVE Gemini's specific observations)
 - Part 3: Lean placement tags using 'Fits:' followed by 2-3 specific use-cases
 
 RULES:
 1. Exactly 2-3 sentences total.
-2. No flowery adjectives. No stacked descriptors. Strong nouns and concrete musical terms carry the weight.
-3. Apply the Cliché Test to every word.
-4. Name what is actually heard. Integrate instrumentation into the description — do not list it separately.
-5. Antigravity Protocol: first word cannot be A, An, or The.
-6. Placement tags must stay within valid territory for this catalog — no exceptions.
+2. PRESERVE all specific sonic details from the raw description. Replace ONLY vague, generic, or banned language.
+3. Strong nouns and concrete musical terms carry the weight. No flowery adjectives, no stacked descriptors.
+4. Placement tags must stay within valid territory for this catalog — no exceptions.
 
 TARGET FORMAT:
 "Electronic hybrid. Sub-bass and ticking mechanical rhythm carry a fragile piano breakdown into a choral climax. Fits: espionage, sports highlights, dark action promos."
 """
 
-        task_prompt = f"""Refine this raw description for the track '{title}':
+        task_prompt = f"""Polish this Gemini-generated description for the track '{title}'.
+Preserve its specific sonic observations. Apply Council standards. Do not rewrite the substance.
 
 RAW DESCRIPTION:
 {raw_description}
 
-Return ONLY the refined description. No preamble, no labels, no explanation."""
+Return ONLY the polished description. No preamble, no labels, no explanation."""
 
         return system_instruction, task_prompt
 
@@ -324,7 +360,7 @@ Return ONLY the refined description. No preamble, no labels, no explanation."""
     def generate_manual_refinement_prompt(
         self, content: str, content_type: str, catalog: str
     ) -> tuple[str, str]:
-        cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
 
         system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
 
@@ -349,7 +385,7 @@ Rewrite it for {catalog}. Make it right."""
     def generate_album_description_prompt(
         self, all_track_descriptions: List[str], catalog: str
     ) -> tuple[str, str]:
-        cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
 
         system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
 
@@ -384,7 +420,7 @@ Return ONLY the album description. No preamble."""
     def generate_album_name_prompt(
         self, album_description: str, catalog: str
     ) -> tuple[str, str]:
-        cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
 
         system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
 
@@ -420,7 +456,7 @@ Album description:
         track_descriptions: List[str] = None,
         keywords: str = None,
     ) -> tuple[str, str]:
-        cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
 
         # Build context block from Tier 1 and 2 material if provided
         context_block = ""
@@ -438,7 +474,7 @@ CATALOG VISUAL LANGUAGE:
 {cat['visual']}
 
 CORE PRINCIPLE:
-Every prompt starts with the album. The track descriptions, keywords, album title,
+Every prompt starts from the album. The track descriptions, keywords, album title,
 and album description are the brief. Every visual element must be traceable back to that brief.
 
 NARRATIVE FIRST:
@@ -482,7 +518,7 @@ Write the 4 MidJourney prompts now."""
         catalog: str,
         track_descriptions: List[str] = None,
     ) -> tuple[str, str]:
-        cat = CATALOG_DNA.get(catalog, CATALOG_DNA["EPP"])
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
 
         # Build context block if track descriptions provided
         context_block = ""
