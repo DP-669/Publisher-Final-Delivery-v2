@@ -10,6 +10,11 @@ Tier 1 fixes applied:
 - Added catalog contamination check to validator
 - Expanded banned words list
 - Always use latest Gemini model: gemini-3.1-pro-preview
+
+Tier 2 fixes applied (2026-08-13):
+- Updated Claude model to claude-sonnet-5
+- Catalog normalizer added to prompts.py (fixes contamination from name variants)
+- Tab 02 refinement prompt rewritten to preserve Gemini audio specifics
 """
 import os
 import json
@@ -28,7 +33,7 @@ from google.genai import types
 
 # Latest models — always use the most current available
 GEMINI_AUDIO_MODEL = "gemini-3.1-pro-preview"
-CLAUDE_WRITING_MODEL = "claude-sonnet-4-6"
+CLAUDE_WRITING_MODEL = "claude-sonnet-5"
 
 DEFAULT_ROOT_PATH = Path(".")
 
