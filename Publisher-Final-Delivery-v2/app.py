@@ -1,7 +1,7 @@
 """
 Publisher Final Delivery App v2
-- Gemini 3.1 Pro: audio analysis (Tab 01)
-- Claude Sonnet: all writing (Tabs 02-06)
+- Gemini 3.1 Pro: audio analysis (Tab 01) — now produces 6 fields per track
+- Claude Sonnet 5: all writing (Tabs 02-06) — Tab 02 synthesizes all 6 into master description
 - Dropbox: cloud folder integration
 - Manual Refinement: fix any existing copy inline
 - Light theme: clean Streamlit default
@@ -74,6 +74,22 @@ st.markdown("""
         margin-top: 2.5rem;
         padding-top: 1.5rem;
         border-top: 1px solid #e0e0e0;
+    }
+    .gemini-source-field {
+        background: #f8f9fa;
+        border-left: 3px solid #dee2e6;
+        padding: 0.5rem 0.75rem;
+        margin-bottom: 0.4rem;
+        font-size: 0.85rem;
+        border-radius: 0 4px 4px 0;
+    }
+    .gemini-source-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 2px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -166,6 +182,10 @@ def check_contamination(desc: str, catalog: str) -> list:
         return []
 
 
+def context_desc_label(catalog: str) -> str:
+    return "Campaign Description" if catalog == "EPP" else "Trailer Description"
+
+
 def save_to_history(title: str, desc: str):
     if desc and desc.strip():
         if title not in st.session_state.track_history:
@@ -190,6 +210,28 @@ def copy_button(text: str, key: str, label: str = "Copy to Clipboard"):
     """, unsafe_allow_html=True)
 
 
+def gemini_source_block(track: dict, catalog: str):
+    """Renders the 6 Gemini source fields in a compact reference block."""
+    cdl = context_desc_label(catalog)
+    fields = [
+        ("Overall Consensus", track.get("Overall Consensus", "")),
+        (cdl, track.get(cdl, "")),
+        ("Editor Description", track.get("Editor Description", "")),
+        ("Supervisor Description", track.get("Supervisor Description", "")),
+        ("Keywords", track.get("Keywords", "")),
+        ("Tip", track.get("Tip", "")),
+    ]
+    for label, val in fields:
+        if val:
+            st.markdown(
+                f'<div class="gemini-source-field">'
+                f'<div class="gemini-source-label">{label}</div>'
+                f'{val}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 catalog = st.session_state.app_data.get("catalog", "EPP")
 
@@ -197,7 +239,6 @@ with st.sidebar:
     st.markdown("### PUBLISHER FINAL DELIVERY")
     st.divider()
 
-    # Logo — based on current catalog
     logo_map = {
         "redCola": "redCola logo 200x2001934x751.jpg",
         "SSC": "SSC 200x200 8.27.08#U202fPM.jpg",
@@ -216,7 +257,6 @@ with st.sidebar:
 
     st.divider()
 
-    # Navigation
     active_tab = st.radio(
         "Navigate", TABS,
         index=st.session_state.active_tab_index,
@@ -240,7 +280,6 @@ with st.sidebar:
         st.session_state.active_tab_index = 0
         st.success("Session cleared.")
 
-    # API keys — collapsed, only needed if secrets not configured
     with st.expander("⚙️ Configuration"):
         gemini_api_key = st.secrets.get("GEMINI_API_KEY", None) or st.text_input(
             "Gemini API Key", type="password", key="gemini_key_input",
@@ -274,14 +313,14 @@ if active_tab_index == 0:
     """, unsafe_allow_html=True)
     st.divider()
     for num, name, desc in [
-        ("01", "Ingest Audio", "Upload files or pull from Dropbox. Gemini analyses each track."),
-        ("02", "Track Descriptions", "Claude refines raw Gemini output through the Council filter."),
-        ("03", "Album Description", "Claude synthesises the album arc from all track descriptions."),
+        ("01", "Ingest Audio", "Upload files or pull from Dropbox. Gemini produces 6 data fields per track."),
+        ("02", "Track Descriptions", "Claude synthesizes all 6 Gemini fields into one definitive master description."),
+        ("03", "Album Description", "Claude synthesises the album arc from all master descriptions."),
         ("04", "Album Name", "Claude generates original title concepts. Select one to carry forward."),
         ("05", "Cover Art Prompts", "Claude writes MidJourney v7 prompts with copy buttons."),
         ("06", "MailChimp Intro", "Claude writes the editorial memo for supervisors."),
         ("07", "Fix Existing Copy", "Paste any bad copy — Claude rewrites it through the Council."),
-        ("08", "Export", "Clean Room validation → ZIP file."),
+        ("08", "Export", "Clean Room validation → unified CSV + ZIP file."),
     ]:
         st.markdown(f"`{num}` **{name}** — {desc}")
 
@@ -294,7 +333,6 @@ if active_tab_index == 0:
 elif active_tab_index == 1:
     st.title("01 · INGEST AUDIO")
 
-    # Catalog selector lives here — top of the flow
     st.subheader("Select Catalog")
     catalog_choice = st.selectbox(
         "Active Catalog", ["EPP", "redCola", "SSC"],
@@ -307,6 +345,7 @@ elif active_tab_index == 1:
         st.rerun()
 
     catalog = st.session_state.app_data.get("catalog", "EPP")
+    cdl = context_desc_label(catalog)
     st.divider()
 
     if not gemini_api_key:
@@ -317,7 +356,8 @@ elif active_tab_index == 1:
 
     with col_upload:
         st.subheader("Upload Files")
-        st.caption("File names containing 'sparse' or 'full' are tagged automatically.")
+        st.caption("Gemini now produces 6 fields per track: Overall Consensus, "
+                   f"{cdl}, Editor Description, Supervisor Description, Keywords, Tip.")
         uploaded_files = st.file_uploader(
             "Drag audio files here", type=["mp3", "wav", "aiff", "flac"],
             accept_multiple_files=True, label_visibility="collapsed"
@@ -344,8 +384,13 @@ elif active_tab_index == 1:
                                 st.session_state.app_data["tracks"].append({
                                     "Title": clean_title,
                                     "Mix Type": detect_mix_type(clean_title),
+                                    "Overall Consensus": metadata.get("Overall Consensus", ""),
+                                    cdl: metadata.get(cdl, ""),
+                                    "Editor Description": metadata.get("Editor Description", ""),
+                                    "Supervisor Description": metadata.get("Supervisor Description", ""),
                                     "Keywords": metadata.get("Keywords", ""),
-                                    "Track Description": metadata.get("Description", ""),
+                                    "Tip": metadata.get("Tip", ""),
+                                    "Track Description": "",  # filled by Tab 02 synthesis
                                 })
                     except Exception as e:
                         import traceback
@@ -354,7 +399,7 @@ elif active_tab_index == 1:
                         if os.path.exists(safe_path):
                             os.remove(safe_path)
                     progress.progress((idx + 1) / len(uploaded_files))
-                st.success("Analysis complete.")
+                st.success("Analysis complete. Go to Tab 02 to synthesize master descriptions.")
                 st.rerun()
 
         if st.button("Analyse with Gemini", disabled=not uploaded_files):
@@ -407,8 +452,13 @@ elif active_tab_index == 1:
                                         st.session_state.app_data["tracks"].append({
                                             "Title": clean_title,
                                             "Mix Type": detect_mix_type(clean_title),
+                                            "Overall Consensus": metadata.get("Overall Consensus", ""),
+                                            cdl: metadata.get(cdl, ""),
+                                            "Editor Description": metadata.get("Editor Description", ""),
+                                            "Supervisor Description": metadata.get("Supervisor Description", ""),
                                             "Keywords": metadata.get("Keywords", ""),
-                                            "Track Description": metadata.get("Description", ""),
+                                            "Tip": metadata.get("Tip", ""),
+                                            "Track Description": "",
                                         })
                             except Exception as e:
                                 st.error(f"Failed {f['name']}: {str(e)}")
@@ -428,11 +478,27 @@ elif active_tab_index == 1:
     st.divider()
     st.subheader("Track Data")
     if st.session_state.app_data["tracks"]:
-        df = pd.DataFrame(st.session_state.app_data["tracks"])
-        edited_df = st.data_editor(df, key="editor_tab1", num_rows="dynamic")
-        st.session_state.app_data["tracks"] = edited_df.to_dict("records")
-        csv = edited_df.to_csv(index=False).encode("utf-8")
-        st.download_button("Download Keywords CSV", csv, "Keywords.csv", "text/csv")
+        # Show a concise summary table (Title, Mix Type, Keywords — not all 6 fields)
+        summary_rows = []
+        for t in st.session_state.app_data["tracks"]:
+            summary_rows.append({
+                "Title": t.get("Title", ""),
+                "Mix Type": t.get("Mix Type", ""),
+                "Keywords": t.get("Keywords", ""),
+                "Gemini Status": "✓ 6 fields" if t.get("Overall Consensus") else "⚠ legacy format",
+                "Master Description": "✓ Ready" if t.get("Track Description") else "— Pending Tab 02",
+            })
+        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+
+        # Full data expander for each track
+        with st.expander("View full Gemini output per track"):
+            for t in st.session_state.app_data["tracks"]:
+                st.markdown(f"**{t.get('Title', '')}**")
+                gemini_source_block(t, catalog)
+                st.divider()
+
+        csv = pd.DataFrame(st.session_state.app_data["tracks"]).to_csv(index=False).encode("utf-8")
+        st.download_button("Download Raw Data CSV", csv, "Raw_Track_Data.csv", "text/csv")
     else:
         st.info("No tracks ingested yet.")
 
@@ -444,6 +510,7 @@ elif active_tab_index == 1:
 # ══════════════════════════════════════════════════════════════════════════════
 elif active_tab_index == 2:
     st.title("02 · TRACK DESCRIPTIONS")
+    st.caption("Claude synthesizes all 6 Gemini fields into one definitive 3-sentence master description.")
     catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not st.session_state.app_data["tracks"]:
@@ -458,7 +525,7 @@ elif active_tab_index == 2:
     col_action, col_editor = st.columns([1, 1])
 
     with col_action:
-        st.subheader("Refine All Descriptions")
+        st.subheader("Synthesize Master Descriptions")
         tracks = st.session_state.app_data["tracks"]
         full_count = sum(1 for t in tracks if t.get("Mix Type") == "full")
         sparse_count = sum(1 for t in tracks if t.get("Mix Type") == "sparse")
@@ -466,44 +533,47 @@ elif active_tab_index == 2:
         if full_count or sparse_count:
             st.caption(f"Detected: {full_count} full mix · {sparse_count} sparse · {unknown_count} undetected")
 
-        if st.button("Run Council Refinement", type="primary"):
-            with st.spinner("Council working..."):
+        pending = sum(1 for t in tracks if not t.get("Track Description"))
+        if pending:
+            st.info(f"{pending} track(s) pending synthesis.")
+
+        if st.button("Synthesize All", type="primary"):
+            with st.spinner("Council synthesizing..."):
                 updated = []
                 prog = st.progress(0)
                 for idx, track in enumerate(tracks):
                     save_to_history(track["Title"], track.get("Track Description", ""))
-                    refined = st.session_state.engine.refine_track_description(
+                    master = st.session_state.engine.synthesize_master_description(
                         track["Title"],
-                        track.get("Track Description", ""),
+                        track,
                         catalog, claude_api_key,
                         mix_type=track.get("Mix Type", "unknown"),
                     )
-                    track["Track Description"] = refined
+                    track["Track Description"] = master
                     updated.append(track)
                     prog.progress((idx + 1) / len(tracks))
                 st.session_state.app_data["tracks"] = updated
-            st.success("All descriptions refined.")
+            st.success("All master descriptions synthesized.")
             st.rerun()
 
         st.divider()
-        st.subheader("Refine Single Track")
+        st.subheader("Synthesize Single Track")
         track_titles = [t["Title"] for t in tracks]
         selected_track = st.selectbox("Select track", track_titles)
-        if st.button("Refine Selected"):
-            with st.spinner("Refining..."):
+        if st.button("Synthesize Selected"):
+            with st.spinner("Synthesizing..."):
                 track = next(t for t in tracks if t["Title"] == selected_track)
                 save_to_history(track["Title"], track.get("Track Description", ""))
-                refined = st.session_state.engine.refine_track_description(
-                    track["Title"], track.get("Track Description", ""),
-                    catalog, claude_api_key,
+                master = st.session_state.engine.synthesize_master_description(
+                    track["Title"], track, catalog, claude_api_key,
                     mix_type=track.get("Mix Type", "unknown"),
                 )
-                track["Track Description"] = refined
+                track["Track Description"] = master
             st.success(f"'{selected_track}' updated.")
             st.rerun()
 
     with col_editor:
-        st.subheader("Descriptions")
+        st.subheader("Master Descriptions")
         for track in st.session_state.app_data["tracks"]:
             title = track["Title"]
             mix_type = track.get("Mix Type", "unknown")
@@ -528,6 +598,14 @@ elif active_tab_index == 2:
             )
             if new_desc != desc:
                 track["Track Description"] = new_desc
+
+            # Gemini source data — collapsed reference
+            has_gemini = bool(track.get("Overall Consensus"))
+            with st.expander(f"Gemini source data {'✓' if has_gemini else '(not yet ingested)'}"):
+                if has_gemini:
+                    gemini_source_block(track, catalog)
+                else:
+                    st.caption("Re-ingest this track in Tab 01 to get the 6-field Gemini output.")
 
             history = st.session_state.track_history.get(title, [])
             if history:
@@ -561,12 +639,13 @@ elif active_tab_index == 3:
     col_action, col_output = st.columns([1, 1])
 
     with col_action:
-        st.subheader("Synthesise from Track Descriptions")
+        st.subheader("Synthesise from Master Descriptions")
         track_count = len(st.session_state.app_data["tracks"])
         if track_count == 0:
             st.warning("No tracks loaded. Complete Tab 01 first.")
         else:
-            st.write(f"Synthesising from {track_count} track description(s).")
+            ready = sum(1 for t in st.session_state.app_data["tracks"] if t.get("Track Description"))
+            st.write(f"Synthesising from {ready} of {track_count} track(s) with master descriptions.")
             if st.button("Generate Album Description", type="primary"):
                 with st.spinner("Council synthesising..."):
                     descs = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
@@ -860,7 +939,9 @@ elif active_tab_index == 8:
             st.session_state.app_data.get("album_name", "album")
         ).split("\n")[0][:30].strip()
 
-        zip_buffer = st.session_state.engine.compile_final_package(st.session_state.app_data)
+        zip_buffer = st.session_state.engine.compile_final_package(
+            st.session_state.app_data, catalog=catalog
+        )
         st.download_button(
             label="Download Final Delivery ZIP",
             data=zip_buffer,
@@ -868,6 +949,7 @@ elif active_tab_index == 8:
             mime="application/zip",
             type="primary",
         )
+        st.caption("ZIP contains: Track_Data.csv (all columns), Album_Description.txt, Album_Name.txt, MidJourney_Prompts.txt, MailChimp_Copy.txt")
 
         if dropbox_token:
             st.divider()
@@ -890,8 +972,11 @@ elif active_tab_index == 8:
     st.divider()
     st.subheader("Session Summary")
     data = st.session_state.app_data
+    tracks = data.get("tracks", [])
+    master_ready = sum(1 for t in tracks if t.get("Track Description"))
+    gemini_ready = sum(1 for t in tracks if t.get("Overall Consensus"))
     cols = st.columns(4)
-    cols[0].metric("Tracks", len(data.get("tracks", [])))
-    cols[1].metric("Album Description", "✓" if data.get("album_description") else "—")
-    cols[2].metric("MailChimp Intro", "✓" if data.get("mailchimp_intro") else "—")
-    cols[3].metric("Cover Art Prompts", "✓" if data.get("cover_art") else "—")
+    cols[0].metric("Tracks", len(tracks))
+    cols[1].metric("Gemini Fields", f"{gemini_ready}/{len(tracks)}")
+    cols[2].metric("Master Descriptions", f"{master_ready}/{len(tracks)}")
+    cols[3].metric("Album Package", "✓" if (data.get("album_description") and data.get("mailchimp_intro")) else "—")
