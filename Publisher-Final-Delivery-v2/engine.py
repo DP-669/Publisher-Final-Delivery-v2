@@ -198,7 +198,7 @@ class IngestionEngine:
             return ""
         kw_list = [k.strip() for k in re.split(r"[,;]", keywords_raw) if k.strip()]
 
-        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
+        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600000))
 
         corrected = []
         for kw in kw_list:
@@ -265,7 +265,7 @@ class IngestionEngine:
         self, file_path: str, clean_title: str, catalog: str, gemini_api_key: str
     ) -> Optional[Dict]:
         """Analyze a music track (full or sparse mix). Returns 6-field dict."""
-        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
+        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600000))
         ext = os.path.splitext(file_path)[1].lower()
         mime_type = AUDIO_MIME_MAP.get(ext, "audio/mpeg")
 
@@ -342,7 +342,7 @@ class IngestionEngine:
         self, file_bytes: bytes, ext: str, element_name: str, gemini_api_key: str
     ) -> Optional[Dict]:
         """Analyze a sound design element. Returns focused SDE metadata dict."""
-        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
+        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600000))
         mime_type = AUDIO_MIME_MAP.get(ext.lower(), "audio/mpeg")
         analysis_prompt = self.prompts.generate_sound_design_analysis_prompt(element_name)
 
