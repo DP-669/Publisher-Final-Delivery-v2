@@ -15,6 +15,12 @@ Tier 2 fixes applied (2026-08-13):
 - Updated Claude model to claude-sonnet-5
 - Catalog normalizer added to prompts.py (fixes contamination from name variants)
 - Tab 02 refinement prompt rewritten to preserve Gemini audio specifics
+
+Tier 3 update (2026-08-13):
+- Gemini now produces 6 fields per track (Overall Consensus, Trailer/Campaign Description,
+  Editor Description, Supervisor Description, Keywords, Tip)
+- synthesize_master_description(): Claude synthesizes all 6 into one definitive 3-sentence description
+- compile_final_package(): single unified CSV containing all columns
 """
 import os
 import json
@@ -53,6 +59,10 @@ COMMERCIAL_TERMS = {
 THEATRICAL_CATALOGS = {"redcola", "rc", "ssc", "short story collective"}
 COMMERCIAL_CATALOGS = {"epp", "ekonomic propaganda"}
 
+# ── Track data field names ─────────────────────────────────────────────────────
+TRACK_FIELDS_BASE = ["Title", "Mix Type", "Overall Consensus", "Editor Description",
+                     "Supervisor Description", "Keywords", "Tip", "Track Description"]
+
 
 class IngestionEngine:
     """Core engine: Gemini for audio, Claude for writing, Dropbox for cloud access."""
@@ -84,6 +94,11 @@ class IngestionEngine:
                 self.folders[folder_key] = match
         except Exception as e:
             print(f"Error resolving subfolders: {e}")
+
+    def _context_desc_label(self, catalog: str) -> str:
+        """Returns 'Campaign Description' for EPP, 'Trailer Description' for rC/SSC."""
+        from prompts import _normalize_catalog
+        return "Campaign Description" if _normalize_catalog(catalog) == "EPP" else "Trailer Description"
 
     # ── Dropbox Integration ────────────────────────────────────────────────────
     def list_dropbox_audio_files(self, dropbox_token: str, folder_path: str = "") -> List[Dict]:
@@ -238,6 +253,24 @@ class IngestionEngine:
             text = text[:-3]
 
         metadata = json.loads(text.strip())
+
+        # Normalise context description to a single key regardless of catalog
+        context_label = self._context_desc_label(catalog)
+        for raw_key in ("Trailer_Description", "Campaign_Description",
+                        "Trailer Description", "Campaign Description"):
+            if raw_key in metadata:
+                metadata[context_label] = metadata.pop(raw_key)
+                break
+
+        # Normalise other underscore keys to space keys for consistency
+        for us_key, sp_key in (
+            ("Overall_Consensus", "Overall Consensus"),
+            ("Editor_Description", "Editor Description"),
+            ("Supervisor_Description", "Supervisor Description"),
+        ):
+            if us_key in metadata:
+                metadata[sp_key] = metadata.pop(us_key)
+
         if metadata.get("Keywords"):
             metadata["Keywords"] = self.process_keywords(
                 metadata["Keywords"], catalog, gemini_api_key
@@ -264,10 +297,24 @@ class IngestionEngine:
         except Exception as e:
             return f"Claude Error: {str(e)}"
 
+    def synthesize_master_description(
+        self, title: str, track_data: dict, catalog: str, claude_api_key: str,
+        mix_type: str = "unknown"
+    ) -> str:
+        """
+        Tab 02 — synthesize all 6 Gemini fields into one definitive 3-sentence master description.
+        track_data is the full track dict from session state.
+        """
+        sys_instr, prompt = self.prompts.generate_master_description_prompt(
+            title, track_data, catalog, mix_type=mix_type
+        )
+        return self.call_claude(sys_instr, prompt, claude_api_key)
+
     def refine_track_description(
         self, title: str, raw_desc: str, catalog: str, claude_api_key: str,
         mix_type: str = "unknown"
     ) -> str:
+        """Legacy single-description refinement. Used by Tab 07 manual refinement."""
         sys_instr, prompt = self.prompts.generate_track_description_prompt(
             title, raw_desc, catalog, mix_type=mix_type
         )
@@ -382,6 +429,7 @@ class IngestionEngine:
                     if any(b in kw.lower() for b in banned):
                         errors.append(f"Track '{title}': keyword '{kw}' contains a banned word.")
 
+            # Validate master description (Track Description)
             desc = track.get("Track Description", "").strip()
             if desc:
                 desc_lower = desc.lower()
@@ -427,17 +475,38 @@ class IngestionEngine:
         return len(errors) == 0, errors
 
     # ── ZIP Compiler ───────────────────────────────────────────────────────────
-    def compile_final_package(self, data: Dict) -> io.BytesIO:
+    def compile_final_package(self, data: Dict, catalog: str = "") -> io.BytesIO:
+        """
+        Single unified CSV with all track columns + separate text files for album assets.
+        Column order: Title, Mix Type, Track Description (Master), Overall Consensus,
+        Trailer/Campaign Description, Editor Description, Supervisor Description, Keywords, Tip
+        """
+        context_label = self._context_desc_label(catalog) if catalog else "Trailer Description"
+
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             if data.get("tracks"):
-                df_kw = pd.DataFrame(data["tracks"])[["Title", "Keywords"]]
-                zf.writestr("01 Track Keywords/Track_Keywords.csv", df_kw.to_csv(index=False))
-                df_desc = pd.DataFrame(data["tracks"])[["Title", "Track Description"]]
-                zf.writestr("02 Track Descriptions/Track_Descriptions.csv", df_desc.to_csv(index=False))
-            zf.writestr("03 Album Description/Album_Description.txt", data.get("album_description", ""))
-            zf.writestr("04 Album Name/Album_Name.txt", data.get("album_name", ""))
-            zf.writestr("05 Album Cover Art/MidJourney_Prompts.txt", data.get("cover_art", ""))
-            zf.writestr("06 MailChimp Intro/MailChimp_Copy.txt", data.get("mailchimp_intro", ""))
+                tracks = data["tracks"]
+                rows = []
+                for t in tracks:
+                    rows.append({
+                        "Title": t.get("Title", ""),
+                        "Mix Type": t.get("Mix Type", ""),
+                        "Track Description": t.get("Track Description", ""),
+                        "Overall Consensus": t.get("Overall Consensus", ""),
+                        context_label: t.get(context_label, ""),
+                        "Editor Description": t.get("Editor Description", ""),
+                        "Supervisor Description": t.get("Supervisor Description", ""),
+                        "Keywords": t.get("Keywords", ""),
+                        "Tip": t.get("Tip", ""),
+                    })
+                df = pd.DataFrame(rows)
+                zf.writestr("Track_Data.csv", df.to_csv(index=False))
+
+            zf.writestr("Album_Description.txt", data.get("album_description", ""))
+            zf.writestr("Album_Name.txt", data.get("album_name_selected") or data.get("album_name", ""))
+            zf.writestr("MidJourney_Prompts.txt", data.get("cover_art", ""))
+            zf.writestr("MailChimp_Copy.txt", data.get("mailchimp_intro", ""))
+
         zip_buffer.seek(0)
         return zip_buffer
