@@ -267,35 +267,21 @@ class IngestionEngine:
         """Analyze a music track (full or sparse mix). Returns 6-field dict."""
         client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
         ext = os.path.splitext(file_path)[1].lower()
+        mime_type = AUDIO_MIME_MAP.get(ext, "audio/mpeg")
 
         with open(file_path, "rb") as f:
             file_bytes = f.read()
 
+        analysis_prompt = self.prompts.generate_keywords_analysis_prompt(catalog, clean_title)
+
         try:
-            uploaded_file = self._upload_to_gemini(file_bytes, ext, clean_title, client)
-            analysis_prompt = self.prompts.generate_keywords_analysis_prompt(catalog, clean_title)
-            mime_type = AUDIO_MIME_MAP.get(ext, "audio/wav")
-
-            try:
-                response = client.models.generate_content(
-                    model=GEMINI_AUDIO_MODEL,
-                    contents=[
-                        types.Part.from_uri(
-                            file_uri=uploaded_file.uri,
-                            mime_type=mime_type,
-                        ),
-                        analysis_prompt,
-                    ],
-                    config=types.GenerateContentConfig(
-                        http_options=types.HttpOptions(timeout=600),
-                    ),
-                )
-            finally:
-                try:
-                    client.files.delete(name=uploaded_file.name)
-                except Exception:
-                    pass
-
+            response = client.models.generate_content(
+                model=GEMINI_AUDIO_MODEL,
+                contents=[
+                    types.Part(inline_data=types.Blob(mime_type=mime_type, data=file_bytes)),
+                    analysis_prompt,
+                ],
+            )
         except Exception as exc:
             if _is_quota_error(exc):
                 from dropbox_pipeline import send_ntfy
@@ -357,32 +343,17 @@ class IngestionEngine:
     ) -> Optional[Dict]:
         """Analyze a sound design element. Returns focused SDE metadata dict."""
         client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
+        mime_type = AUDIO_MIME_MAP.get(ext.lower(), "audio/mpeg")
+        analysis_prompt = self.prompts.generate_sound_design_analysis_prompt(element_name)
 
         try:
-            uploaded_file = self._upload_to_gemini(file_bytes, ext, element_name, client)
-            analysis_prompt = self.prompts.generate_sound_design_analysis_prompt(element_name)
-            mime_type = AUDIO_MIME_MAP.get(ext.lower(), "audio/wav")
-
-            try:
-                response = client.models.generate_content(
-                    model=GEMINI_AUDIO_MODEL,
-                    contents=[
-                        types.Part.from_uri(
-                            file_uri=uploaded_file.uri,
-                            mime_type=mime_type,
-                        ),
-                        analysis_prompt,
-                    ],
-                    config=types.GenerateContentConfig(
-                        http_options=types.HttpOptions(timeout=300),
-                    ),
-                )
-            finally:
-                try:
-                    client.files.delete(name=uploaded_file.name)
-                except Exception:
-                    pass
-
+            response = client.models.generate_content(
+                model=GEMINI_AUDIO_MODEL,
+                contents=[
+                    types.Part(inline_data=types.Blob(mime_type=mime_type, data=file_bytes)),
+                    analysis_prompt,
+                ],
+            )
         except Exception as exc:
             if _is_quota_error(exc):
                 from dropbox_pipeline import send_ntfy
