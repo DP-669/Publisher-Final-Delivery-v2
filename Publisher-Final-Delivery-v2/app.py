@@ -1,20 +1,28 @@
 """
 Publisher Final Delivery App v2
-- Gemini 3.1 Pro: audio analysis (Tab 01) — now produces 6 fields per track
-- Claude Sonnet 5: all writing (Tabs 02-06) — Tab 02 synthesizes all 6 into master description
-- Dropbox: cloud folder integration
+- Gemini 3.1 Pro: audio analysis (Tab 01) — 6 fields per track
+- Claude Sonnet 5: all writing (Tabs 02-06) — Tab 02 synthesizes 6 fields into master description
+- Dropbox Pipeline: paste a shared link → auto-crawl → auto-analyze → auto-synthesize → ntfy
 - Manual Refinement: fix any existing copy inline
-- Light theme: clean Streamlit default
-- Flow navigation: Next button at bottom of each tab
-- Catalog selector on Tab 01
-- API keys in collapsed sidebar expander
 """
 import streamlit as st
 import pandas as pd
 import os
 import re
+import time
 import random
 from engine import IngestionEngine
+
+try:
+    from dropbox_pipeline import (
+        CrawlResult, FileEntry, crawl_album_folder, detect_catalog_from_path,
+        is_quality_checked, resolve_shared_link, make_batches,
+        generate_alt_description, generate_cutdown_description, send_ntfy,
+        is_quota_error,
+    )
+    PIPELINE_AVAILABLE = True
+except ImportError:
+    PIPELINE_AVAILABLE = False
 
 st.set_page_config(
     page_title="Publisher Final Delivery",
@@ -26,71 +34,30 @@ st.set_page_config(
 # ── Styling ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .block-container {
-        max-width: 860px;
-        padding: 2rem 2rem;
-    }
-    @media (max-width: 768px) {
-        .block-container { max-width: 100%; padding: 1rem 0.75rem; }
-    }
+    .block-container { max-width: 860px; padding: 2rem 2rem; }
+    @media (max-width: 768px) { .block-container { max-width: 100%; padding: 1rem 0.75rem; } }
     .stSidebar .block-container { max-width: 100%; }
     .stDataFrame, .stDataEditor { width: 100% !important; }
     .stTextArea textarea { width: 100% !important; }
-    @media (max-width: 640px) {
-        [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; }
-    }
+    @media (max-width: 640px) { [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; } }
     .mailchimp-output {
-        white-space: pre-wrap;
-        font-family: Georgia, serif;
-        font-size: 1rem;
-        line-height: 1.8;
-        padding: 1.5rem;
-        border: 1px solid #e0e0e0;
-        border-radius: 6px;
-        background: #fafafa;
-        margin-bottom: 1rem;
+        white-space: pre-wrap; font-family: Georgia, serif; font-size: 1rem;
+        line-height: 1.8; padding: 1.5rem; border: 1px solid #e0e0e0;
+        border-radius: 6px; background: #fafafa; margin-bottom: 1rem;
     }
     .contamination-warn {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        border-left: 4px solid #ff6b35;
-        border-radius: 4px;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.8rem;
-        margin-top: 0.3rem;
-        margin-bottom: 0.5rem;
+        background: #fff3cd; border: 1px solid #ffc107; border-left: 4px solid #ff6b35;
+        border-radius: 4px; padding: 0.4rem 0.8rem; font-size: 0.8rem;
+        margin-top: 0.3rem; margin-bottom: 0.5rem;
     }
-    .mix-badge-full {
-        background: #e3f2fd; color: #1565c0;
-        border-radius: 3px; padding: 2px 8px;
-        font-size: 0.75rem; font-weight: 600; margin-left: 6px;
-    }
-    .mix-badge-sparse {
-        background: #f3e5f5; color: #6a1b9a;
-        border-radius: 3px; padding: 2px 8px;
-        font-size: 0.75rem; font-weight: 600; margin-left: 6px;
-    }
-    .next-button-container {
-        margin-top: 2.5rem;
-        padding-top: 1.5rem;
-        border-top: 1px solid #e0e0e0;
-    }
-    .gemini-source-field {
-        background: #f8f9fa;
-        border-left: 3px solid #dee2e6;
-        padding: 0.5rem 0.75rem;
-        margin-bottom: 0.4rem;
-        font-size: 0.85rem;
-        border-radius: 0 4px 4px 0;
-    }
-    .gemini-source-label {
-        font-size: 0.7rem;
-        font-weight: 700;
-        color: #6c757d;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 2px;
-    }
+    .mix-badge-full { background:#e3f2fd;color:#1565c0;border-radius:3px;padding:2px 8px;font-size:0.75rem;font-weight:600;margin-left:6px; }
+    .mix-badge-sparse { background:#f3e5f5;color:#6a1b9a;border-radius:3px;padding:2px 8px;font-size:0.75rem;font-weight:600;margin-left:6px; }
+    .mix-badge-sde { background:#e8f5e9;color:#2e7d32;border-radius:3px;padding:2px 8px;font-size:0.75rem;font-weight:600;margin-left:6px; }
+    .mix-badge-alt { background:#fff8e1;color:#f57f17;border-radius:3px;padding:2px 8px;font-size:0.75rem;font-weight:600;margin-left:6px; }
+    .next-button-container { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid #e0e0e0; }
+    .gemini-source-field { background:#f8f9fa;border-left:3px solid #dee2e6;padding:0.5rem 0.75rem;margin-bottom:0.4rem;font-size:0.85rem;border-radius:0 4px 4px 0; }
+    .gemini-source-label { font-size:0.7rem;font-weight:700;color:#6c757d;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px; }
+    .pipeline-log { font-family:monospace;font-size:0.78rem;background:#f8f8f8;padding:0.75rem;border-radius:4px;max-height:200px;overflow-y:auto; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -113,12 +80,8 @@ if "engine" not in st.session_state:
 
 if "app_data" not in st.session_state:
     st.session_state.app_data = {
-        "tracks": [],
-        "album_description": "",
-        "album_name": "",
-        "album_name_selected": "",
-        "cover_art": "",
-        "mailchimp_intro": "",
+        "tracks": [], "album_description": "", "album_name": "",
+        "album_name_selected": "", "cover_art": "", "mailchimp_intro": "",
         "catalog": "EPP",
     }
 
@@ -133,6 +96,26 @@ if "dropbox_files" not in st.session_state:
 
 if "track_history" not in st.session_state:
     st.session_state.track_history = {}
+
+_PIPE_DEFAULT = {
+    "status": "idle",        # idle | crawling | processing | synthesizing | done | error
+    "shared_link": "",
+    "album_path": "",
+    "album_name": "",
+    "catalog": "",
+    "crawl_log": [],
+    "queue": [],             # list of lists of FileEntry
+    "processed_count": 0,
+    "total_to_analyze": 0,
+    "current_file": "",
+    "log": [],
+    "error": "",
+    "heartbeat_count": 0,
+    "dropbox_output_path": "",
+}
+
+if "pipeline" not in st.session_state:
+    st.session_state.pipeline = dict(_PIPE_DEFAULT)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -154,8 +137,12 @@ def next_button(label_override: str = None):
 
 def detect_mix_type(title: str) -> str:
     t = title.lower()
-    if any(x in t for x in ["sparse", "sprs", "sp_"]):
+    if any(x in t for x in ["sparse", "sparce", "sprs", "sp_"]):
         return "sparse"
+    if any(x in t for x in ["sound design", "sde", "element"]):
+        return "sound_design"
+    if any(x in t for x in ["alt mix", "alt master", "no string", "no vocal"]):
+        return "alt"
     if any(x in t for x in ["full", "fl_", "master"]):
         return "full"
     return "unknown"
@@ -203,15 +190,12 @@ def copy_button(text: str, key: str, label: str = "Copy to Clipboard"):
     <button onclick="navigator.clipboard.writeText(`{escaped}`).then(()=>{{
         document.getElementById('cb_{key}').style.display='inline';
         setTimeout(()=>document.getElementById('cb_{key}').style.display='none', 2000);
-    }})" style="cursor:pointer;padding:4px 12px;font-size:0.8rem;margin-bottom:8px;">
-        {label}
-    </button>
+    }})" style="cursor:pointer;padding:4px 12px;font-size:0.8rem;margin-bottom:8px;">{label}</button>
     <span id="cb_{key}" style="display:none;color:green;font-size:0.8rem;margin-left:8px;">Copied ✓</span>
     """, unsafe_allow_html=True)
 
 
 def gemini_source_block(track: dict, catalog: str):
-    """Renders the 6 Gemini source fields in a compact reference block."""
     cdl = context_desc_label(catalog)
     fields = [
         ("Overall Consensus", track.get("Overall Consensus", "")),
@@ -224,12 +208,13 @@ def gemini_source_block(track: dict, catalog: str):
     for label, val in fields:
         if val:
             st.markdown(
-                f'<div class="gemini-source-field">'
-                f'<div class="gemini-source-label">{label}</div>'
-                f'{val}'
-                f'</div>',
+                f'<div class="gemini-source-field"><div class="gemini-source-label">{label}</div>{val}</div>',
                 unsafe_allow_html=True
             )
+
+
+def _reset_pipeline():
+    st.session_state.pipeline = dict(_PIPE_DEFAULT)
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
@@ -255,6 +240,21 @@ with st.sidebar:
     if catalog:
         st.caption(f"Catalog: **{catalog}**")
 
+    # Pipeline status indicator
+    pipe = st.session_state.pipeline
+    if pipe["status"] not in ("idle", "done"):
+        if pipe["status"] == "processing":
+            total = pipe.get("total_to_analyze", 1)
+            done = pipe.get("processed_count", 0)
+            pct = int(done / total * 100) if total else 0
+            st.caption(f"🔄 Pipeline: {pct}% ({done}/{total})")
+        elif pipe["status"] == "synthesizing":
+            st.caption("🔄 Pipeline: synthesizing...")
+        elif pipe["status"] == "error":
+            st.caption("❌ Pipeline: error")
+        elif pipe["status"] == "crawling":
+            st.caption("🔍 Pipeline: scanning...")
+
     st.divider()
 
     active_tab = st.radio(
@@ -270,14 +270,14 @@ with st.sidebar:
 
     if st.button("Reset Session"):
         st.session_state.app_data = {
-            "tracks": [], "album_description": "",
-            "album_name": "", "album_name_selected": "",
-            "cover_art": "", "mailchimp_intro": "",
+            "tracks": [], "album_description": "", "album_name": "",
+            "album_name_selected": "", "cover_art": "", "mailchimp_intro": "",
             "catalog": "EPP",
         }
         st.session_state.dropbox_files = []
         st.session_state.track_history = {}
         st.session_state.active_tab_index = 0
+        _reset_pipeline()
         st.success("Session cleared.")
 
     with st.expander("⚙️ Configuration"):
@@ -291,7 +291,7 @@ with st.sidebar:
         )
         dropbox_token = st.secrets.get("DROPBOX_TOKEN", None) or st.text_input(
             "Dropbox Token", type="password", key="dropbox_key_input",
-            placeholder="Optional"
+            placeholder="Required for pipeline"
         )
 
 gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
@@ -302,18 +302,145 @@ active_tab_index = st.session_state.active_tab_index
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PIPELINE AUTO-ADVANCE (runs on every rerun, regardless of active tab)
+# Processes one batch, then st.rerun() to continue automatically.
+# ══════════════════════════════════════════════════════════════════════════════
+if PIPELINE_AVAILABLE and gemini_api_key and dropbox_token:
+    pipe = st.session_state.pipeline
+
+    if pipe["status"] == "processing" and pipe["queue"]:
+        batch = pipe["queue"][0]
+
+        for entry in batch:
+            pipe["current_file"] = entry.display_name
+            try:
+                ext = os.path.splitext(entry.dropbox_path)[1]
+                file_bytes = st.session_state.engine.download_bytes_from_dropbox(
+                    dropbox_token, entry.dropbox_path
+                )
+                pipeline_catalog = pipe["catalog"]
+                cdl = st.session_state.engine._context_desc_label(pipeline_catalog)
+
+                if entry.category in ("full_mix", "sparse_mix"):
+                    metadata = st.session_state.engine.analyze_audio_bytes(
+                        file_bytes, ext, entry.display_name, pipeline_catalog, gemini_api_key
+                    )
+                    if metadata:
+                        existing_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
+                        if entry.display_name not in existing_titles:
+                            st.session_state.app_data["tracks"].append({
+                                "Title": entry.display_name,
+                                "Mix Type": entry.mix_type,
+                                "Overall Consensus": metadata.get("Overall Consensus", ""),
+                                cdl: metadata.get(cdl, ""),
+                                "Editor Description": metadata.get("Editor Description", ""),
+                                "Supervisor Description": metadata.get("Supervisor Description", ""),
+                                "Keywords": metadata.get("Keywords", ""),
+                                "Tip": metadata.get("Tip", ""),
+                                "Track Description": "",
+                            })
+                        pipe["log"].append(f"✓ {entry.display_name} [{entry.mix_type}]")
+
+                elif entry.category == "sound_design":
+                    sde_data = st.session_state.engine.analyze_sound_design_element(
+                        file_bytes, ext, entry.display_name, gemini_api_key
+                    )
+                    if sde_data:
+                        desc = ""
+                        if claude_api_key:
+                            desc = st.session_state.engine.synthesize_sound_design_description(
+                                entry.display_name, entry.parent_track, sde_data, claude_api_key
+                            )
+                        existing_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
+                        if entry.display_name not in existing_titles:
+                            st.session_state.app_data["tracks"].append({
+                                "Title": entry.display_name,
+                                "Mix Type": "Sound Design",
+                                "Overall Consensus": sde_data.get("Sonic_Character", ""),
+                                "Trailer Description": sde_data.get("Best_Usage", ""),
+                                "Editor Description": sde_data.get("Unique_Qualities", ""),
+                                "Supervisor Description": sde_data.get("Technical_Notes", ""),
+                                "Keywords": sde_data.get("Keywords", ""),
+                                "Tip": sde_data.get("Element_Type", ""),
+                                "Track Description": desc,
+                            })
+                        pipe["log"].append(f"✓ SDE: {entry.display_name} ({entry.parent_track})")
+
+            except Exception as exc:
+                err_str = str(exc)
+                pipe["log"].append(f"❌ {entry.display_name}: {err_str[:100]}")
+                if is_quota_error(exc):
+                    pipe["status"] = "error"
+                    pipe["error"] = (
+                        f"Gemini quota/billing error on '{entry.display_name}': {err_str}\n"
+                        "Top up Gemini API credits and restart the pipeline."
+                    )
+                    send_ntfy(
+                        "⚠️ PFD — Gemini quota exhausted",
+                        f"Pipeline stopped at '{entry.display_name}'.\n"
+                        f"{pipe['processed_count']}/{pipe['total_to_analyze']} files done.\n"
+                        "Top up Gemini API credits and restart.",
+                        priority="urgent",
+                    )
+                    break  # Stop processing this batch
+
+        if pipe["status"] != "error":
+            pipe["queue"].pop(0)
+            pipe["processed_count"] += len(batch)
+
+            # Heartbeat ntfy every 10 batches
+            pipe["heartbeat_count"] += 1
+            if pipe["heartbeat_count"] % 10 == 0:
+                send_ntfy(
+                    "PFD Pipeline — in progress",
+                    f"{pipe['album_name']} ({pipe['catalog']})\n"
+                    f"{pipe['processed_count']}/{pipe['total_to_analyze']} files done",
+                )
+
+            if not pipe["queue"]:
+                pipe["status"] = "synthesizing"
+
+            st.rerun()
+
+    elif pipe["status"] == "synthesizing":
+        pipeline_catalog = pipe["catalog"]
+        if claude_api_key:
+            tracks_to_synthesize = [
+                t for t in st.session_state.app_data["tracks"]
+                if not t.get("Track Description") and t.get("Overall Consensus")
+                and t.get("Mix Type") != "Sound Design"
+            ]
+            for track in tracks_to_synthesize:
+                master = st.session_state.engine.synthesize_master_description(
+                    track["Title"], track, pipeline_catalog, claude_api_key,
+                    mix_type=track.get("Mix Type", "unknown"),
+                )
+                track["Track Description"] = master
+
+        pipe["status"] = "done"
+        track_count = len(st.session_state.app_data["tracks"])
+        send_ntfy(
+            "✅ PFD Pipeline — complete",
+            f"{pipe.get('album_name', 'Album')} ({pipe.get('catalog', '')})\n"
+            f"{pipe['processed_count']} files analyzed, {track_count} tracks ready.\n"
+            "Open the app to review and export.",
+            priority="high",
+        )
+        st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TAB 00 · HOME
 # ══════════════════════════════════════════════════════════════════════════════
 if active_tab_index == 0:
     st.markdown("""
-    <h1 style='color:#cc0000; font-size:2.2rem; font-weight:800;
-    letter-spacing:-0.02em; margin-bottom:0.25rem;'>
+    <h1 style='color:#cc0000;font-size:2.2rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;'>
     PUBLISHER FINAL DELIVERY
     </h1>
     """, unsafe_allow_html=True)
     st.divider()
     for num, name, desc in [
-        ("01", "Ingest Audio", "Upload files or pull from Dropbox. Gemini produces 6 data fields per track."),
+        ("01", "Ingest Audio", "Paste a Dropbox link — pipeline auto-crawls, analyzes, and synthesizes. Or upload files manually."),
         ("02", "Track Descriptions", "Claude synthesizes all 6 Gemini fields into one definitive master description."),
         ("03", "Album Description", "Claude synthesises the album arc from all master descriptions."),
         ("04", "Album Name", "Claude generates original title concepts. Select one to carry forward."),
@@ -348,18 +475,161 @@ elif active_tab_index == 1:
     cdl = context_desc_label(catalog)
     st.divider()
 
-    if not gemini_api_key:
-        st.error("Gemini API key required. Open ⚙️ Configuration in the sidebar.")
-        st.stop()
+    mode = st.radio("Input mode", ["🔗 Dropbox Pipeline", "📁 Manual Upload"], horizontal=True)
 
-    col_upload, col_dropbox = st.columns([1, 1])
+    if mode == "🔗 Dropbox Pipeline":
+        # ── Dropbox Pipeline UI ────────────────────────────────────────────────
+        if not PIPELINE_AVAILABLE:
+            st.error("Pipeline module unavailable. Check that dropbox_pipeline.py is deployed.")
+        elif not dropbox_token:
+            st.error("Dropbox token required. Open ⚙️ Configuration in the sidebar.")
+        elif not gemini_api_key:
+            st.error("Gemini API key required. Open ⚙️ Configuration in the sidebar.")
+        else:
+            pipe = st.session_state.pipeline
 
-    with col_upload:
+            if pipe["status"] == "idle":
+                st.markdown(
+                    "Paste a shared Dropbox link to an album folder from the **Quality Checked** folder. "
+                    "Catalog is auto-detected from the path."
+                )
+                shared_link = st.text_input(
+                    "Dropbox shared link",
+                    placeholder="https://www.dropbox.com/scl/fo/...",
+                    key="pipeline_link_input",
+                )
+                if shared_link and shared_link.strip():
+                    pipe["shared_link"] = shared_link.strip()
+                    pipe["status"] = "crawling"
+                    st.rerun()
+
+            elif pipe["status"] == "crawling":
+                st.info(f"🔍 Scanning folder structure...")
+                with st.spinner("Resolving link and crawling..."):
+                    try:
+                        dbx = st.session_state.engine.get_dropbox_client(dropbox_token)
+                        album_path = resolve_shared_link(dbx, pipe["shared_link"])
+                        pipe["album_path"] = album_path
+                        pipe["dropbox_output_path"] = album_path
+
+                        detected_catalog = detect_catalog_from_path(album_path)
+                        pipe["catalog"] = detected_catalog
+                        if detected_catalog != "unknown":
+                            st.session_state.app_data["catalog"] = detected_catalog
+
+                        if not is_quality_checked(album_path):
+                            st.warning(
+                                "⚠️ This link doesn't appear to be in a Quality Checked folder. "
+                                "Make sure you're using the right link."
+                            )
+
+                        crawl = crawl_album_folder(dbx, album_path, detected_catalog)
+                        pipe["crawl_log"] = crawl.log
+                        pipe["album_name"] = crawl.album_name
+
+                        # Add auto-described entries (alt mixes, cutdowns) immediately
+                        pipe_cdl = st.session_state.engine._context_desc_label(detected_catalog)
+                        for entry in crawl.auto_described:
+                            if entry.category == "alt_mix":
+                                desc = generate_alt_description(entry.parent_track, entry.notes)
+                            else:
+                                desc = generate_cutdown_description(entry.parent_track, entry.notes)
+                            existing_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
+                            if entry.display_name not in existing_titles:
+                                st.session_state.app_data["tracks"].append({
+                                    "Title": entry.display_name,
+                                    "Mix Type": entry.mix_type,
+                                    "Overall Consensus": "",
+                                    pipe_cdl: "",
+                                    "Editor Description": "",
+                                    "Supervisor Description": "",
+                                    "Keywords": "",
+                                    "Tip": "",
+                                    "Track Description": desc,
+                                })
+
+                        analyzable = crawl.analyzable
+                        batches = make_batches(analyzable)
+                        pipe["queue"] = batches
+                        pipe["total_to_analyze"] = len(analyzable)
+                        pipe["processed_count"] = 0
+                        pipe["log"] = [
+                            f"Catalog: {detected_catalog}",
+                            f"Album: {crawl.album_name}",
+                            crawl.summary(),
+                            "─" * 40,
+                        ]
+                        pipe["heartbeat_count"] = 0
+                        pipe["status"] = "processing"
+
+                    except Exception as e:
+                        pipe["status"] = "error"
+                        pipe["error"] = str(e)
+
+                st.rerun()
+
+            elif pipe["status"] in ("processing", "synthesizing"):
+                total = pipe["total_to_analyze"]
+                done = pipe["processed_count"]
+                prog = done / total if total else 0
+
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**{pipe.get('album_name', 'Album')}** · {pipe.get('catalog', '')}")
+                with col2:
+                    st.caption(f"{done}/{total} files")
+
+                st.progress(prog)
+
+                if pipe["status"] == "processing" and pipe.get("current_file"):
+                    st.caption(f"Analyzing: {pipe['current_file']}")
+                elif pipe["status"] == "synthesizing":
+                    st.info("Gemini complete — Claude synthesizing master descriptions...")
+
+                with st.expander("Processing log", expanded=True):
+                    log_text = "\n".join(pipe["log"][-30:])
+                    st.markdown(f'<div class="pipeline-log">{log_text}</div>', unsafe_allow_html=True)
+
+                st.info("Processing in background — you can navigate to other tabs. An ntfy notification will fire when complete.")
+
+            elif pipe["status"] == "done":
+                track_count = len(st.session_state.app_data["tracks"])
+                st.success(
+                    f"✅ **Pipeline complete** — {pipe['processed_count']} files analyzed, "
+                    f"{track_count} total tracks ready."
+                )
+                st.caption(f"Album: {pipe.get('album_name', '')} | Catalog: {pipe.get('catalog', '')}")
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("→ Review Descriptions (Tab 02)", type="primary"):
+                        go_to_tab(2)
+                with col_b:
+                    if st.button("Run New Album"):
+                        _reset_pipeline()
+                        st.rerun()
+
+                with st.expander("Full processing log"):
+                    log_text = "\n".join(pipe["log"])
+                    st.markdown(f'<div class="pipeline-log">{log_text}</div>', unsafe_allow_html=True)
+
+            elif pipe["status"] == "error":
+                st.error(f"❌ Pipeline error:\n\n{pipe.get('error', 'Unknown error')}")
+                if st.button("Reset Pipeline"):
+                    _reset_pipeline()
+                    st.rerun()
+
+    else:
+        # ── Manual Upload UI ───────────────────────────────────────────────────
+        if not gemini_api_key:
+            st.error("Gemini API key required. Open ⚙️ Configuration in the sidebar.")
+            st.stop()
+
         st.subheader("Upload Files")
-        st.caption("Gemini now produces 6 fields per track: Overall Consensus, "
-                   f"{cdl}, Editor Description, Supervisor Description, Keywords, Tip.")
+        st.caption(f"Gemini produces 6 fields per track: Overall Consensus, {cdl}, "
+                   "Editor Description, Supervisor Description, Keywords, Tip.")
         uploaded_files = st.file_uploader(
-            "Drag audio files here", type=["mp3", "wav", "aiff", "flac"],
+            "Drag audio files here", type=["mp3", "wav", "aif", "aiff", "flac"],
             accept_multiple_files=True, label_visibility="collapsed"
         )
 
@@ -371,7 +641,7 @@ elif active_tab_index == 1:
                 for idx, uploaded_file in enumerate(uploaded_files):
                     clean_title = os.path.splitext(uploaded_file.name)[0]
                     file_ext = os.path.splitext(uploaded_file.name)[1]
-                    safe_path = f"{clean_title}{file_ext}"
+                    safe_path = f"/tmp/{clean_title}{file_ext}"
                     with open(safe_path, "wb") as f:
                         f.write(uploaded_file.getbuffer())
                     try:
@@ -390,7 +660,7 @@ elif active_tab_index == 1:
                                     "Supervisor Description": metadata.get("Supervisor Description", ""),
                                     "Keywords": metadata.get("Keywords", ""),
                                     "Tip": metadata.get("Tip", ""),
-                                    "Track Description": "",  # filled by Tab 02 synthesis
+                                    "Track Description": "",
                                 })
                     except Exception as e:
                         import traceback
@@ -405,70 +675,6 @@ elif active_tab_index == 1:
         if st.button("Analyse with Gemini", disabled=not uploaded_files):
             run_analysis_dialog()
 
-    with col_dropbox:
-        st.subheader("From Dropbox")
-        if not dropbox_token:
-            st.info("Add Dropbox token in ⚙️ Configuration to enable.")
-        else:
-            dropbox_folder = st.text_input(
-                "Dropbox folder path", value="", placeholder="/Music/New Album"
-            )
-            col_list, col_analyse = st.columns([1, 1])
-            with col_list:
-                if st.button("List Files"):
-                    with st.spinner("Connecting..."):
-                        try:
-                            files = st.session_state.engine.list_dropbox_audio_files(
-                                dropbox_token, dropbox_folder
-                            )
-                            st.session_state.dropbox_files = files
-                            if not files:
-                                st.warning("No audio files found.")
-                        except Exception as e:
-                            st.error(str(e))
-
-            if st.session_state.dropbox_files:
-                st.write(f"**{len(st.session_state.dropbox_files)} files found:**")
-                selected = []
-                for f in st.session_state.dropbox_files:
-                    if st.checkbox(f["name"], key=f"dbx_{f['path']}"):
-                        selected.append(f)
-                with col_analyse:
-                    if st.button("Analyse Selected", disabled=not selected):
-                        progress = st.progress(0)
-                        for idx, f in enumerate(selected):
-                            clean_title = os.path.splitext(f["name"])[0]
-                            local_path = f"/tmp/{f['name']}"
-                            try:
-                                st.session_state.engine.download_from_dropbox(
-                                    dropbox_token, f["path"], local_path
-                                )
-                                metadata = st.session_state.engine.analyze_audio_file(
-                                    local_path, clean_title, catalog, gemini_api_key
-                                )
-                                if metadata:
-                                    existing_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
-                                    if clean_title not in existing_titles:
-                                        st.session_state.app_data["tracks"].append({
-                                            "Title": clean_title,
-                                            "Mix Type": detect_mix_type(clean_title),
-                                            "Overall Consensus": metadata.get("Overall Consensus", ""),
-                                            cdl: metadata.get(cdl, ""),
-                                            "Editor Description": metadata.get("Editor Description", ""),
-                                            "Supervisor Description": metadata.get("Supervisor Description", ""),
-                                            "Keywords": metadata.get("Keywords", ""),
-                                            "Tip": metadata.get("Tip", ""),
-                                            "Track Description": "",
-                                        })
-                            except Exception as e:
-                                st.error(f"Failed {f['name']}: {str(e)}")
-                            finally:
-                                if os.path.exists(local_path):
-                                    os.remove(local_path)
-                            progress.progress((idx + 1) / len(selected))
-                        st.success("Dropbox analysis complete.")
-                        st.rerun()
-
     if st.session_state.ingestion_error:
         st.error(st.session_state.ingestion_error)
         if st.button("Dismiss"):
@@ -478,22 +684,20 @@ elif active_tab_index == 1:
     st.divider()
     st.subheader("Track Data")
     if st.session_state.app_data["tracks"]:
-        # Show a concise summary table (Title, Mix Type, Keywords — not all 6 fields)
         summary_rows = []
         for t in st.session_state.app_data["tracks"]:
             summary_rows.append({
                 "Title": t.get("Title", ""),
                 "Mix Type": t.get("Mix Type", ""),
                 "Keywords": t.get("Keywords", ""),
-                "Gemini Status": "✓ 6 fields" if t.get("Overall Consensus") else "⚠ legacy format",
-                "Master Description": "✓ Ready" if t.get("Track Description") else "— Pending Tab 02",
+                "Gemini": "✓" if t.get("Overall Consensus") else "—",
+                "Description": "✓" if t.get("Track Description") else "—",
             })
         st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
 
-        # Full data expander for each track
         with st.expander("View full Gemini output per track"):
             for t in st.session_state.app_data["tracks"]:
-                st.markdown(f"**{t.get('Title', '')}**")
+                st.markdown(f"**{t.get('Title', '')}** · `{t.get('Mix Type', '')}`")
                 gemini_source_block(t, catalog)
                 st.divider()
 
@@ -529,11 +733,14 @@ elif active_tab_index == 2:
         tracks = st.session_state.app_data["tracks"]
         full_count = sum(1 for t in tracks if t.get("Mix Type") == "full")
         sparse_count = sum(1 for t in tracks if t.get("Mix Type") == "sparse")
-        unknown_count = sum(1 for t in tracks if t.get("Mix Type") not in ["full", "sparse"])
+        sde_count = sum(1 for t in tracks if t.get("Mix Type") == "sound_design")
         if full_count or sparse_count:
-            st.caption(f"Detected: {full_count} full mix · {sparse_count} sparse · {unknown_count} undetected")
+            st.caption(f"Detected: {full_count} full · {sparse_count} sparse · {sde_count} sound design")
 
-        pending = sum(1 for t in tracks if not t.get("Track Description"))
+        pending = sum(
+            1 for t in tracks
+            if not t.get("Track Description") and t.get("Mix Type") not in ("alt", "sound_design")
+        )
         if pending:
             st.info(f"{pending} track(s) pending synthesis.")
 
@@ -542,11 +749,17 @@ elif active_tab_index == 2:
                 updated = []
                 prog = st.progress(0)
                 for idx, track in enumerate(tracks):
+                    if track.get("Mix Type") in ("sound_design",):
+                        updated.append(track)
+                        prog.progress((idx + 1) / len(tracks))
+                        continue
+                    if not track.get("Overall Consensus") and track.get("Track Description"):
+                        updated.append(track)
+                        prog.progress((idx + 1) / len(tracks))
+                        continue
                     save_to_history(track["Title"], track.get("Track Description", ""))
                     master = st.session_state.engine.synthesize_master_description(
-                        track["Title"],
-                        track,
-                        catalog, claude_api_key,
+                        track["Title"], track, catalog, claude_api_key,
                         mix_type=track.get("Mix Type", "unknown"),
                     )
                     track["Track Description"] = master
@@ -584,6 +797,10 @@ elif active_tab_index == 2:
                 badge = "<span class='mix-badge-full'>FULL</span>"
             elif mix_type == "sparse":
                 badge = "<span class='mix-badge-sparse'>SPARSE</span>"
+            elif mix_type == "sound_design":
+                badge = "<span class='mix-badge-sde'>SDE</span>"
+            elif mix_type == "alt":
+                badge = "<span class='mix-badge-alt'>ALT</span>"
 
             st.markdown(f"**{title}**{badge}", unsafe_allow_html=True)
 
@@ -599,7 +816,6 @@ elif active_tab_index == 2:
             if new_desc != desc:
                 track["Track Description"] = new_desc
 
-            # Gemini source data — collapsed reference
             has_gemini = bool(track.get("Overall Consensus"))
             with st.expander(f"Gemini source data {'✓' if has_gemini else '(not yet ingested)'}"):
                 if has_gemini:
@@ -949,9 +1165,31 @@ elif active_tab_index == 8:
             mime="application/zip",
             type="primary",
         )
-        st.caption("ZIP contains: Track_Data.csv (all columns), Album_Description.txt, Album_Name.txt, MidJourney_Prompts.txt, MailChimp_Copy.txt")
+        st.caption("ZIP contains: Track_Data.csv, Album_Description.txt, Album_Name.txt, MidJourney_Prompts.txt, MailChimp_Copy.txt")
 
-        if dropbox_token:
+        # Save ZIP back to Dropbox album folder
+        pipe = st.session_state.pipeline
+        if dropbox_token and pipe.get("dropbox_output_path") and pipe.get("status") == "done":
+            st.divider()
+            st.subheader("Save to Dropbox")
+            dest_path = f"{pipe['dropbox_output_path']}/{catalog}_{album_name_safe}_Final_Delivery.zip"
+            st.caption(f"Destination: `{dest_path}`")
+            if st.button("Upload ZIP to Dropbox Album Folder"):
+                with st.spinner("Uploading..."):
+                    try:
+                        zip_buffer.seek(0)
+                        st.session_state.engine.upload_bytes_to_dropbox(
+                            dropbox_token, zip_buffer.read(), dest_path
+                        )
+                        st.success(f"Uploaded to Dropbox.")
+                        send_ntfy(
+                            "📦 PFD — ZIP uploaded",
+                            f"{catalog}_{album_name_safe}_Final_Delivery.zip saved to Dropbox album folder.",
+                        )
+                    except Exception as e:
+                        st.error(str(e))
+
+        elif dropbox_token:
             st.divider()
             st.subheader("Save to Dropbox")
             output_folder = st.text_input("Dropbox output folder", value="/Publisher Output")
@@ -960,6 +1198,7 @@ elif active_tab_index == 8:
                 with st.spinner("Uploading..."):
                     try:
                         import tempfile
+                        zip_buffer.seek(0)
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
                             tmp.write(zip_buffer.read())
                             tmp_path = tmp.name
@@ -975,8 +1214,9 @@ elif active_tab_index == 8:
     tracks = data.get("tracks", [])
     master_ready = sum(1 for t in tracks if t.get("Track Description"))
     gemini_ready = sum(1 for t in tracks if t.get("Overall Consensus"))
+    sde_count = sum(1 for t in tracks if t.get("Mix Type") == "sound_design")
     cols = st.columns(4)
-    cols[0].metric("Tracks", len(tracks))
+    cols[0].metric("Total Tracks", len(tracks))
     cols[1].metric("Gemini Fields", f"{gemini_ready}/{len(tracks)}")
-    cols[2].metric("Master Descriptions", f"{master_ready}/{len(tracks)}")
-    cols[3].metric("Album Package", "✓" if (data.get("album_description") and data.get("mailchimp_intro")) else "—")
+    cols[2].metric("Descriptions", f"{master_ready}/{len(tracks)}")
+    cols[3].metric("Sound Design", sde_count)

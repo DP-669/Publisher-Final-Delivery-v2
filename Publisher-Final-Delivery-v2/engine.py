@@ -1,7 +1,7 @@
 """
 Publisher Final Delivery App - Ingestion Engine v2
 - Gemini 3.1 Pro: audio analysis only (Tab 01)
-- Claude Sonnet: all writing tasks (Tabs 02-06)
+- Claude Sonnet 5: all writing tasks (Tabs 02-06)
 - Dropbox: cloud folder access
 - Manual refinement mode for fixing existing copy
 
@@ -21,6 +21,12 @@ Tier 3 update (2026-08-13):
   Editor Description, Supervisor Description, Keywords, Tip)
 - synthesize_master_description(): Claude synthesizes all 6 into one definitive 3-sentence description
 - compile_final_package(): single unified CSV containing all columns
+
+Tier 4 update (2026-08-13):
+- Dropbox Pipeline: automated album folder crawling, batch Gemini analysis
+- Sound design element analysis: separate Gemini + Claude pipeline
+- AIF file support added (.aif → audio/aiff)
+- Quota/billing error detection: fires ntfy alert on Gemini quota exhaustion
 """
 import os
 import json
@@ -63,6 +69,24 @@ COMMERCIAL_CATALOGS = {"epp", "ekonomic propaganda"}
 TRACK_FIELDS_BASE = ["Title", "Mix Type", "Overall Consensus", "Editor Description",
                      "Supervisor Description", "Keywords", "Tip", "Track Description"]
 
+# ── MIME type map — includes both .aif and .aiff ──────────────────────────────
+AUDIO_MIME_MAP = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".aif": "audio/aiff",
+    ".aiff": "audio/aiff",
+    ".flac": "audio/flac",
+}
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    """Detect Gemini quota / billing exhaustion."""
+    msg = str(exc).lower()
+    return any(s in msg for s in [
+        "quota", "resource_exhausted", "resourceexhausted",
+        "billing", "insufficient", "exceeded", "rate limit", "429", "403",
+    ])
+
 
 class IngestionEngine:
     """Core engine: Gemini for audio, Claude for writing, Dropbox for cloud access."""
@@ -101,16 +125,22 @@ class IngestionEngine:
         return "Campaign Description" if _normalize_catalog(catalog) == "EPP" else "Trailer Description"
 
     # ── Dropbox Integration ────────────────────────────────────────────────────
-    def list_dropbox_audio_files(self, dropbox_token: str, folder_path: str = "") -> List[Dict]:
+    def get_dropbox_client(self, dropbox_token: str):
         try:
             import dropbox
-            dbx = dropbox.Dropbox(dropbox_token)
+            return dropbox.Dropbox(dropbox_token)
+        except ImportError:
+            raise RuntimeError("Dropbox SDK not installed. Run: pip install dropbox")
+
+    def list_dropbox_audio_files(self, dropbox_token: str, folder_path: str = "") -> List[Dict]:
+        try:
+            dbx = self.get_dropbox_client(dropbox_token)
             result = dbx.files_list_folder(folder_path)
             audio_files = []
             for entry in result.entries:
                 if hasattr(entry, "size") and any(
                     entry.name.lower().endswith(ext)
-                    for ext in [".mp3", ".wav", ".aiff", ".flac"]
+                    for ext in [".mp3", ".wav", ".aif", ".aiff", ".flac"]
                 ):
                     audio_files.append({
                         "name": entry.name,
@@ -125,19 +155,40 @@ class IngestionEngine:
 
     def download_from_dropbox(self, dropbox_token: str, file_path: str, local_path: str) -> str:
         try:
-            import dropbox
-            dbx = dropbox.Dropbox(dropbox_token)
+            dbx = self.get_dropbox_client(dropbox_token)
             dbx.files_download_to_file(local_path, file_path)
             return local_path
+        except Exception as e:
+            raise RuntimeError(f"Dropbox download failed: {str(e)}")
+
+    def download_bytes_from_dropbox(self, dropbox_token: str, file_path: str) -> bytes:
+        """Download a Dropbox file and return raw bytes."""
+        try:
+            dbx = self.get_dropbox_client(dropbox_token)
+            _, response = dbx.files_download(file_path)
+            return response.content
         except Exception as e:
             raise RuntimeError(f"Dropbox download failed: {str(e)}")
 
     def upload_to_dropbox(self, dropbox_token: str, local_path: str, dropbox_dest: str):
         try:
             import dropbox
-            dbx = dropbox.Dropbox(dropbox_token)
+            dbx = self.get_dropbox_client(dropbox_token)
             with open(local_path, "rb") as f:
                 dbx.files_upload(f.read(), dropbox_dest, mute=True)
+        except Exception as e:
+            raise RuntimeError(f"Dropbox upload failed: {str(e)}")
+
+    def upload_bytes_to_dropbox(self, dropbox_token: str, data: bytes, dropbox_dest: str):
+        """Upload raw bytes to Dropbox."""
+        try:
+            import dropbox as dbx_mod
+            client = self.get_dropbox_client(dropbox_token)
+            client.files_upload(
+                data, dropbox_dest,
+                mode=dbx_mod.files.WriteMode.overwrite,
+                mute=True,
+            )
         except Exception as e:
             raise RuntimeError(f"Dropbox upload failed: {str(e)}")
 
@@ -189,62 +240,71 @@ class IngestionEngine:
 
         return ", ".join(final[:20])
 
-    # ── Audio Analysis: GEMINI ONLY ────────────────────────────────────────────
-    def analyze_audio_file(
-        self, file_path: str, clean_title: str, catalog: str, gemini_api_key: str
-    ) -> Optional[Dict]:
-        client = genai.Client(api_key=gemini_api_key)
-
-        ext = os.path.splitext(file_path)[1].lower()
-        mime_map = {
-            ".mp3": "audio/mpeg",
-            ".wav": "audio/wav",
-            ".aiff": "audio/aiff",
-            ".flac": "audio/flac",
-        }
-        mime_type = mime_map.get(ext, "audio/mpeg")
-
-        with open(file_path, "rb") as f:
-            file_bytes = f.read()
-
+    # ── Core Gemini upload helper ──────────────────────────────────────────────
+    def _upload_to_gemini(self, file_bytes: bytes, ext: str, display_name: str, client):
+        """Upload bytes to Gemini Files API and wait for ACTIVE state."""
+        mime_type = AUDIO_MIME_MAP.get(ext.lower(), "audio/wav")
         uploaded_file = client.files.upload(
             file=io.BytesIO(file_bytes),
             config=types.UploadFileConfig(
                 mime_type=mime_type,
-                display_name=clean_title,
+                display_name=display_name,
             ),
         )
-
         while uploaded_file.state.name == "PROCESSING":
             time.sleep(2)
             uploaded_file = client.files.get(name=uploaded_file.name)
-
         if uploaded_file.state.name != "ACTIVE":
             raise RuntimeError(
-                f"Gemini file upload failed — state: '{uploaded_file.state.name}' for {file_path}"
+                f"Gemini file upload failed — state: '{uploaded_file.state.name}' for {display_name}"
             )
+        return uploaded_file
 
-        analysis_prompt = self.prompts.generate_keywords_analysis_prompt(catalog, clean_title)
+    # ── Audio Analysis: GEMINI ONLY ────────────────────────────────────────────
+    def analyze_audio_file(
+        self, file_path: str, clean_title: str, catalog: str, gemini_api_key: str
+    ) -> Optional[Dict]:
+        """Analyze a music track (full or sparse mix). Returns 6-field dict."""
+        client = genai.Client(api_key=gemini_api_key)
+        ext = os.path.splitext(file_path)[1].lower()
+
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
 
         try:
-            response = client.models.generate_content(
-                model=GEMINI_AUDIO_MODEL,
-                contents=[
-                    types.Part.from_uri(
-                        file_uri=uploaded_file.uri,
-                        mime_type=mime_type,
-                    ),
-                    analysis_prompt,
-                ],
-                config=types.GenerateContentConfig(
-                    http_options=types.HttpOptions(timeout=600),
-                ),
-            )
-        finally:
+            uploaded_file = self._upload_to_gemini(file_bytes, ext, clean_title, client)
+            analysis_prompt = self.prompts.generate_keywords_analysis_prompt(catalog, clean_title)
+            mime_type = AUDIO_MIME_MAP.get(ext, "audio/wav")
+
             try:
-                client.files.delete(name=uploaded_file.name)
-            except Exception:
-                pass
+                response = client.models.generate_content(
+                    model=GEMINI_AUDIO_MODEL,
+                    contents=[
+                        types.Part.from_uri(
+                            file_uri=uploaded_file.uri,
+                            mime_type=mime_type,
+                        ),
+                        analysis_prompt,
+                    ],
+                    config=types.GenerateContentConfig(
+                        http_options=types.HttpOptions(timeout=600),
+                    ),
+                )
+            finally:
+                try:
+                    client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    pass
+
+        except Exception as exc:
+            if _is_quota_error(exc):
+                from dropbox_pipeline import send_ntfy
+                send_ntfy(
+                    "⚠️ PFD — Gemini quota error",
+                    f"Pipeline paused: {exc}\nTrack: {clean_title}",
+                    priority="urgent",
+                )
+            raise
 
         text = response.text.strip()
         if text.startswith("```json"):
@@ -254,7 +314,7 @@ class IngestionEngine:
 
         metadata = json.loads(text.strip())
 
-        # Normalise context description to a single key regardless of catalog
+        # Normalise context description to a single key
         context_label = self._context_desc_label(catalog)
         for raw_key in ("Trailer_Description", "Campaign_Description",
                         "Trailer Description", "Campaign Description"):
@@ -262,7 +322,7 @@ class IngestionEngine:
                 metadata[context_label] = metadata.pop(raw_key)
                 break
 
-        # Normalise other underscore keys to space keys for consistency
+        # Normalise underscore keys to space keys
         for us_key, sp_key in (
             ("Overall_Consensus", "Overall Consensus"),
             ("Editor_Description", "Editor Description"),
@@ -276,6 +336,82 @@ class IngestionEngine:
                 metadata["Keywords"], catalog, gemini_api_key
             )
         return metadata
+
+    def analyze_audio_bytes(
+        self, file_bytes: bytes, ext: str, clean_title: str, catalog: str, gemini_api_key: str
+    ) -> Optional[Dict]:
+        """Analyze audio from bytes (used by pipeline after Dropbox download)."""
+        import tempfile
+        tmp_path = f"/tmp/{clean_title}{ext}"
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(file_bytes)
+            return self.analyze_audio_file(tmp_path, clean_title, catalog, gemini_api_key)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    # ── Sound Design Analysis ──────────────────────────────────────────────────
+    def analyze_sound_design_element(
+        self, file_bytes: bytes, ext: str, element_name: str, gemini_api_key: str
+    ) -> Optional[Dict]:
+        """Analyze a sound design element. Returns focused SDE metadata dict."""
+        client = genai.Client(api_key=gemini_api_key)
+
+        try:
+            uploaded_file = self._upload_to_gemini(file_bytes, ext, element_name, client)
+            analysis_prompt = self.prompts.generate_sound_design_analysis_prompt(element_name)
+            mime_type = AUDIO_MIME_MAP.get(ext.lower(), "audio/wav")
+
+            try:
+                response = client.models.generate_content(
+                    model=GEMINI_AUDIO_MODEL,
+                    contents=[
+                        types.Part.from_uri(
+                            file_uri=uploaded_file.uri,
+                            mime_type=mime_type,
+                        ),
+                        analysis_prompt,
+                    ],
+                    config=types.GenerateContentConfig(
+                        http_options=types.HttpOptions(timeout=300),
+                    ),
+                )
+            finally:
+                try:
+                    client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    pass
+
+        except Exception as exc:
+            if _is_quota_error(exc):
+                from dropbox_pipeline import send_ntfy
+                send_ntfy(
+                    "⚠️ PFD — Gemini quota error",
+                    f"Pipeline paused on sound design: {exc}\nElement: {element_name}",
+                    priority="urgent",
+                )
+            raise
+
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        try:
+            return json.loads(text.strip())
+        except json.JSONDecodeError:
+            return {"Element_Type": "Unknown", "Sonic_Character": text, "Keywords": ""}
+
+    def synthesize_sound_design_description(
+        self, element_name: str, parent_track: str, gemini_data: dict, claude_api_key: str
+    ) -> str:
+        """Claude writes the final 2-3 sentence description for a sound design element."""
+        sys_instr, prompt = self.prompts.generate_sound_design_description_prompt(
+            element_name, parent_track, gemini_data
+        )
+        return self.call_claude(sys_instr, prompt, claude_api_key, max_tokens=512)
 
     # ── Writing Tasks: CLAUDE ONLY ─────────────────────────────────────────────
     def call_claude(
@@ -301,10 +437,7 @@ class IngestionEngine:
         self, title: str, track_data: dict, catalog: str, claude_api_key: str,
         mix_type: str = "unknown"
     ) -> str:
-        """
-        Tab 02 — synthesize all 6 Gemini fields into one definitive 3-sentence master description.
-        track_data is the full track dict from session state.
-        """
+        """Tab 02 — synthesize all 6 Gemini fields into one definitive 3-sentence description."""
         sys_instr, prompt = self.prompts.generate_master_description_prompt(
             title, track_data, catalog, mix_type=mix_type
         )
@@ -429,18 +562,15 @@ class IngestionEngine:
                     if any(b in kw.lower() for b in banned):
                         errors.append(f"Track '{title}': keyword '{kw}' contains a banned word.")
 
-            # Validate master description (Track Description)
             desc = track.get("Track Description", "").strip()
             if desc:
                 desc_lower = desc.lower()
-
                 first_word = re.sub(r"^\W+|\W+$", "", desc.split(" ")[0].lower())
                 if first_word in ["a", "an", "the"]:
                     errors.append(
                         f"Track '{title}': description violates Antigravity Protocol "
                         f"(starts with '{first_word}')."
                     )
-
                 if is_commercial:
                     found = [t for t in THEATRICAL_TERMS if t in desc_lower]
                     if found:
@@ -448,7 +578,6 @@ class IngestionEngine:
                             f"Track '{title}': EPP description contains theatrical language "
                             f"({', '.join(found)}). EPP is commercial catalog only."
                         )
-
                 if is_theatrical:
                     found = [t for t in COMMERCIAL_TERMS if t in desc_lower]
                     if found:

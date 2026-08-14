@@ -606,3 +606,60 @@ Description: {album_description}
 Return ONLY the intro copy. No labels. No preamble."""
 
         return system_instruction, task_prompt
+
+    # ── Sound Design Analysis: Gemini prompt ──────────────────────────────────
+    def generate_sound_design_analysis_prompt(self, element_name: str) -> str:
+        """Gemini prompt for analyzing a sound design element (not a full music track)."""
+        return f"""You are analyzing a sound design element for a professional music library catalog.
+These elements are licensed individually by editors and composers for specific moments in film, TV, and trailers.
+
+Element name: {element_name}
+
+Listen carefully and return ONLY this JSON (no preamble, no markdown):
+{{
+    "Element_Type": "One word or short phrase. What TYPE is this? (braam / glitch / drone / riser / hit / stab / texture / atmosphere / pulse / whoosh / impact / tension / swell / other)",
+    "Sonic_Character": "2-3 sentences. Specific description of timbre, movement, dynamics, texture. Not 'intense' — describe WHAT makes it so. Concrete musical/sonic terms.",
+    "Unique_Qualities": "What is unusual or distinctive about this specific element vs. the thousands of similar sounds editors have already heard? 1-2 sentences. Be honest — if it's not unique, say what makes it useful instead.",
+    "Best_Usage": "2-3 specific editorial contexts. Not 'action scenes' — think: 'title card reveal', 'villain entrance', 'transition into silence', 'scene punctuation after a line reading'. Concrete moments.",
+    "Technical_Notes": "Approximate duration category (short = under 3s / medium = 3-10s / long = over 10s). Clean start and tail? Loopable? Any technical notes an editor needs.",
+    "Keywords": "8-12 comma-separated keywords. Vibe, type, use-case, texture. Max 3 words each. No standalone instrument names."
+}}"""
+
+    # ── Sound Design Description: Claude prompt ────────────────────────────────
+    def generate_sound_design_description_prompt(
+        self, element_name: str, parent_track: str, gemini_data: dict
+    ) -> tuple:
+        """Claude prompt for writing the final 2-3 sentence sound design element description."""
+        element_type = gemini_data.get("Element_Type", "")
+        sonic_char = gemini_data.get("Sonic_Character", "")
+        unique = gemini_data.get("Unique_Qualities", "")
+        best_usage = gemini_data.get("Best_Usage", "")
+        tech = gemini_data.get("Technical_Notes", "")
+
+        system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
+
+CURRENT TASK: Write metadata for a sound design element from the redCola catalog.
+
+Sound design elements are licensed individually by editors who need specific sounds for specific moments.
+They are NOT music — they are tools. Write for a stressed editor who needs to know in 10 seconds
+whether this element solves their problem.
+
+FORMAT: 2-3 sentences maximum.
+Sentence 1: Element type + most distinctive sonic quality. Antigravity Protocol enforced.
+Sentence 2: Best usage context(s) — concrete and specific (scene type, editorial moment).
+Sentence 3 (optional): Critical technical note only if it affects usability (duration, one-shot vs. loopable).
+
+RULES: Hemingway Rule. No adjective stacking. No 'perfect for'. Specific beats generic.
+Never start with 'A', 'An', or 'The'."""
+
+        task_prompt = f"""Write the element description for: '{element_name}' (from {parent_track})
+
+ELEMENT TYPE: {element_type}
+SONIC CHARACTER: {sonic_char}
+UNIQUE QUALITIES: {unique}
+BEST USAGE: {best_usage}
+TECHNICAL: {tech}
+
+Return ONLY the description. 2-3 sentences max. No labels. No preamble."""
+
+        return system_instruction, task_prompt
