@@ -198,7 +198,7 @@ class IngestionEngine:
             return ""
         kw_list = [k.strip() for k in re.split(r"[,;]", keywords_raw) if k.strip()]
 
-        client = genai.Client(api_key=gemini_api_key)
+        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
 
         corrected = []
         for kw in kw_list:
@@ -265,7 +265,7 @@ class IngestionEngine:
         self, file_path: str, clean_title: str, catalog: str, gemini_api_key: str
     ) -> Optional[Dict]:
         """Analyze a music track (full or sparse mix). Returns 6-field dict."""
-        client = genai.Client(api_key=gemini_api_key)
+        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
         ext = os.path.splitext(file_path)[1].lower()
 
         with open(file_path, "rb") as f:
@@ -356,7 +356,7 @@ class IngestionEngine:
         self, file_bytes: bytes, ext: str, element_name: str, gemini_api_key: str
     ) -> Optional[Dict]:
         """Analyze a sound design element. Returns focused SDE metadata dict."""
-        client = genai.Client(api_key=gemini_api_key)
+        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600))
 
         try:
             uploaded_file = self._upload_to_gemini(file_bytes, ext, element_name, client)
