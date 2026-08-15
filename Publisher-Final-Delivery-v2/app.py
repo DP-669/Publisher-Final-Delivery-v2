@@ -24,6 +24,12 @@ try:
 except ImportError:
     PIPELINE_AVAILABLE = False
 
+try:
+    from persistence import save_progress, list_sessions, delete_progress
+    PERSISTENCE_AVAILABLE = True
+except ImportError:
+    PERSISTENCE_AVAILABLE = False
+
 st.set_page_config(
     page_title="Publisher Final Delivery",
     page_icon="🎵",
@@ -217,6 +223,14 @@ def _reset_pipeline():
     st.session_state.pipeline = dict(_PIPE_DEFAULT)
 
 
+def _auto_save(label: str = ""):
+    """Fire-and-forget Dropbox save. Never blocks or crashes the UI."""
+    if PERSISTENCE_AVAILABLE and dropbox_token and st.session_state.app_data.get("tracks"):
+        save_progress(dropbox_token, st.session_state.app_data, st.session_state.pipeline)
+        if label:
+            print(f"[PFD] Auto-saved: {label}")
+
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 catalog = st.session_state.app_data.get("catalog", "EPP")
 
@@ -278,7 +292,60 @@ with st.sidebar:
         st.session_state.track_history = {}
         st.session_state.active_tab_index = 0
         _reset_pipeline()
+        st.session_state.pop("_saved_sessions", None)
         st.success("Session cleared.")
+
+    # ── Persistence Controls ───────────────────────────────────────────────────
+    if PERSISTENCE_AVAILABLE and dropbox_token:
+        st.divider()
+        has_tracks = bool(st.session_state.app_data.get("tracks"))
+
+        col_save, col_restore = st.columns(2)
+        with col_save:
+            if st.button("💾 Save", disabled=not has_tracks, use_container_width=True,
+                         help="Save progress to Dropbox now"):
+                with st.spinner("Saving..."):
+                    ok = save_progress(
+                        dropbox_token,
+                        st.session_state.app_data,
+                        st.session_state.pipeline,
+                    )
+                if ok:
+                    st.toast("✓ Saved to Dropbox")
+                else:
+                    st.toast("⚠️ Save failed — check Dropbox token")
+
+        with col_restore:
+            if st.button("📂 Restore", use_container_width=True,
+                         help="Load a previously saved session"):
+                with st.spinner("Checking Dropbox..."):
+                    st.session_state["_saved_sessions"] = list_sessions(dropbox_token)
+
+        if st.session_state.get("_saved_sessions"):
+            sessions = st.session_state["_saved_sessions"]
+            if not sessions:
+                st.caption("No saved sessions found.")
+            else:
+                st.caption(f"{len(sessions)} saved session(s):")
+                for i, s in enumerate(sessions):
+                    save_dt = s["save_time"][:16].replace("T", " ") if s.get("save_time") else ""
+                    st.markdown(f"**{s['display']}**")
+                    st.caption(f"{s['stage_summary']} · {save_dt}")
+                    if st.button("Restore this session", key=f"restore_{i}"):
+                        if s.get("app_data"):
+                            st.session_state.app_data = s["app_data"]
+                        meta = s.get("pipeline_meta", {})
+                        st.session_state.pipeline["album_name"] = s.get("album_name", "")
+                        st.session_state.pipeline["catalog"]    = s.get("catalog", "")
+                        st.session_state.pipeline["status"]     = "done" if s.get("stages", {}).get("ingest") else "idle"
+                        st.session_state.pipeline["processed_count"]  = meta.get("processed_count", 0)
+                        st.session_state.pipeline["total_to_analyze"] = meta.get("total_to_analyze", 0)
+                        st.session_state.pipeline["album_path"]       = meta.get("album_path", "")
+                        st.session_state.pipeline["dropbox_output_path"] = meta.get("album_path", "")
+                        st.session_state.active_tab_index = s.get("furthest_tab", 1)
+                        st.session_state.pop("_saved_sessions", None)
+                        st.rerun()
+                    st.divider()
 
     with st.expander("⚙️ Configuration"):
         gemini_api_key = st.secrets.get("GEMINI_API_KEY", None) or st.text_input(
@@ -400,6 +467,10 @@ if PIPELINE_AVAILABLE and gemini_api_key and dropbox_token:
             if not pipe["queue"]:
                 pipe["status"] = "synthesizing"
 
+            # Auto-save after every batch so no work is ever lost
+            if PERSISTENCE_AVAILABLE and dropbox_token:
+                save_progress(dropbox_token, st.session_state.app_data, pipe)
+
             st.rerun()
 
     elif pipe["status"] == "synthesizing":
@@ -418,6 +489,9 @@ if PIPELINE_AVAILABLE and gemini_api_key and dropbox_token:
                 track["Track Description"] = master
 
         pipe["status"] = "done"
+        # Save final state after synthesis completes
+        if PERSISTENCE_AVAILABLE and dropbox_token:
+            save_progress(dropbox_token, st.session_state.app_data, pipe)
         track_count = len(st.session_state.app_data["tracks"])
         send_ntfy(
             "✅ PFD Pipeline — complete",
@@ -766,6 +840,7 @@ elif active_tab_index == 2:
                     updated.append(track)
                     prog.progress((idx + 1) / len(tracks))
                 st.session_state.app_data["tracks"] = updated
+            _auto_save("Tab 02 synthesize all")
             st.success("All master descriptions synthesized.")
             st.rerun()
 
@@ -782,6 +857,7 @@ elif active_tab_index == 2:
                     mix_type=track.get("Mix Type", "unknown"),
                 )
                 track["Track Description"] = master
+            _auto_save("Tab 02 single track")
             st.success(f"'{selected_track}' updated.")
             st.rerun()
 
@@ -867,6 +943,7 @@ elif active_tab_index == 3:
                     descs = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
                     result = st.session_state.engine.generate_album_description(descs, catalog, claude_api_key)
                     st.session_state.app_data["album_description"] = result
+                _auto_save("Tab 03 album description")
                 st.rerun()
 
     with col_output:
@@ -906,6 +983,7 @@ elif active_tab_index == 4:
                 )
                 st.session_state.app_data["album_name"] = result
                 st.session_state.app_data["album_name_selected"] = ""
+            _auto_save("Tab 04 album name generated")
             st.rerun()
 
     with col_output:
@@ -931,7 +1009,9 @@ elif active_tab_index == 4:
                 default_idx = options.index(current_selection) if current_selection in options else 0
                 selected = st.radio("Choose the title to carry forward:", options, index=default_idx)
                 if selected:
-                    st.session_state.app_data["album_name_selected"] = selected
+                    if selected != st.session_state.app_data.get("album_name_selected"):
+                        st.session_state.app_data["album_name_selected"] = selected
+                        _auto_save("Tab 04 album name selected")
                     if rationales.get(selected):
                         st.caption(rationales[selected])
                     st.success(f"Selected: **{selected}**")
@@ -997,6 +1077,7 @@ elif active_tab_index == 5:
                     keywords=keywords,
                 )
                 st.session_state.app_data["cover_art"] = result
+            _auto_save("Tab 05 cover art")
             st.rerun()
 
         st.divider()
@@ -1050,6 +1131,7 @@ elif active_tab_index == 6:
                     track_descriptions=track_descriptions,
                 )
                 st.session_state.app_data["mailchimp_intro"] = result
+            _auto_save("Tab 06 mailchimp")
             st.rerun()
 
     with col_output:
