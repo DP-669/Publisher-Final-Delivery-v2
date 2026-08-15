@@ -14,7 +14,7 @@ import re
 import datetime
 import pandas as pd
 
-PROGRESS_FOLDER = "/rMG PFD Progress"
+PROGRESS_FOLDER = "/00 production operations/04 sa, hm, cwr, csv/PFD Progress"
 
 
 # ── Path helpers ───────────────────────────────────────────────────────────────
