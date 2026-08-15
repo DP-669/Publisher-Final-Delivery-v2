@@ -44,9 +44,22 @@ def _album_name(app_data: dict, pipe_state: dict) -> str:
 
 # ── Dropbox helpers ────────────────────────────────────────────────────────────
 
-def _dbx(token: str):
-    """Return (client, module) for the Dropbox SDK."""
+def _dbx(token: str = None):
+    """Return (client, module) for the Dropbox SDK. Prefers refresh token auth."""
     import dropbox as dbx_mod
+    try:
+        import streamlit as st
+        app_key       = st.secrets.get("DROPBOX_APP_KEY")
+        app_secret    = st.secrets.get("DROPBOX_APP_SECRET")
+        refresh_token = st.secrets.get("DROPBOX_REFRESH_TOKEN")
+        if app_key and app_secret and refresh_token:
+            return dbx_mod.Dropbox(
+                oauth2_refresh_token=refresh_token,
+                app_key=app_key,
+                app_secret=app_secret,
+            ), dbx_mod
+    except Exception:
+        pass
     return dbx_mod.Dropbox(token), dbx_mod
 
 

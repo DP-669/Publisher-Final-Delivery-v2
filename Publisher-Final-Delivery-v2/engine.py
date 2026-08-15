@@ -125,10 +125,27 @@ class IngestionEngine:
         return "Campaign Description" if _normalize_catalog(catalog) == "EPP" else "Trailer Description"
 
     # ── Dropbox Integration ────────────────────────────────────────────────────
-    def get_dropbox_client(self, dropbox_token: str):
+    def get_dropbox_client(self, dropbox_token: str = None):
         try:
-            import dropbox
-            return dropbox.Dropbox(dropbox_token)
+            import dropbox as dbx_mod
+            # Prefer refresh token auth (permanent) over short-lived access token
+            try:
+                import streamlit as st
+                app_key       = st.secrets.get("DROPBOX_APP_KEY")
+                app_secret    = st.secrets.get("DROPBOX_APP_SECRET")
+                refresh_token = st.secrets.get("DROPBOX_REFRESH_TOKEN")
+                if app_key and app_secret and refresh_token:
+                    return dbx_mod.Dropbox(
+                        oauth2_refresh_token=refresh_token,
+                        app_key=app_key,
+                        app_secret=app_secret,
+                    )
+            except Exception:
+                pass
+            # Fall back to access token
+            if dropbox_token:
+                return dbx_mod.Dropbox(dropbox_token)
+            raise RuntimeError("No Dropbox credentials found in secrets.")
         except ImportError:
             raise RuntimeError("Dropbox SDK not installed. Run: pip install dropbox")
 
