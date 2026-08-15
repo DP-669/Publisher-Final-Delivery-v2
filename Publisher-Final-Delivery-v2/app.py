@@ -231,6 +231,11 @@ def _auto_save(label: str = ""):
             print(f"[PFD] Auto-saved: {label}")
 
 
+# ── Secrets — resolved before sidebar so controls can reference them ───────────
+gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
+claude_api_key  = st.secrets.get("ANTHROPIC_API_KEY", None)
+dropbox_token   = st.secrets.get("DROPBOX_TOKEN", None)
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 catalog = st.session_state.app_data.get("catalog", "EPP")
 
@@ -360,10 +365,6 @@ with st.sidebar:
             "Dropbox Token", type="password", key="dropbox_key_input",
             placeholder="Required for pipeline"
         )
-
-gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
-claude_api_key = st.secrets.get("ANTHROPIC_API_KEY", None)
-dropbox_token = st.secrets.get("DROPBOX_TOKEN", None)
 
 active_tab_index = st.session_state.active_tab_index
 
