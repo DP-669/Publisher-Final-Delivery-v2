@@ -376,6 +376,11 @@ active_tab_index = st.session_state.active_tab_index
 if PIPELINE_AVAILABLE and gemini_api_key and dropbox_token:
     pipe = st.session_state.pipeline
 
+    # Guard: if processing started but crawl found 0 analyzable files, advance immediately
+    if pipe["status"] == "processing" and not pipe["queue"]:
+        pipe["status"] = "synthesizing"
+        st.rerun()
+
     if pipe["status"] == "processing" and pipe["queue"]:
         batch = pipe["queue"][0]
 
@@ -596,6 +601,16 @@ elif active_tab_index == 1:
                             st.warning(
                                 "⚠️ This link doesn't appear to be in a Quality Checked folder. "
                                 "Make sure you're using the right link."
+                            )
+
+                        # Detect if user pasted a file link instead of a folder link
+                        _AUDIO_EXTS = {".mp3", ".wav", ".aif", ".aiff", ".flac", ".m4a", ".ogg"}
+                        if os.path.splitext(album_path)[1].lower() in _AUDIO_EXTS:
+                            raise ValueError(
+                                f"This link points to a single file ({os.path.basename(album_path)}), "
+                                "not an album folder.\n\n"
+                                "The Dropbox Pipeline needs a link to the album folder, not to an individual file.\n"
+                                "To test a single file, use 📁 Manual Upload mode instead."
                             )
 
                         crawl = crawl_album_folder(dbx, album_path, detected_catalog)
