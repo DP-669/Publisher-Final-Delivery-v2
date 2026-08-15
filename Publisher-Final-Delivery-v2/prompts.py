@@ -489,15 +489,25 @@ CATALOG: {catalog} — {cat['identity']}
 PRIMARY USAGE: {cat['usage']}
 VALID PLACEMENT TAGS: {cat['placement_tags']}
 
-RULES:
-- 2-4 sentences maximum. Hemingway Rule throughout.
-- Do NOT list tracks. Synthesize the overall sonic arc and emotional range.
-- Tell a stressed editor what problem this album solves and when to reach for it.
-- Placement tags must stay within valid territory for this catalog.
-- NEVER say: "We are proud to announce", "features", "includes", "perfectly engineered"
+LENGTH: ONE sentence. No exceptions. A music supervisor reads it and immediately knows whether
+to click play — without reading another word.
 
-TARGET STYLE:
-"Orchestral builds, hybrid rhythms, indie-folk warmth. Covers the full arc — quiet hope to euphoric release. Reach for it when the picture needs to earn its moment. Documentaries, brand campaigns, sports profiles, human-interest promos."
+STRUCTURE: Pack the primary sonic/genre identity + the most distinctive characteristic +
+placement context into a single dense sentence. Use em-dashes, commas, or colons to compress.
+Do NOT write separate sentences for "what it sounds like" and "what it's for" — merge them.
+
+RULES:
+- Antigravity Protocol: first word cannot be A / An / The
+- Hemingway Rule: no stacked adjectives, no corporate jargon
+- Do NOT list tracks or mention track counts
+- Placement territory must stay valid for this catalog
+- NEVER say: "features", "includes", "perfectly engineered", "We are proud to announce"
+
+TARGET FORMAT (SSC/rC):
+"Acoustic string-led suspense from quiet investigative underscore to full ensemble breakdown — pizzicato, col legno, and scraping textures doing the psychological work synths can't, built for espionage thrillers, prestige mystery, and arthouse horror."
+
+TARGET FORMAT (EPP):
+"Polished acoustic and hybrid production across the full emotional range from tense underscore to warm uplift — brand-neutral enough for automotive and finance, specific enough for lifestyle and travel campaigns."
 """
 
         descriptions_text = "\n".join([f"- {d}" for d in all_track_descriptions if d])
