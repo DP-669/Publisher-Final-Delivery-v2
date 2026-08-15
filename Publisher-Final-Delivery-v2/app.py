@@ -789,7 +789,6 @@ elif active_tab_index == 1:
 # ══════════════════════════════════════════════════════════════════════════════
 elif active_tab_index == 2:
     st.title("02 · TRACK DESCRIPTIONS")
-    st.caption("Claude synthesizes all 6 Gemini fields into one definitive 3-sentence master description.")
     catalog = st.session_state.app_data.get("catalog", "EPP")
 
     if not st.session_state.app_data["tracks"]:
@@ -801,119 +800,173 @@ elif active_tab_index == 2:
         next_button()
         st.stop()
 
-    col_action, col_editor = st.columns([1, 1])
+    tracks = st.session_state.app_data["tracks"]
 
-    with col_action:
-        st.subheader("Synthesize Master Descriptions")
-        tracks = st.session_state.app_data["tracks"]
-        full_count = sum(1 for t in tracks if t.get("Mix Type") == "full")
-        sparse_count = sum(1 for t in tracks if t.get("Mix Type") == "sparse")
-        sde_count = sum(1 for t in tracks if t.get("Mix Type") == "sound_design")
-        if full_count or sparse_count:
-            st.caption(f"Detected: {full_count} full · {sparse_count} sparse · {sde_count} sound design")
+    # ── Strip mix-type suffix to get canonical song name ──────────────────────
+    def _strip_mix_suffix(title: str) -> str:
+        patterns = [
+            r'[\s_-]+sparce?\s+(?:mix|master)(?:[\s_]\d+)?$',
+            r'[\s_-]+full\s+(?:mix|master)(?:[\s_]\d+)?$',
+            r'[\s_-]+alt(?:ernate)?\s+(?:mix|master)(?:[\s_]\d+)?$',
+            r'[\s_-]+trailer\s+(?:mix|master)(?:[\s_]\d+)?$',
+            r'[\s_-]+tv\s+(?:mix|master)(?:[\s_]\d+)?$',
+            r'[\s_-]+cut[\s_-]*down(?:[\s_]\d+)?$',
+            r'[\s_-]+sound[\s_-]*design(?:[\s_]\d+)?$',
+            r'[\s_-]+(?:sde|element)(?:[\s_]\d+)?$',
+            r'[\s_-]+(?:mix|master)(?:[\s_]\d+)?$',
+            r'[\s_]+\d+$',
+        ]
+        name = title
+        for pat in patterns:
+            cleaned = re.sub(pat, '', name, flags=re.IGNORECASE).strip()
+            if cleaned and cleaned != name:
+                return cleaned
+        return name
 
-        pending = sum(
-            1 for t in tracks
-            if not t.get("Track Description") and t.get("Mix Type") not in ("alt", "sound_design")
-        )
-        if pending:
-            st.info(f"{pending} track(s) pending synthesis.")
+    # ── Group tracks by song, sorted Full → Sparse → SDE → Alt → other ───────
+    def _group_tracks(track_list):
+        MIX_ORDER = {"full": 0, "sparse": 1, "sound_design": 2, "alt": 3}
+        seen_order = []
+        groups = {}
+        for t in track_list:
+            base = _strip_mix_suffix(t["Title"])
+            if base not in seen_order:
+                seen_order.append(base)
+            groups.setdefault(base, []).append(t)
+        for base in groups:
+            groups[base].sort(key=lambda t: MIX_ORDER.get(t.get("Mix Type", ""), 99))
+        return {base: groups[base] for base in seen_order}
 
-        if st.button("Synthesize All", type="primary"):
-            with st.spinner("Council synthesizing..."):
-                updated = []
-                prog = st.progress(0)
-                for idx, track in enumerate(tracks):
-                    if track.get("Mix Type") in ("sound_design",):
-                        updated.append(track)
-                        prog.progress((idx + 1) / len(tracks))
-                        continue
-                    if not track.get("Overall Consensus") and track.get("Track Description"):
-                        updated.append(track)
-                        prog.progress((idx + 1) / len(tracks))
-                        continue
-                    save_to_history(track["Title"], track.get("Track Description", ""))
-                    master = st.session_state.engine.synthesize_master_description(
-                        track["Title"], track, catalog, claude_api_key,
-                        mix_type=track.get("Mix Type", "unknown"),
-                    )
-                    track["Track Description"] = master
-                    updated.append(track)
-                    prog.progress((idx + 1) / len(tracks))
-                st.session_state.app_data["tracks"] = updated
-            _auto_save("Tab 02 synthesize all")
-            st.success("All master descriptions synthesized.")
-            st.rerun()
+    # ── Auto-synthesize any tracks with Gemini data but no description ────────
+    if "_tab02_synth_attempted" not in st.session_state:
+        st.session_state["_tab02_synth_attempted"] = set()
 
-        st.divider()
-        st.subheader("Synthesize Single Track")
-        track_titles = [t["Title"] for t in tracks]
-        selected_track = st.selectbox("Select track", track_titles)
-        if st.button("Synthesize Selected"):
-            with st.spinner("Synthesizing..."):
-                track = next(t for t in tracks if t["Title"] == selected_track)
+    needs_synthesis = [
+        t for t in tracks
+        if not t.get("Track Description")
+        and t.get("Overall Consensus")
+        and t.get("Mix Type") not in ("sound_design",)
+        and t["Title"] not in st.session_state["_tab02_synth_attempted"]
+    ]
+
+    if needs_synthesis:
+        for t in needs_synthesis:
+            st.session_state["_tab02_synth_attempted"].add(t["Title"])
+        with st.spinner(f"Synthesizing {len(needs_synthesis)} track(s)..."):
+            prog = st.progress(0)
+            for idx, track in enumerate(needs_synthesis):
                 save_to_history(track["Title"], track.get("Track Description", ""))
                 master = st.session_state.engine.synthesize_master_description(
                     track["Title"], track, catalog, claude_api_key,
                     mix_type=track.get("Mix Type", "unknown"),
                 )
                 track["Track Description"] = master
-            _auto_save("Tab 02 single track")
-            st.success(f"'{selected_track}' updated.")
-            st.rerun()
+                prog.progress((idx + 1) / len(needs_synthesis))
+        _auto_save("Tab 02 auto-synthesize")
+        st.rerun()
 
-    with col_editor:
-        st.subheader("Master Descriptions")
-        for track in st.session_state.app_data["tracks"]:
-            title = track["Title"]
+    # ── Summary line ─────────────────────────────────────────────────────────
+    full_c   = sum(1 for t in tracks if t.get("Mix Type") == "full")
+    sparse_c = sum(1 for t in tracks if t.get("Mix Type") == "sparse")
+    sde_c    = sum(1 for t in tracks if t.get("Mix Type") == "sound_design")
+    done_c   = sum(1 for t in tracks if t.get("Track Description"))
+    st.caption(
+        f"{len(tracks)} tracks · {full_c} full · {sparse_c} sparse · {sde_c} SDE · "
+        f"{done_c} described"
+    )
+    st.divider()
+
+    # ── Badge helper ──────────────────────────────────────────────────────────
+    BADGE_STYLES = {
+        "full":         ("FULL",   "#e3f2fd", "#1565c0"),
+        "sparse":       ("SPARSE", "#f3e5f5", "#6a1b9a"),
+        "sound_design": ("SDE",    "#e8f5e9", "#2e7d32"),
+        "alt":          ("ALT",    "#fff8e1", "#f57f17"),
+    }
+
+    def _badge_html(mix_type: str) -> str:
+        label, bg, fg = BADGE_STYLES.get(mix_type, (mix_type.upper(), "#f5f5f5", "#555"))
+        return (
+            f'<span style="background:{bg};color:{fg};border-radius:4px;'
+            f'padding:2px 9px;font-size:0.71rem;font-weight:700;'
+            f'letter-spacing:0.05em;vertical-align:middle;">{label}</span>'
+        )
+
+    # ── Grouped song display ──────────────────────────────────────────────────
+    grouped = _group_tracks(tracks)
+
+    for song_name, song_tracks in grouped.items():
+        st.markdown(
+            f"<p style='font-size:1.05rem;font-weight:700;margin-bottom:0.3rem;'>{song_name}</p>",
+            unsafe_allow_html=True,
+        )
+
+        for track in song_tracks:
+            title    = track["Title"]
             mix_type = track.get("Mix Type", "unknown")
-            desc = track.get("Track Description", "")
+            desc     = track.get("Track Description", "")
 
-            badge = ""
-            if mix_type == "full":
-                badge = "<span class='mix-badge-full'>FULL</span>"
-            elif mix_type == "sparse":
-                badge = "<span class='mix-badge-sparse'>SPARSE</span>"
-            elif mix_type == "sound_design":
-                badge = "<span class='mix-badge-sde'>SDE</span>"
-            elif mix_type == "alt":
-                badge = "<span class='mix-badge-alt'>ALT</span>"
+            col_badge, col_desc, col_redo = st.columns([1, 8, 1])
 
-            st.markdown(f"**{title}**{badge}", unsafe_allow_html=True)
+            with col_badge:
+                st.markdown(
+                    f'<div style="padding-top:8px;">{_badge_html(mix_type)}</div>',
+                    unsafe_allow_html=True,
+                )
 
-            if desc:
-                issues = check_contamination(desc, catalog)
-                for issue in issues:
-                    st.markdown(f"<div class='contamination-warn'>⚠️ {issue}</div>", unsafe_allow_html=True)
+            with col_desc:
+                if desc:
+                    issues = check_contamination(desc, catalog)
+                    for issue in issues:
+                        st.markdown(
+                            f"<div class='contamination-warn'>⚠️ {issue}</div>",
+                            unsafe_allow_html=True,
+                        )
+                new_desc = st.text_area(
+                    f"desc_{title}", value=desc, height=85,
+                    label_visibility="collapsed", key=f"desc_edit_{title}",
+                )
+                if new_desc != desc:
+                    track["Track Description"] = new_desc
 
-            new_desc = st.text_area(
-                f"desc_{title}", value=desc, height=100,
-                label_visibility="collapsed", key=f"desc_edit_{title}"
-            )
-            if new_desc != desc:
-                track["Track Description"] = new_desc
+            with col_redo:
+                if st.button("↺", key=f"redo_{title}", help=f"Re-synthesize"):
+                    with st.spinner("Re-synthesizing..."):
+                        save_to_history(title, desc)
+                        master = st.session_state.engine.synthesize_master_description(
+                            title, track, catalog, claude_api_key,
+                            mix_type=mix_type,
+                        )
+                        track["Track Description"] = master
+                    _auto_save(f"Tab 02 redo {title}")
+                    st.rerun()
 
             has_gemini = bool(track.get("Overall Consensus"))
-            with st.expander(f"Gemini source data {'✓' if has_gemini else '(not yet ingested)'}"):
-                if has_gemini:
-                    gemini_source_block(track, catalog)
-                else:
-                    st.caption("Re-ingest this track in Tab 01 to get the 6-field Gemini output.")
+            history    = st.session_state.track_history.get(title, [])
 
-            history = st.session_state.track_history.get(title, [])
-            if history:
-                with st.expander(f"Previous versions ({len(history)})"):
-                    for i, old_desc in enumerate(reversed(history)):
-                        st.caption(f"Version {len(history) - i}")
-                        st.text(old_desc)
-                        if st.button("Restore", key=f"restore_{title}_{i}"):
-                            save_to_history(title, desc)
-                            track["Track Description"] = old_desc
-                            st.rerun()
-            st.divider()
+            if has_gemini or history:
+                exp_cols = st.columns([1, 9])
+                with exp_cols[1]:
+                    if has_gemini:
+                        with st.expander(f"Gemini source · {title}", expanded=False):
+                            gemini_source_block(track, catalog)
+                    if history:
+                        with st.expander(f"History ({len(history)}) · {title}", expanded=False):
+                            for i, old_desc in enumerate(reversed(history)):
+                                st.caption(f"Version {len(history) - i}")
+                                st.text(old_desc)
+                                if st.button("Restore", key=f"restore_{title}_{i}"):
+                                    save_to_history(title, desc)
+                                    track["Track Description"] = old_desc
+                                    st.rerun()
 
-        csv = pd.DataFrame(st.session_state.app_data["tracks"]).to_csv(index=False).encode("utf-8")
-        st.download_button("Download Descriptions CSV", csv, "Descriptions.csv", "text/csv")
+        st.markdown(
+            "<hr style='margin:0.75rem 0 1.25rem 0;border:none;border-top:1px solid #e8e8e8;'>",
+            unsafe_allow_html=True,
+        )
+
+    csv = pd.DataFrame(tracks).to_csv(index=False).encode("utf-8")
+    st.download_button("Download Descriptions CSV", csv, "Descriptions.csv", "text/csv")
 
     next_button()
 

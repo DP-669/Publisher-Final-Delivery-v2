@@ -334,6 +334,19 @@ Required JSON output — replace instruction text with actual content from the a
         else:
             mix_note = ""
 
+        if is_epp:
+            user_pov = (
+                "USER PERSPECTIVE: Write as if an advertising agency creative director or brand manager "
+                "is previewing this track. What campaign, emotional territory, or product category does it serve? "
+                "What makes it instantly usable — or precisely right for a specific type of spot?"
+            )
+        else:
+            user_pov = (
+                "USER PERSPECTIVE: Write as if a trailer editor or music supervisor is discovering this track. "
+                "What type of scene, sequence, or dramatic moment is this built for? "
+                "What editorial problem does it solve? What does it unlock that other tracks don't?"
+            )
+
         system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
 
 CURRENT TASK: Synthesize five Gemini-generated data sources into one definitive master track description.
@@ -348,20 +361,31 @@ VALID PLACEMENT TAGS: {cat['placement_tags']}
 CATALOG-SPECIFIC FORBIDDEN WORDS: {forbidden}
 {mix_note}
 
+{user_pov}
+
 OUTPUT FORMAT — exactly 3 sentences:
-Sentence 1: Genre and texture label. Specific. Antigravity Protocol enforced (no A/An/The as first word).
-Sentence 2: The most distinctive sonic event or structural characteristic from the Gemini data. Audio-specific and concrete.
-Sentence 3: 2-3 placement tags in 'Fits:' format. Must stay strictly within valid catalog territory.
+Sentence 1: Lead with the editorial identity — answer "what type of scene, spot, or moment is this track built for?"
+  Write from the POV of the person placing this track, not describing it from the outside.
+  Antigravity Protocol: first word cannot be A, An, or The.
+Sentence 2: ONE sonic or structural detail that earns its place by expanding or defining a placement opportunity.
+  Instrumentation is only relevant when it justifies a use case — examples:
+  "No synthetic elements keeps this period-safe for historical drama."
+  "Spare arrangement holds up under heavy dialogue — works as a persistent underscore."
+  "Full orchestral climax at 2:30 makes this a natural trailer cap."
+  If no single sonic detail adds placement value, describe the emotional arc or dynamic shape instead.
+Sentence 3: 2-3 placement tags in 'Fits:' format. Specific — not "action" but "trailer caps, underdog reveals, prestige TV drama."
 
 SYNTHESIS RULES:
 1. Every word must earn its place. Apply the Hemingway Rule and Cliché Test to everything.
-2. Preserve the most specific sonic details from the Gemini data — these are irreplaceable.
-3. Placement tags come from the Supervisor Description and must be realistic and specific.
-4. The Editor Description's structural insights should inform sentence 2 if they reveal something distinctive.
-5. Maximum 3 sentences. No preamble. No explanation.
+2. Preserve the most specific, useful signal from the Gemini data — distill, do not average.
+3. Placement tags must be concrete and realistic. Never use generic words like "epic," "intense," or "emotional."
+4. Three sentences only. No preamble, no explanation, no labels in the output.
 
-TARGET FORMAT:
-"Electronic hybrid. Sub-bass and ticking mechanical rhythm carry a fragile piano breakdown into a choral climax. Fits: espionage, sports highlights, dark action promos."
+TARGET FORMAT (SSC/rC example):
+"Tense orchestral underscore engineered for the scene before the point of no return — lean strings, haunting choir, no electronics. Builds from a fragile piano statement to a full ensemble climax that works as a trailer cap or final act escalation. Fits: historical epics, prestige TV drama, trailer final act."
+
+TARGET FORMAT (EPP example):
+"Precision-built for premium lifestyle and automotive campaigns — polished acoustic guitar over a minimal rhythm bed with just enough tension to hold visual cuts. Instrumentation stays brand-neutral, usable across a wide category range without forcing a genre identity on the product. Fits: luxury automotive, premium lifestyle brands, aspirational travel spots."
 """
 
         task_prompt = f"""Synthesize these five Gemini data sources into one master description for '{title}'.
