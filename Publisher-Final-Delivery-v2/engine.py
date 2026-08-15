@@ -417,7 +417,12 @@ class IngestionEngine:
                 system=system_instruction,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return message.content[0].text.strip()
+            # claude-sonnet-5 may return ThinkingBlock objects before text.
+            # Always extract from the first block with a .text attribute.
+            for block in message.content:
+                if hasattr(block, "text"):
+                    return block.text.strip()
+            return ""
         except Exception as e:
             return f"Claude Error: {str(e)}"
 
