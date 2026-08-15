@@ -278,6 +278,15 @@ KEYWORD RULES:
 - Keywords focus on Vibe, Emotion, and Editorial Use-Case ONLY
 - Maximum 3 words per keyword phrase
 
+DISTINCTIVE ANALYSIS MANDATE:
+Do not inventory what you hear. Analyze what is DISTINCTIVE about the approach.
+
+For each piece, identify:
+1. STRUCTURAL ARC — how does it develop? What range does it cover from quietest to densest? What is the tension model?
+2. WHAT IS UNUSUAL — what techniques, textures, or orchestrations are uncommon for this genre or tempo? What would surprise an editor who has heard a lot of this type of music?
+3. WHAT IS ABSENT — sometimes the distinctive quality is what is NOT there. No electronics in a thriller cue. No drums in a chase piece. Name it if editorially significant.
+4. EDITORIAL FUNCTION — what scene, sequence, or dramatic moment is this built for? Answer as if you are an editor looking for the right tool, not a musician describing the piece.
+
 Required JSON output — replace instruction text with actual content from the audio:
 {{
     "Title": "{clean_title}",
@@ -481,33 +490,53 @@ Rewrite it for {catalog}. Make it right."""
     ) -> tuple:
         cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
 
-        system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
+        norm_cat = _normalize_catalog(catalog)
+        if norm_cat == "EPP":
+            system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
 
 CURRENT TASK: Write an album description for a new {catalog} release.
 
-CATALOG: {catalog} — {cat['identity']}
-PRIMARY USAGE: {cat['usage']}
-VALID PLACEMENT TAGS: {cat['placement_tags']}
+You are writing an album description for an advertising creative director or brand manager who needs to know in one glance whether this album serves their campaign.
 
-LENGTH: ONE sentence. No exceptions. A music supervisor reads it and immediately knows whether
-to click play — without reading another word.
-
-STRUCTURE: Pack the primary sonic/genre identity + the most distinctive characteristic +
-placement context into a single dense sentence. Use em-dashes, commas, or colons to compress.
-Do NOT write separate sentences for "what it sounds like" and "what it's for" — merge them.
+THREE STEPS before writing:
+1. EDITORIAL OFFER — what does this album enable? What campaign territory, product category, or emotional arc does it serve?
+2. DISTINCTIVE VALUE — what does it offer that generic production music doesn't? What makes it campaign-ready or creatively flexible?
+3. COMPRESS — one sentence, 20 words maximum.
 
 RULES:
+- No production music jargon
 - Antigravity Protocol: first word cannot be A / An / The
+- One sentence only, 15-20 words, never more than 25
 - Hemingway Rule: no stacked adjectives, no corporate jargon
 - Do NOT list tracks or mention track counts
-- Placement territory must stay valid for this catalog
+- NEVER say: "features", "includes", "perfectly engineered", "We are proud to announce"
+"""
+        else:
+            system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
+
+CURRENT TASK: Write an album description for a new {catalog} release.
+
+You are writing an album description for a music supervisor or trailer editor who has 500 albums to choose from and 30 seconds to decide.
+
+Your job is NOT to describe what the music sounds like. Your job is to answer: what editorial blueprint does this album provide, what is distinctive about its approach, and why would an editor reach for THIS over similar options?
+
+THREE STEPS — complete all three before writing:
+1. EDITORIAL OFFER — what does this album enable? What scene, sequence, or narrative problem does it solve? Think in editing terms.
+2. DISTINCTIVE VALUE — what does this album do that the obvious alternatives don't? What is the approach — architecture, range, texture, tension model — that makes it a new option, not another entry in a crowded category?
+3. COMPRESS — one sentence, 20 words maximum. Lead with the editorial offer. Close with context (genre/format). Cut everything that does not earn its place.
+
+RULES:
+- No production music jargon (no 'underscore', 'bed', 'stinger')
+- No instrument inventory unless the instrument IS the distinctive quality
+- Antigravity Protocol: first word cannot be A / An / The
+- Output: one sentence only, no punctuation other than em-dash if needed for compression
+- Target: 15-20 words. Never more than 25
+- Hemingway Rule: no stacked adjectives, no corporate jargon
+- Do NOT list tracks or mention track counts
 - NEVER say: "features", "includes", "perfectly engineered", "We are proud to announce"
 
-TARGET FORMAT (SSC/rC):
-"Acoustic string-led suspense from quiet investigative underscore to full ensemble breakdown — pizzicato, col legno, and scraping textures doing the psychological work synths can't, built for espionage thrillers, prestige mystery, and arthouse horror."
-
-TARGET FORMAT (EPP):
-"Polished acoustic and hybrid production across the full emotional range from tense underscore to warm uplift — brand-neutral enough for automotive and finance, specific enough for lifestyle and travel campaigns."
+EXAMPLE OUTPUT STYLE (not for copying — for reference only):
+'String-based psychological architecture scaling from near-silence to ensemble collapse — new structural range for thriller, prestige drama, and arthouse horror trailers.'
 """
 
         descriptions_text = "\n".join([f"- {d}" for d in all_track_descriptions if d])
