@@ -1010,6 +1010,22 @@ elif active_tab_index == 2:
                         feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="track_description", track_title=title, iterations=_iters_log, final=master, dropbox_token=dropbox_token)
                     _auto_save(f"Tab 02 redo {title}")
                     st.rerun()
+                if st.button("💾", key=f"save_{title}", help="Save manual edit to feedback log"):
+                    _current = st.session_state.get(f"desc_edit_{title}", desc)
+                    track["Track Description"] = _current
+                    if FEEDBACK_AVAILABLE and dropbox_token:
+                        _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                        feedback.log_interaction(
+                            catalog=catalog,
+                            album_name=_album_log,
+                            tab="track_description",
+                            track_title=title,
+                            iterations=[{"draft": desc, "guidance": "manual edit", "accepted": True}],
+                            final=_current,
+                            dropbox_token=dropbox_token,
+                        )
+                    _auto_save(f"Tab 02 manual save {title}")
+                    st.rerun()
 
             has_gemini = bool(track.get("Overall Consensus"))
             history    = st.session_state.track_history.get(title, [])
