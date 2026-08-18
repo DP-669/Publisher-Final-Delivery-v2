@@ -454,6 +454,20 @@ class IngestionEngine:
         )
         return self.call_claude(sys_instr, prompt, claude_api_key)
 
+    def generate_album_description_iteration(
+        self,
+        track_descriptions: List[str],
+        catalog: str,
+        iteration_history: List[Dict],
+        user_guidance: str,
+        claude_api_key: str,
+    ) -> str:
+        """Iterative refinement of the album description with conversation history."""
+        sys_instr, prompt = self.prompts.generate_album_description_iteration_prompt(
+            track_descriptions, catalog, iteration_history, user_guidance
+        )
+        return self.call_claude(sys_instr, prompt, claude_api_key)
+
     def generate_album_names(
         self, album_description: str, catalog: str, claude_api_key: str
     ) -> str:

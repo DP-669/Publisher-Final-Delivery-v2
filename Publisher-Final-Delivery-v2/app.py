@@ -40,6 +40,9 @@ st.set_page_config(
 # ── Styling ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+    html, body, [class*="css"] { font-size: 16px !important; }
+    .stMarkdown, .stText, p, li, div { font-size: 16px !important; }
+    [data-testid="collapsedControl"] { display: block !important; }
     .block-container { max-width: 860px; padding: 2rem 2rem; }
     @media (max-width: 768px) { .block-container { max-width: 100%; padding: 1rem 0.75rem; } }
     .stSidebar .block-container { max-width: 100%; }
@@ -102,6 +105,9 @@ if "dropbox_files" not in st.session_state:
 
 if "track_history" not in st.session_state:
     st.session_state.track_history = {}
+
+if "album_desc_iterations" not in st.session_state:
+    st.session_state.album_desc_iterations = {}
 
 _PIPE_DEFAULT = {
     "status": "idle",        # idle | crawling | processing | synthesizing | done | error
@@ -287,18 +293,17 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("Reset Session"):
-        st.session_state.app_data = {
-            "tracks": [], "album_description": "", "album_name": "",
-            "album_name_selected": "", "cover_art": "", "mailchimp_intro": "",
-            "catalog": "EPP",
-        }
-        st.session_state.dropbox_files = []
-        st.session_state.track_history = {}
-        st.session_state.active_tab_index = 0
-        _reset_pipeline()
-        st.session_state.pop("_saved_sessions", None)
-        st.success("Session cleared.")
+    st.markdown("""
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-left:4px solid #dc3545;
+    border-radius:4px;padding:0.3rem 0.7rem;margin-bottom:0.4rem;font-size:0.8rem;color:#856404;">
+    ⚠️ Danger — clears all session data
+    </div>""", unsafe_allow_html=True)
+    if st.button("🔄 Reset Session", use_container_width=True, key="reset_session_btn"):
+        # Clear all session state keys except engine
+        keys_to_clear = [k for k in st.session_state if k != "engine"]
+        for k in keys_to_clear:
+            del st.session_state[k]
+        st.rerun()
 
     # ── Persistence Controls ───────────────────────────────────────────────────
     if PERSISTENCE_AVAILABLE and dropbox_token:
@@ -997,6 +1002,13 @@ elif active_tab_index == 3:
         st.error("Claude API key required.")
         st.stop()
 
+    # ── Iteration state keyed by album name ───────────────────────────────────
+    _pipe_album = st.session_state.pipeline.get("album_name", "") or "session"
+    _iter_key = f"album_desc_iters__{_pipe_album}"
+    if _iter_key not in st.session_state.album_desc_iterations:
+        st.session_state.album_desc_iterations[_iter_key] = []
+    _iterations = st.session_state.album_desc_iterations[_iter_key]
+
     col_action, col_output = st.columns([1, 1])
 
     with col_action:
@@ -1012,6 +1024,13 @@ elif active_tab_index == 3:
                     descs = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
                     result = st.session_state.engine.generate_album_description(descs, catalog, claude_api_key)
                     st.session_state.app_data["album_description"] = result
+                    # Seed iteration history with the first result
+                    _ts = time.strftime("%H:%M:%S")
+                    st.session_state.album_desc_iterations[_iter_key].append({
+                        "guidance": "",
+                        "description": result,
+                        "timestamp": _ts,
+                    })
                 _auto_save("Tab 03 album description")
                 st.rerun()
 
@@ -1025,6 +1044,83 @@ elif active_tab_index == 3:
         if edited:
             copy_button(edited, "album_desc")
             st.download_button("Download TXT", edited.encode("utf-8"), "Album_Description.txt", "text/plain")
+
+    # ── Interactive AI iteration panel ────────────────────────────────────────
+    st.divider()
+    with st.expander("✏️ Refine with AI", expanded=False):
+        _iterations = st.session_state.album_desc_iterations[_iter_key]
+        _track_descs = [t.get("Track Description", "") for t in st.session_state.app_data["tracks"]]
+
+        # History area — show all previous iterations
+        if _iterations:
+            st.markdown("**Iteration history**")
+            for _i, _item in enumerate(_iterations):
+                _col_meta, _col_use = st.columns([7, 2])
+                with _col_meta:
+                    _guidance_label = f" · _{_item['guidance']}_" if _item.get("guidance") else " · initial generation"
+                    st.caption(f"🕐 {_item['timestamp']}{_guidance_label}")
+                with _col_use:
+                    if st.button("✓ Use this", key=f"use_iter_{_i}", use_container_width=True):
+                        st.session_state.app_data["album_description"] = _item["description"]
+                        _auto_save("Tab 03 iteration accepted")
+                        st.rerun()
+                st.text_area(
+                    f"iter_display_{_i}",
+                    value=_item["description"],
+                    height=68,
+                    label_visibility="collapsed",
+                    disabled=True,
+                    key=f"iter_ta_{_i}",
+                )
+                st.markdown(
+                    "<hr style='margin:0.4rem 0 0.6rem 0;border:none;border-top:1px solid #eee;'>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            # First-time: show directional options
+            st.markdown("""Based on the track descriptions, this album description could take a few directions:
+
+**A)** Concept-based — leaning into the dominant sonic texture or motif  
+**B)** Placement/usage-based — leading with what content it best serves  
+**C)** Editorial-solution-based — what problem does this solve for an editor?  
+**D)** Process/approach-based — what's distinctive about how this album was made?
+
+You can choose one, combine any of the above, or ask me to blend all directions.""")
+
+        st.markdown("")
+        _user_guidance = st.text_input(
+            "Your direction",
+            placeholder="e.g. 'Go with B — lead with what content it serves' or 'More cinematic, less functional'",
+            key=f"album_desc_guidance_{_iter_key}",
+        )
+
+        _col_gen, _col_clear = st.columns([3, 1])
+        with _col_gen:
+            if st.button("Generate", type="primary", key="album_iter_generate"):
+                if not _track_descs or not any(_track_descs):
+                    st.warning("No track descriptions available. Complete Tab 02 first.")
+                else:
+                    with st.spinner("Refining..."):
+                        _result = st.session_state.engine.generate_album_description_iteration(
+                            _track_descs,
+                            catalog,
+                            st.session_state.album_desc_iterations[_iter_key],
+                            _user_guidance,
+                            claude_api_key,
+                        )
+                        _ts = time.strftime("%H:%M:%S")
+                        st.session_state.album_desc_iterations[_iter_key].append({
+                            "guidance": _user_guidance,
+                            "description": _result,
+                            "timestamp": _ts,
+                        })
+                        st.session_state.app_data["album_description"] = _result
+                    _auto_save("Tab 03 iteration generated")
+                    st.rerun()
+        with _col_clear:
+            if st.button("Clear history", key="album_iter_clear"):
+                st.session_state.album_desc_iterations[_iter_key] = []
+                st.rerun()
 
     next_button()
 

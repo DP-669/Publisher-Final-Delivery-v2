@@ -496,7 +496,7 @@ Rewrite it for {catalog}. Make it right."""
 
 CURRENT TASK: Write an album description for a new {catalog} release.
 
-You are writing an album description for an advertising creative director or brand manager who needs to know in one glance whether this album serves their campaign.
+You are writing an album description for a music supervisor or content creator who works across the full range of production music use cases: TV promos, scripted and unscripted TV series, documentaries, educational programming, cooking shows, gaming shows, YouTube content, corporate videos, AND advertising and brand campaigns. This catalog serves all of these, not advertising alone.
 
 THREE STEPS before writing:
 1. EDITORIAL OFFER — what does this album enable? What campaign territory, product category, or emotional arc does it serve?
@@ -667,6 +667,69 @@ Description: {album_description}
 {context_block}
 
 Return ONLY the intro copy. No labels. No preamble."""
+
+        return system_instruction, task_prompt
+
+    # ── TAB 03: Album Description iteration (Claude) ──────────────────────────
+    def generate_album_description_iteration_prompt(
+        self,
+        all_track_descriptions: List[str],
+        catalog: str,
+        iteration_history: List[Dict],
+        user_guidance: str,
+    ) -> tuple:
+        """Iterative refinement: builds on conversation history. Each call evolves the description."""
+        cat = CATALOG_DNA.get(_normalize_catalog(catalog), CATALOG_DNA["EPP"])
+        norm_cat = _normalize_catalog(catalog)
+
+        descriptions_text = "\n".join([f"- {d}" for d in all_track_descriptions if d])
+
+        history_block = ""
+        if iteration_history:
+            history_block = "\n\nCONVERSATION HISTORY:\n"
+            for i, item in enumerate(iteration_history, 1):
+                history_block += f"\n--- Iteration {i} ---\n"
+                if item.get("guidance"):
+                    history_block += f"User direction: {item['guidance']}\n"
+                history_block += f"Generated: {item['description']}\n"
+
+        if norm_cat == "EPP":
+            boundary_note = (
+                "CATALOG: EPP — serves the full range of production music use cases: "
+                "TV promos, scripted and unscripted TV series, documentaries, educational content, "
+                "cooking shows, gaming shows, YouTube, corporate video, AND advertising. "
+                "One sentence, 15-20 words max."
+            )
+        else:
+            boundary_note = (
+                f"CATALOG: {catalog} — theatrical and broadcast only: trailers, film, TV drama, "
+                "TV promos, documentaries, prestige television. "
+                "One sentence, 15-20 words max."
+            )
+
+        system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
+
+CURRENT TASK: Iteratively refine an album description based on user direction and conversation history.
+
+{boundary_note}
+
+EVOLUTION RULES:
+- Build on the conversation history — evolve from previous attempts, do not start from scratch
+- Apply the user's direction precisely and specifically
+- Antigravity Protocol: first word cannot be A / An / The
+- One sentence only, 15-20 words, never more than 25
+- Hemingway Rule: no stacked adjectives, no corporate jargon
+- Do NOT list tracks or mention track counts
+- Return ONLY the album description, no preamble, no explanation
+"""
+
+        task_prompt = f"""Track descriptions (for context):
+{descriptions_text}
+{history_block}
+
+User direction for this iteration: {user_guidance if user_guidance else "Generate the best possible album description drawing on all the track descriptions and previous context."}
+
+Return ONLY the refined album description. One sentence. No preamble."""
 
         return system_instruction, task_prompt
 
