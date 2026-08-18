@@ -30,6 +30,12 @@ try:
 except ImportError:
     PERSISTENCE_AVAILABLE = False
 
+try:
+    import feedback
+    FEEDBACK_AVAILABLE = True
+except ImportError:
+    FEEDBACK_AVAILABLE = False
+
 st.set_page_config(
     page_title="Publisher Final Delivery",
     page_icon="🎵",
@@ -304,6 +310,44 @@ with st.sidebar:
         for k in keys_to_clear:
             del st.session_state[k]
         st.rerun()
+
+    # ── Learning System ─────────────────────────────────────────────
+    if FEEDBACK_AVAILABLE:
+        st.markdown("---")
+        st.markdown("**🧠 Learning System**")
+        if dropbox_token:
+            try:
+                _fb_logged = feedback.count_logged_albums(dropbox_token)
+                if _fb_logged > 0:
+                    st.caption(f"{_fb_logged} album(s) logged")
+                if feedback.is_revision_ready(dropbox_token):
+                    st.success(f"✅ {_fb_logged} albums logged — revision pass ready")
+                    if st.button("🔄 Run Revision Pass", key="revision_pass"):
+                        _rev_log = feedback.load_edit_log(dropbox_token)
+                        _rev_prompt = feedback.build_revision_prompt(_rev_log, catalog)
+                        with st.spinner("Analyzing feedback patterns..."):
+                            _rev_analysis = st.session_state.engine.call_claude(
+                                "You are an expert at analyzing editorial feedback patterns and improving AI prompts.",
+                                _rev_prompt, claude_api_key, max_tokens=4096,
+                            )
+                        st.text_area("Revision Pass Results", _rev_analysis, height=400, key="revision_results")
+                        if _rev_analysis and not _rev_analysis.startswith("Claude Error"):
+                            try:
+                                import dropbox as _dbx_mod
+                                from datetime import datetime, timezone
+                                _rev_dbx = feedback._get_dbx(dropbox_token)
+                                _rev_ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+                                _rev_dbx.files_upload(_rev_analysis.encode("utf-8"), f"/PFD-App/revision-pass-{_rev_ts}.txt", mode=_dbx_mod.files.WriteMode.overwrite)
+                                st.caption("✓ Analysis saved to Dropbox /PFD-App/")
+                            except Exception:
+                                pass
+                else:
+                    _fb_remaining = feedback.LOG_THRESHOLD - _fb_logged
+                    st.caption(f"Needs {_fb_remaining} more album(s) to unlock revision pass")
+            except Exception:
+                st.caption("Learning system unavailable")
+        else:
+            st.caption("Add Dropbox token to enable")
 
     # ── Persistence Controls ───────────────────────────────────────────────────
     if PERSISTENCE_AVAILABLE and dropbox_token:
@@ -958,6 +1002,12 @@ elif active_tab_index == 2:
                             mix_type=mix_type,
                         )
                         track["Track Description"] = master
+                    if FEEDBACK_AVAILABLE and dropbox_token:
+                        _prior_hist = st.session_state.track_history.get(title, [])
+                        _iters_log = [{"draft": v, "guidance": "", "accepted": False} for v in _prior_hist]
+                        _iters_log.append({"draft": master, "guidance": "", "accepted": True})
+                        _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                        feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="track_description", track_title=title, iterations=_iters_log, final=master, dropbox_token=dropbox_token)
                     _auto_save(f"Tab 02 redo {title}")
                     st.rerun()
 
@@ -1063,6 +1113,10 @@ elif active_tab_index == 3:
                     if st.button("✓ Use this", key=f"use_iter_{_i}", use_container_width=True):
                         st.session_state.app_data["album_description"] = _item["description"]
                         _auto_save("Tab 03 iteration accepted")
+                        if FEEDBACK_AVAILABLE and dropbox_token:
+                            _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                            _iters_log = [{"draft": it["description"], "guidance": it.get("guidance", ""), "accepted": (j == _i)} for j, it in enumerate(_iterations)]
+                            feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="album_description", track_title="", iterations=_iters_log, final=_item["description"], dropbox_token=dropbox_token)
                         st.rerun()
                 st.text_area(
                     f"iter_display_{_i}",
@@ -1177,6 +1231,9 @@ elif active_tab_index == 4:
                     if selected != st.session_state.app_data.get("album_name_selected"):
                         st.session_state.app_data["album_name_selected"] = selected
                         _auto_save("Tab 04 album name selected")
+                        if FEEDBACK_AVAILABLE and dropbox_token:
+                            _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                            feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="album_name", track_title="", iterations=[{"draft": raw, "guidance": "", "accepted": True}], final=selected, dropbox_token=dropbox_token)
                     if rationales.get(selected):
                         st.caption(rationales[selected])
                     st.success(f"Selected: **{selected}**")
@@ -1242,6 +1299,9 @@ elif active_tab_index == 5:
                     keywords=keywords,
                 )
                 st.session_state.app_data["cover_art"] = result
+            if FEEDBACK_AVAILABLE and dropbox_token:
+                _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="cover_art", track_title="", iterations=[{"draft": result, "guidance": "", "accepted": True}], final=result, dropbox_token=dropbox_token)
             _auto_save("Tab 05 cover art")
             st.rerun()
 
@@ -1296,6 +1356,9 @@ elif active_tab_index == 6:
                     track_descriptions=track_descriptions,
                 )
                 st.session_state.app_data["mailchimp_intro"] = result
+            if FEEDBACK_AVAILABLE and dropbox_token:
+                _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="mailchimp", track_title="", iterations=[{"draft": result, "guidance": "", "accepted": True}], final=result, dropbox_token=dropbox_token)
             _auto_save("Tab 06 mailchimp")
             st.rerun()
 
@@ -1356,13 +1419,22 @@ elif active_tab_index == 7:
             with apply_col1:
                 if st.button("→ Album Description"):
                     st.session_state.app_data["album_description"] = result
+                    if FEEDBACK_AVAILABLE and dropbox_token:
+                        _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                        feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="fix_existing_copy", track_title=content_type, iterations=[{"draft": bad_copy, "guidance": content_type, "accepted": True}], final=result, dropbox_token=dropbox_token)
                     st.success("Applied.")
                 if st.button("→ MailChimp Intro"):
                     st.session_state.app_data["mailchimp_intro"] = result
+                    if FEEDBACK_AVAILABLE and dropbox_token:
+                        _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                        feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="fix_existing_copy", track_title=content_type, iterations=[{"draft": bad_copy, "guidance": content_type, "accepted": True}], final=result, dropbox_token=dropbox_token)
                     st.success("Applied.")
             with apply_col2:
                 if st.button("→ Album Name"):
                     st.session_state.app_data["album_name_selected"] = result
+                    if FEEDBACK_AVAILABLE and dropbox_token:
+                        _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                        feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="fix_existing_copy", track_title=content_type, iterations=[{"draft": bad_copy, "guidance": content_type, "accepted": True}], final=result, dropbox_token=dropbox_token)
                     st.success("Applied.")
                 if content_type == "Track Description":
                     track_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
@@ -1373,6 +1445,9 @@ elif active_tab_index == 7:
                                 if t["Title"] == apply_track:
                                     save_to_history(apply_track, t.get("Track Description", ""))
                                     t["Track Description"] = result
+                            if FEEDBACK_AVAILABLE and dropbox_token:
+                                _album_log = st.session_state.pipeline.get("album_name", "") or "session"
+                                feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="fix_existing_copy", track_title=apply_track, iterations=[{"draft": bad_copy, "guidance": content_type, "accepted": True}], final=result, dropbox_token=dropbox_token)
                             st.success(f"Applied to '{apply_track}'.")
         else:
             st.info("Refined output will appear here.")
