@@ -137,6 +137,93 @@ CATALOG_DNA = {
 }
 
 
+# ── Reference Examples (seeded 2026-08-18 from master metadata CSVs) ──────
+# 5 most recent albums per catalog. Update as new albums are approved.
+
+REFERENCE_EXAMPLES_TRACKS = {
+    "redCola": (
+        "\nREFERENCE EXAMPLES — accepted rC track descriptions."
+        " Match this quality, register, and editorial approach:\n\n"
+        "- \"The Copper Sleep\": Metallic atmosphere establishes isolation and impending dread."
+        " This uneasy calm fractures into a rhythmic pursuit, culminating in absolute, crushing panic.\n"
+        "- \"Carbon Black\": Isolation and heavy dread of the intro create psychological tension,"
+        " gradually intensifying into a driving, aggressive build that erupts in a sense of imminent danger.\n"
+        "- \"Black Signal\": Fast-paced, cinematic, driven by rhythm and dark energy,"
+        " where sharp motion and orchestral force converge in a fierce, commanding finale.\n"
+        "- \"Calculated Risks\": Menacing throb sets the tone as tense strings and dissonant textures"
+        " envelop sharp punctuations and jagged rhythms. Tension builds into a surge of adrenaline and raw power,"
+        " culminating in a climactic finale — fierce, defiant, and unrelenting.\n"
+        "- \"Catastrophic Unravelling\": Sparse intro opens with an unsettling punctuation and eerie atmosphere."
+        " Intense col legno strings and sharp percussion build tension,"
+        " driving the cue into a heart-pounding rush of adrenaline.\n"
+    ),
+    "SSC": (
+        "\nREFERENCE EXAMPLES — accepted SSC track descriptions."
+        " Match this quality, register, and editorial approach:\n\n"
+        "- \"Safety\": Sparse, poignant intro gradually unfolds, creating an atmosphere of mystery and drama."
+        " Several sectional breaks punctuate the cue, each time reintroducing the ostinato strings"
+        " with renewed urgency and importance, steadily amplifying the intensity.\n"
+        "- \"Throne Envy\": Eloquent and intricate in every way, this composition lands itself organically"
+        " as a solid sonic map for all kinds of machinations and intrigue,"
+        " whether in current or bygone times.\n"
+        "- \"No Apologies\": After a suspenseful intro, thrown into neck-breaking action and adventure"
+        " with little room to breathe through ecstatic finale.\n"
+        "- \"Calling For Help\": Sparse and slow-moving, this evocative string piece is mournful,"
+        " introspective, and elegiac, gradually deepening in emotion before returning to its somber opening note.\n"
+        "- \"Noble Betrayal\": Dark layers conjure magic, danger and veiled deception,"
+        " leaving this cue brimming with anticipation.\n"
+    ),
+    "EPP": (
+        "\nREFERENCE EXAMPLES — accepted EPP track descriptions."
+        " Match this quality, register, and editorial approach:\n\n"
+        "- \"Tinted\": Sub-bass-driven trap beat with metallic hits and tight hi-hats."
+        " Confident, attitude-forward energy. Fits: sports promos, streetwear, esports.\n"
+        "- \"Fitted Up\": Dark trap instrumental driven by deep sub-bass, rapid hi-hats, and sharp brass stabs."
+        " Generates escalating tension and undeniable swagger. Fits: streetwear, esports, competitive sports.\n"
+        "- \"An Army Of Rascals\": Orchestral dramedy. Walking bass, pizzicato strings,"
+        " and woodwind flourishes carry a sly melody into a comedic waltz."
+        " Fits: unscripted TV, dramedy, lifestyle programming.\n"
+        "- \"A Fresh Pack Of Gum\": Quirky pizzicato strings, sneaky woodwinds,"
+        " and bouncing mallets build lighthearted tension without crowding dialogue."
+        " Fits: cooking shows, YouTube, reality TV.\n"
+        "- \"Long Exposure\": Atmospheric post-rock defined by shimmering, delay-soaked guitars"
+        " and a slow, purposeful emotional build. Evolves from solitary reflection into a driving, hopeful climax."
+        " Fits: brand campaigns, aspirational lifestyle, documentary.\n"
+    ),
+}
+
+REFERENCE_EXAMPLES_ALBUMS = {
+    "redCola": (
+        "\nREFERENCE EXAMPLES — accepted rC album descriptions."
+        " Match this quality, register, and editorial approach:\n\n"
+        "- \"Air Hunger\": Cinematic trailer cues built on voice and breath for sci-fi and thriller campaigns:"
+        " contagion, deep space, quarantine, the gasp for air.\n"
+        "- \"Vessel\": High-octane, conceptual, sound design based cues for theatrical marketing"
+        " in science fiction, thriller, action and suspense genres.\n"
+        "- \"Beyond Eden\": Hybrid trailer compositions in the genres of science fiction, thriller, and suspense.\n"
+    ),
+    "SSC": (
+        "\nREFERENCE EXAMPLES — accepted SSC album descriptions."
+        " Match this quality, register, and editorial approach:\n\n"
+        "- \"Dulce Periculum\": Driving, dramatic and, at times, quirky Neo-Classical compositions"
+        " for trailers and promos.\n"
+        "- \"Of Shapes And Light\": Brittle and delicate collection of emotionally charged compositions"
+        " in Neo-classical domain.\n"
+        "- \"Power Games\": Intense, dramatic compositions in Neo-classical style.\n"
+    ),
+    "EPP": (
+        "\nREFERENCE EXAMPLES — accepted EPP album descriptions."
+        " Match this quality, register, and editorial approach:\n\n"
+        "- \"Sounds Like Trouble \u2014 Flexing and Finessing\": Dark sub-bass hip-hop with swagger"
+        " — built for sports promos, reality TV, and streetwear spots.\n"
+        "- \"Sounds Like Mischief \u2014 Tiptoe Tactics\": Mischievous orchestral dramedy collection"
+        " replete with sneaky woodwinds, mallets, and playful rhythmic tension.\n"
+        "- \"Sounds Carefree \u2014 Touched\": High-voltage positivity building from intimate acoustic warmth"
+        " to soaring, triumphant anthems.\n"
+    ),
+}
+
+
 def _normalize_catalog(catalog: str) -> str:
     """
     Map any catalog name variant to the canonical CATALOG_DNA key.
@@ -395,6 +482,8 @@ TARGET FORMAT (SSC/rC example):
 
 TARGET FORMAT (EPP example):
 "Precision-built for premium lifestyle and automotive campaigns — polished acoustic guitar over a minimal rhythm bed with just enough tension to hold visual cuts. Instrumentation stays brand-neutral, usable across a wide category range without forcing a genre identity on the product. Fits: luxury automotive, premium lifestyle brands, aspirational travel spots."
+
+{REFERENCE_EXAMPLES_TRACKS.get(norm, "")}
 """
 
         task_prompt = f"""Synthesize these five Gemini data sources into one master description for '{title}'.
@@ -510,6 +599,8 @@ RULES:
 - Hemingway Rule: no stacked adjectives, no corporate jargon
 - Do NOT list tracks or mention track counts
 - NEVER say: "features", "includes", "perfectly engineered", "We are proud to announce"
+
+{REFERENCE_EXAMPLES_ALBUMS.get(norm_cat, "")}
 """
         else:
             system_instruction = f"""{COUNCIL_SYSTEM_BRIEF}
@@ -537,6 +628,8 @@ RULES:
 
 EXAMPLE OUTPUT STYLE (not for copying — for reference only):
 'String-based psychological architecture scaling from near-silence to ensemble collapse — new structural range for thriller, prestige drama, and arthouse horror trailers.'
+
+{REFERENCE_EXAMPLES_ALBUMS.get(norm_cat, "")}
 """
 
         descriptions_text = "\n".join([f"- {d}" for d in all_track_descriptions if d])
