@@ -115,6 +115,12 @@ if "track_history" not in st.session_state:
 if "album_desc_iterations" not in st.session_state:
     st.session_state.album_desc_iterations = {}
 
+if "last_auto_save" not in st.session_state:
+    st.session_state.last_auto_save = 0.0
+
+if "_auto_restored" not in st.session_state:
+    st.session_state._auto_restored = False
+
 _PIPE_DEFAULT = {
     "status": "idle",        # idle | crawling | processing | synthesizing | done | error
     "shared_link": "",
@@ -238,7 +244,13 @@ def _reset_pipeline():
 def _auto_save(label: str = ""):
     """Fire-and-forget Dropbox save. Never blocks or crashes the UI."""
     if PERSISTENCE_AVAILABLE and dropbox_token and st.session_state.app_data.get("tracks"):
-        save_progress(dropbox_token, st.session_state.app_data, st.session_state.pipeline)
+        save_progress(
+            dropbox_token,
+            st.session_state.app_data,
+            st.session_state.pipeline,
+            album_desc_iterations=st.session_state.get("album_desc_iterations", {}),
+        )
+        st.session_state.last_auto_save = time.time()
         if label:
             print(f"[PFD] Auto-saved: {label}")
 
@@ -287,6 +299,17 @@ with st.sidebar:
             st.caption("🔍 Pipeline: scanning...")
 
     st.divider()
+
+    # Last-saved indicator
+    if PERSISTENCE_AVAILABLE and dropbox_token:
+        _ls = st.session_state.get("last_auto_save", 0.0)
+        if _ls > 0:
+            _elapsed = int(time.time() - _ls)
+            if _elapsed < 60:
+                _ls_label = "just now"
+            else:
+                _ls_label = f"{_elapsed // 60} min ago"
+            st.caption(f"💾 Last saved: {_ls_label}")
 
     active_tab = st.radio(
         "Navigate", TABS,
@@ -416,6 +439,42 @@ with st.sidebar:
         )
 
 active_tab_index = st.session_state.active_tab_index
+
+# ── Auto-restore on startup (runs once if session is empty) ───────────────────
+if (
+    PERSISTENCE_AVAILABLE and dropbox_token
+    and not st.session_state._auto_restored
+    and not st.session_state.app_data.get("tracks")
+):
+    try:
+        _recent_sessions = list_sessions(dropbox_token, max_sessions=1)
+        if _recent_sessions:
+            _rs = _recent_sessions[0]
+            if _rs.get("app_data"):
+                st.session_state.app_data = _rs["app_data"]
+            if _rs.get("album_desc_iterations"):
+                st.session_state.album_desc_iterations = _rs["album_desc_iterations"]
+            _rs_meta = _rs.get("pipeline_meta", {})
+            st.session_state.pipeline["album_name"]          = _rs.get("album_name", "")
+            st.session_state.pipeline["catalog"]             = _rs.get("catalog", "")
+            st.session_state.pipeline["status"]              = "done" if _rs.get("stages", {}).get("ingest") else "idle"
+            st.session_state.pipeline["processed_count"]     = _rs_meta.get("processed_count", 0)
+            st.session_state.pipeline["total_to_analyze"]    = _rs_meta.get("total_to_analyze", 0)
+            st.session_state.pipeline["album_path"]          = _rs_meta.get("album_path", "")
+            st.session_state.pipeline["dropbox_output_path"] = _rs_meta.get("album_path", "")
+            st.session_state.active_tab_index = _rs.get("furthest_tab", 1)
+            st.toast("✅ Session restored")
+    except Exception:
+        pass
+    st.session_state._auto_restored = True
+
+# ── Auto-save every 3 minutes if session has data ─────────────────────────────
+if (
+    PERSISTENCE_AVAILABLE and dropbox_token
+    and st.session_state.app_data.get("tracks")
+    and (time.time() - st.session_state.last_auto_save) > 180
+):
+    _auto_save("3-min auto-save")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -992,20 +1051,28 @@ elif active_tab_index == 2:
                 )
                 if new_desc != desc:
                     track["Track Description"] = new_desc
+                st.text_input(
+                    f"guidance_{title}",
+                    placeholder="Guide the AI: e.g. avoid clockwork, focus on tension arc...",
+                    label_visibility="collapsed",
+                    key=f"guidance_{title}",
+                )
 
             with col_redo:
                 if st.button("↺", key=f"redo_{title}", help=f"Re-synthesize"):
+                    _guidance = st.session_state.get(f"guidance_{title}", "")
                     with st.spinner("Re-synthesizing..."):
                         save_to_history(title, desc)
                         master = st.session_state.engine.synthesize_master_description(
                             title, track, catalog, claude_api_key,
-                            mix_type=mix_type,
+                            mix_type=mix_type, is_redo=True, user_guidance=_guidance,
                         )
                         track["Track Description"] = master
+                    st.session_state[f"guidance_{title}"] = ""
                     if FEEDBACK_AVAILABLE and dropbox_token:
                         _prior_hist = st.session_state.track_history.get(title, [])
                         _iters_log = [{"draft": v, "guidance": "", "accepted": False} for v in _prior_hist]
-                        _iters_log.append({"draft": master, "guidance": "", "accepted": True})
+                        _iters_log.append({"draft": master, "guidance": _guidance, "accepted": True})
                         _album_log = st.session_state.pipeline.get("album_name", "") or "session"
                         feedback.log_interaction(catalog=catalog, album_name=_album_log, tab="track_description", track_title=title, iterations=_iters_log, final=master, dropbox_token=dropbox_token)
                     _auto_save(f"Tab 02 redo {title}")

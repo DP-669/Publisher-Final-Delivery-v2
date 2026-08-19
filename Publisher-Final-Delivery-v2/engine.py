@@ -428,11 +428,12 @@ class IngestionEngine:
 
     def synthesize_master_description(
         self, title: str, track_data: dict, catalog: str, claude_api_key: str,
-        mix_type: str = "unknown"
+        mix_type: str = "unknown", is_redo: bool = False, user_guidance: str = ""
     ) -> str:
         """Tab 02 — synthesize all 6 Gemini fields into one definitive 3-sentence description."""
         sys_instr, prompt = self.prompts.generate_master_description_prompt(
-            title, track_data, catalog, mix_type=mix_type
+            title, track_data, catalog, mix_type=mix_type,
+            is_redo=is_redo, user_guidance=user_guidance
         )
         return self.call_claude(sys_instr, prompt, claude_api_key)
 

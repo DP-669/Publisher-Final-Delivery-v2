@@ -393,7 +393,7 @@ Required JSON output — replace instruction text with actual content from the a
     # ── TAB 02: Master Description synthesis (Claude) ─────────────────────────
     def generate_master_description_prompt(
         self, title: str, gemini_data: dict, catalog: str,
-        mix_type: str = "unknown"
+        mix_type: str = "unknown", is_redo: bool = False, user_guidance: str = ""
     ) -> tuple:
         norm = _normalize_catalog(catalog)
         cat = CATALOG_DNA.get(norm, CATALOG_DNA["EPP"])
@@ -486,6 +486,13 @@ TARGET FORMAT (EPP example):
 {REFERENCE_EXAMPLES_TRACKS.get(norm, "")}
 """
 
+        if is_redo:
+            system_instruction += (
+                "\n\nIMPORTANT: Generate a DIFFERENT description from any previous version. "
+                "Do not repeat the same framing, opening sentence, sonic focus, or placement angle. "
+                "Approach from a fresh editorial direction."
+            )
+
         task_prompt = f"""Synthesize these five Gemini data sources into one master description for '{title}'.
 
 OVERALL CONSENSUS:
@@ -505,6 +512,11 @@ KEYWORDS: {keywords}
 TIP: {tip}
 
 Return ONLY the master description. Exactly 3 sentences. No preamble, no labels."""
+
+        if user_guidance:
+            task_prompt += (
+                f"\n\nUSER GUIDANCE FOR THIS REDO: {user_guidance} — incorporate this direction."
+            )
 
         return system_instruction, task_prompt
 

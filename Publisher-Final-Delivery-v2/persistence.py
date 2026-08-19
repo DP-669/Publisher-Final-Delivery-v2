@@ -97,7 +97,7 @@ def _furthest_tab(stages: dict) -> int:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def save_progress(token: str, app_data: dict, pipe_state: dict) -> bool:
+def save_progress(token: str, app_data: dict, pipe_state: dict, album_desc_iterations: dict = None) -> bool:
     """
     Persist the full session to Dropbox as JSON + CSV.
     Returns True on success, False on any failure (never raises).
@@ -116,6 +116,7 @@ def save_progress(token: str, app_data: dict, pipe_state: dict) -> bool:
             "furthest_tab": _furthest_tab(stages),
             "app_data":     app_data,
             # Lightweight pipeline metadata (not the full queue)
+            "album_desc_iterations": album_desc_iterations or {},
             "pipeline_meta": {
                 "status":          pipe_state.get("status", ""),
                 "album_path":      pipe_state.get("album_path", ""),
@@ -210,6 +211,7 @@ def list_sessions(token: str, max_sessions: int = 8) -> list:
                     "album_name":   data.get("album_name", ""),
                     "app_data":     data.get("app_data"),
                     "pipeline_meta":data.get("pipeline_meta", {}),
+                    "album_desc_iterations": data.get("album_desc_iterations", {}),
                 })
             except Exception:
                 continue
