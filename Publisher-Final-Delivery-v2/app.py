@@ -1052,7 +1052,7 @@ elif active_tab_index == 2:
                 if new_desc != desc:
                     track["Track Description"] = new_desc
                 st.text_input(
-                    f"guidance_{title}",
+                    "Refinement guidance",
                     placeholder="Guide the AI: e.g. avoid clockwork, focus on tension arc...",
                     label_visibility="collapsed",
                     key=f"guidance_{title}",
@@ -1068,7 +1068,7 @@ elif active_tab_index == 2:
                             mix_type=mix_type, is_redo=True, user_guidance=_guidance,
                         )
                         track["Track Description"] = master
-                    st.session_state[f"guidance_{title}"] = ""
+                    del st.session_state[f"guidance_{title}"]
                     if FEEDBACK_AVAILABLE and dropbox_token:
                         _prior_hist = st.session_state.track_history.get(title, [])
                         _iters_log = [{"draft": v, "guidance": "", "accepted": False} for v in _prior_hist]
