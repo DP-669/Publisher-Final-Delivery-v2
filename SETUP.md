@@ -73,6 +73,9 @@ streamlit run app.py
 2. Go to **share.streamlit.io**
 3. Connect your GitHub repo
 4. Set the main file path to `app.py` (it is at the repo root)
+   - A temporary shim at `Publisher-Final-Delivery-v2/app.py` forwards to it, so
+     a deploy still pointing at the old nested path keeps working. Delete that
+     folder once the setting is changed.
 5. Add your API keys under **Settings → Secrets**
 6. Share the app URL with your team — no installation required, browser only
 

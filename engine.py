@@ -123,6 +123,9 @@ class IngestionEngine:
             "03_METADATA_MASTER": None,
         }
         self.prompts = PromptEngine(str(self.root_path))
+        # Keywords the shortener could not process on the last process_keywords
+        # call. Kept whole in the output and surfaced in the UI for review.
+        self.keyword_warnings: List[Dict] = []
         if self.root_path.exists():
             self._resolve_subfolders()
 
@@ -241,7 +244,11 @@ class IngestionEngine:
 
         client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600000))
 
+        # (keyword, keep_whole). keep_whole marks a phrase the shortener never
+        # got to — it is kept intact rather than chopped to its first three
+        # words, which would ship a fragment like "End Of The".
         corrected = []
+        self.keyword_warnings = []
         for kw in kw_list:
             if kw.count(" ") > 2:
                 prompt = self.prompts.get_harvest_loop_prompt(kw)
@@ -251,11 +258,18 @@ class IngestionEngine:
                         contents=prompt,
                     )
                     new_kw = response.text.strip()
-                    corrected.append(new_kw if new_kw else kw)
-                except Exception:
-                    corrected.append(kw)
+                    corrected.append((new_kw, False) if new_kw else (kw, True))
+                    if not new_kw:
+                        self.keyword_warnings.append(
+                            {"keyword": kw, "reason": "Shortener returned nothing"}
+                        )
+                except Exception as exc:
+                    corrected.append((kw, True))
+                    self.keyword_warnings.append(
+                        {"keyword": kw, "reason": f"{type(exc).__name__}: {exc}"}
+                    )
             else:
-                corrected.append(kw)
+                corrected.append((kw, False))
 
         banned = {
             "epic", "huge", "massive", "awesome", "badass",
@@ -270,16 +284,40 @@ class IngestionEngine:
                 banned.update([l.strip().lower() for l in text.splitlines() if l.strip()])
 
         final = []
-        for kw in corrected:
+        for kw, keep_whole in corrected:
             kw_lower = kw.lower()
             words = set(kw_lower.split())
             if not any(b in words or b in kw_lower for b in banned):
                 parts = kw_lower.split()
-                final.append(
-                    " ".join(parts[:3]).title() if len(parts) > 3 else kw.title()
-                )
+                if len(parts) > 3 and not keep_whole:
+                    final.append(" ".join(parts[:3]).title())
+                else:
+                    final.append(kw.title())
+
+        if self.keyword_warnings:
+            self._alert_keyword_warnings(catalog)
 
         return ", ".join(final[:20])
+
+    def _alert_keyword_warnings(self, catalog: str):
+        """
+        Tell a human that a keyword came through unshortened.
+
+        These are kept whole and delivered, so nothing is lost — but they were
+        never reviewed by the shortener, so Damir or Vesna should eyeball them.
+        Fire-and-forget: a failed alert must never break an album run.
+        """
+        try:
+            from dropbox_pipeline import send_ntfy
+            lines = "\n".join(
+                f"- {w['keyword']}  ({w['reason']})" for w in self.keyword_warnings
+            )
+            send_ntfy(
+                "PFD - keywords not shortened",
+                f"Catalog: {catalog}\nKept whole and delivered as-is. Please review:\n{lines}",
+            )
+        except Exception:
+            pass
 
     # ── Core Gemini upload helper ──────────────────────────────────────────────
     def _upload_to_gemini(self, file_bytes: bytes, ext: str, display_name: str, client):

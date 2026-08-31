@@ -55,15 +55,71 @@ class TestProcessKeywords(KeywordTestCase):
         self.assertEqual(result, "Dark Thriller, End Of World")
         client.models.generate_content.assert_called_once()
 
+    @patch("engine.IngestionEngine._alert_keyword_warnings")
     @patch("engine.genai")
-    def test_model_failure_keeps_the_original_phrase(self, mock_genai):
-        """A dead API must not silently drop a keyword from the delivery."""
+    def test_model_failure_keeps_the_phrase_whole(self, mock_genai, mock_alert):
+        """
+        When the shortener fails, the phrase ships intact. It must NOT be
+        chopped to its first three words — that used to deliver "End Of The".
+        """
         client = mock_genai.Client.return_value
         client.models.generate_content.side_effect = RuntimeError("API down")
         result = self.engine.process_keywords(
             "end of the world today", "redCola", "fake_key",
         )
-        self.assertEqual(result, "End Of The")
+        self.assertEqual(result, "End Of The World Today")
+
+    @patch("engine.IngestionEngine._alert_keyword_warnings")
+    @patch("engine.genai")
+    def test_model_failure_is_recorded_for_review(self, mock_genai, mock_alert):
+        """Nothing is lost, but a human has to be told it went out unreviewed."""
+        client = mock_genai.Client.return_value
+        client.models.generate_content.side_effect = RuntimeError("API down")
+        self.engine.process_keywords("end of the world today", "redCola", "k")
+
+        self.assertEqual(len(self.engine.keyword_warnings), 1)
+        warning = self.engine.keyword_warnings[0]
+        self.assertEqual(warning["keyword"], "end of the world today")
+        self.assertIn("API down", warning["reason"])
+        mock_alert.assert_called_once_with("redCola")
+
+    @patch("engine.IngestionEngine._alert_keyword_warnings")
+    @patch("engine.genai")
+    def test_empty_shortener_reply_also_keeps_the_phrase_whole(self, mock_genai, mock_alert):
+        self._mock_reply(mock_genai, "   ")
+        result = self.engine.process_keywords("end of the world today", "SSC", "k")
+        self.assertEqual(result, "End Of The World Today")
+        self.assertEqual(len(self.engine.keyword_warnings), 1)
+
+    @patch("engine.IngestionEngine._alert_keyword_warnings")
+    @patch("engine.genai")
+    def test_a_successful_shortening_raises_no_warning(self, mock_genai, mock_alert):
+        self._mock_reply(mock_genai, "End Of World")
+        self.engine.process_keywords("end of the world today", "SSC", "k")
+        self.assertEqual(self.engine.keyword_warnings, [])
+        mock_alert.assert_not_called()
+
+    @patch("engine.IngestionEngine._alert_keyword_warnings")
+    @patch("engine.genai")
+    def test_warnings_reset_between_runs(self, mock_genai, mock_alert):
+        """A stale warning from a previous track must not follow the next one."""
+        client = mock_genai.Client.return_value
+        client.models.generate_content.side_effect = RuntimeError("API down")
+        self.engine.process_keywords("end of the world today", "SSC", "k")
+        self.assertEqual(len(self.engine.keyword_warnings), 1)
+
+        client.models.generate_content.side_effect = None
+        client.models.generate_content.return_value.text = "End Of World"
+        self.engine.process_keywords("end of the world today", "SSC", "k")
+        self.assertEqual(self.engine.keyword_warnings, [])
+
+    @patch("engine.genai")
+    def test_an_over_long_shortener_reply_is_still_trimmed(self, mock_genai):
+        """The shortener answering with another long phrase is not a failure."""
+        self._mock_reply(mock_genai, "one two three four five")
+        result = self.engine.process_keywords("end of the world today", "SSC", "k")
+        self.assertEqual(result, "One Two Three")
+        self.assertEqual(self.engine.keyword_warnings, [])
 
     @patch("engine.genai")
     def test_catalog_ban_file_is_applied(self, mock_genai):

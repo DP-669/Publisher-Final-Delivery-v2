@@ -396,6 +396,23 @@ with st.sidebar:
         else:
             st.caption("Add Dropbox token to enable")
 
+    # ── Keywords needing review ─────────────────────────────────────────────
+    # A keyword too long to ship as-is is normally shortened by Gemini. When
+    # that call fails the phrase is kept whole rather than chopped to a
+    # fragment — but nobody reviewed it, so say so here (and via ntfy).
+    _kw_review = st.session_state.get("keyword_review", [])
+    if _kw_review:
+        st.markdown("---")
+        st.markdown("**📝 Keywords needing review**")
+        st.warning(f"{len(_kw_review)} delivered unshortened")
+        with st.expander("Show them"):
+            for _w in _kw_review:
+                st.caption(f"**{_w.get('track', '?')}** — {_w['keyword']}")
+                st.caption(f"↳ {_w['reason']}")
+        if st.button("Mark reviewed", key="clear_kw_review", use_container_width=True):
+            st.session_state.keyword_review = []
+            st.rerun()
+
     # ── Model Pins ──────────────────────────────────────────────────────────
     if MODEL_CHECK_AVAILABLE:
         st.markdown("---")
@@ -564,6 +581,12 @@ if PIPELINE_AVAILABLE and gemini_api_key and dropbox_token:
                     metadata = st.session_state.engine.analyze_audio_bytes(
                         file_bytes, ext, entry.display_name, pipeline_catalog, gemini_api_key
                     )
+
+                    _kw_warn = getattr(st.session_state.engine, "keyword_warnings", [])
+                    if _kw_warn:
+                        st.session_state.setdefault("keyword_review", []).extend(
+                            dict(w, track=entry.display_name) for w in _kw_warn
+                        )
                     if metadata:
                         existing_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
                         if entry.display_name not in existing_titles:
@@ -904,6 +927,12 @@ elif active_tab_index == 1:
                         metadata = st.session_state.engine.analyze_audio_file(
                             safe_path, clean_title, catalog, gemini_api_key
                         )
+
+                        _kw_warn = getattr(st.session_state.engine, "keyword_warnings", [])
+                        if _kw_warn:
+                            st.session_state.setdefault("keyword_review", []).extend(
+                                dict(w, track=clean_title) for w in _kw_warn
+                            )
                         if metadata:
                             existing_titles = [t["Title"] for t in st.session_state.app_data["tracks"]]
                             if clean_title not in existing_titles:
