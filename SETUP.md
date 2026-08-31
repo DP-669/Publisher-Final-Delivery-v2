@@ -136,6 +136,22 @@ rules offline (no API key needed).
 
 ---
 
+## Tests
+
+```bash
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
+32 tests, no API keys and no network — every provider call is mocked. They
+cover keyword formatting and the banned-word filter (`test_keyword_engine.py`),
+Gemini response parsing and key normalisation (`test_audio_logic.py`), and the
+model-version comparison rules (`test_models.py`).
+
+GitHub Actions runs them on every push to `main` and every pull request
+(`.github/workflows/tests.yml`).
+
+---
+
 ## Tab 07: Fix Existing Copy
 
 Use this tab to fix:
