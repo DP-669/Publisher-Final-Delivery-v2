@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Streamlit / secrets — never commit these
+.streamlit/secrets.toml
+.env
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local scratch
+*.log
