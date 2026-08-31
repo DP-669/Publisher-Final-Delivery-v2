@@ -72,7 +72,7 @@ streamlit run app.py
 1. Push this repo to GitHub (private)
 2. Go to **share.streamlit.io**
 3. Connect your GitHub repo
-4. Set the main file as `app.py`
+4. Set the main file path to `app.py` (it is at the repo root)
 5. Add your API keys under **Settings → Secrets**
 6. Share the app URL with your team — no installation required, browser only
 
@@ -91,15 +91,48 @@ streamlit run app.py
 
 ---
 
-## The Gemini Model
+## Models
 
-The app uses `gemini-2.5-pro-preview-06-05` for audio analysis.
-To update to a newer version when released, change `GEMINI_AUDIO_MODEL` in `engine.py` line 17.
+| Slot | Default pin | Set by |
+|---|---|---|
+| Audio analysis (Tab 01) | `gemini-3.1-pro-preview` | `GEMINI_AUDIO_MODEL` |
+| All writing (Tabs 02–07) | `claude-sonnet-5` | `CLAUDE_WRITING_MODEL` |
 
-## The Claude Model
+The defaults live in `engine.py` as `DEFAULT_GEMINI_AUDIO_MODEL` and
+`DEFAULT_CLAUDE_WRITING_MODEL`. You do not have to edit code to change them —
+add either key to Streamlit secrets and it wins over the default:
 
-The app uses `claude-sonnet-4-6` for all writing.
-To update, change `CLAUDE_WRITING_MODEL` in `engine.py` line 18.
+```toml
+GEMINI_AUDIO_MODEL = "gemini-3.4-pro"
+CLAUDE_WRITING_MODEL = "claude-sonnet-6"
+```
+
+An environment variable of the same name works too, for local runs.
+
+### Checking for newer models
+
+A pinned model plus a hand-maintained doc goes stale silently. Both providers
+publish a live list-models endpoint, so the app asks them instead of trusting
+this file.
+
+In the sidebar, under **🤖 Model Pins**, press **Check for newer models**. The
+app lists every model your API keys can currently reach and reports:
+
+- a newer version in the same family (a newer Pro supersedes the pinned Pro;
+  a newer Flash does not — different family, different tradeoffs)
+- the stable build of a preview you are pinned to
+- a pin that has disappeared from the provider's list, meaning it is being
+  retired and needs attention
+
+**Nothing switches automatically, by design.** A newer ID is not automatically
+better: it may be a preview, it may price differently, and on the Gemini side it
+may not accept audio input at all. The check tells you what exists; you decide.
+
+To adopt one: set the secret, reboot the app, run a **single** album through it,
+and read the output before running a batch.
+
+The logic lives in `models.py`; `test_models.py` covers the version-comparison
+rules offline (no API key needed).
 
 ---
 

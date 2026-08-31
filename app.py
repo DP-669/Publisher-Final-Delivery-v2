@@ -36,6 +36,13 @@ try:
 except ImportError:
     FEEDBACK_AVAILABLE = False
 
+try:
+    import models as model_registry
+    from engine import GEMINI_AUDIO_MODEL, CLAUDE_WRITING_MODEL
+    MODEL_CHECK_AVAILABLE = True
+except ImportError:
+    MODEL_CHECK_AVAILABLE = False
+
 st.set_page_config(
     page_title="Publisher Final Delivery",
     page_icon="🎵",
@@ -256,9 +263,26 @@ def _auto_save(label: str = ""):
 
 
 # ── Secrets — resolved before sidebar so controls can reference them ───────────
-gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
-claude_api_key  = st.secrets.get("ANTHROPIC_API_KEY", None)
-dropbox_token   = st.secrets.get("DROPBOX_TOKEN", None)
+def _secret(key, default=None):
+    """
+    Read a key from Streamlit secrets, falling back to the environment.
+
+    st.secrets raises StreamlitSecretNotFoundError when no secrets.toml exists
+    at all, which crashed the app on any machine without one. Secrets are set in
+    Streamlit Cloud; locally an env var is enough.
+    """
+    try:
+        value = st.secrets.get(key)
+        if value:
+            return value
+    except Exception:
+        pass
+    return os.environ.get(key) or default
+
+
+gemini_api_key = _secret("GEMINI_API_KEY")
+claude_api_key  = _secret("ANTHROPIC_API_KEY")
+dropbox_token   = _secret("DROPBOX_TOKEN")
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 catalog = st.session_state.app_data.get("catalog", "EPP")
@@ -372,6 +396,40 @@ with st.sidebar:
         else:
             st.caption("Add Dropbox token to enable")
 
+    # ── Model Pins ──────────────────────────────────────────────────────────
+    if MODEL_CHECK_AVAILABLE:
+        st.markdown("---")
+        st.markdown("**🤖 Model Pins**")
+        st.caption(f"Audio: `{GEMINI_AUDIO_MODEL}`")
+        st.caption(f"Writing: `{CLAUDE_WRITING_MODEL}`")
+
+        if st.button("🔍 Check for newer models", key="model_check",
+                     use_container_width=True):
+            with st.spinner("Asking both providers what exists now..."):
+                st.session_state.model_reports = {
+                    "gemini": model_registry.check_gemini(GEMINI_AUDIO_MODEL, gemini_api_key),
+                    "claude": model_registry.check_claude(CLAUDE_WRITING_MODEL, claude_api_key),
+                }
+
+        _reports = st.session_state.get("model_reports")
+        if _reports:
+            for _label, _key in (("Gemini", "gemini"), ("Claude", "claude")):
+                _rep = _reports[_key]
+                _line = model_registry.summarize(_rep, _label)
+                if _rep.get("error"):
+                    st.warning(_line)
+                elif _rep.get("pinned_available") is False:
+                    st.error(_line)
+                elif _rep.get("newer") or _rep.get("stable_of_pinned"):
+                    st.info(_line)
+                else:
+                    st.success(_line)
+            st.caption(
+                "Nothing switches automatically. To adopt one, set "
+                "`GEMINI_AUDIO_MODEL` or `CLAUDE_WRITING_MODEL` in Streamlit "
+                "secrets, then verify one album before running a batch."
+            )
+
     # ── Persistence Controls ───────────────────────────────────────────────────
     if PERSISTENCE_AVAILABLE and dropbox_token:
         st.divider()
@@ -425,15 +483,15 @@ with st.sidebar:
                     st.divider()
 
     with st.expander("⚙️ Configuration"):
-        gemini_api_key = st.secrets.get("GEMINI_API_KEY", None) or st.text_input(
+        gemini_api_key = _secret("GEMINI_API_KEY") or st.text_input(
             "Gemini API Key", type="password", key="gemini_key_input",
             placeholder="For audio analysis"
         )
-        claude_api_key = st.secrets.get("ANTHROPIC_API_KEY", None) or st.text_input(
+        claude_api_key = _secret("ANTHROPIC_API_KEY") or st.text_input(
             "Claude API Key", type="password", key="claude_key_input",
             placeholder="For all writing"
         )
-        dropbox_token = st.secrets.get("DROPBOX_TOKEN", None) or st.text_input(
+        dropbox_token = _secret("DROPBOX_TOKEN") or st.text_input(
             "Dropbox Token", type="password", key="dropbox_key_input",
             placeholder="Required for pipeline"
         )

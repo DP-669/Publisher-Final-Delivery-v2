@@ -43,9 +43,33 @@ from prompts import PromptEngine
 from google import genai
 from google.genai import types
 
-# Latest models — always use the most current available
-GEMINI_AUDIO_MODEL = "gemini-3.1-pro-preview"
-CLAUDE_WRITING_MODEL = "claude-sonnet-5"
+# ── Model pins ────────────────────────────────────────────────────────────────
+# These are the models the app runs on. They are overridable from Streamlit
+# secrets so a new model can be adopted without a code change or redeploy:
+#
+#   GEMINI_AUDIO_MODEL   = "gemini-3.4-pro"
+#   CLAUDE_WRITING_MODEL = "claude-sonnet-6"
+#
+# models.py checks these against each provider's live list-models endpoint and
+# reports anything newer. It never switches a pin on its own — see models.py.
+DEFAULT_GEMINI_AUDIO_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_CLAUDE_WRITING_MODEL = "claude-sonnet-5"
+
+
+def _pinned(key: str, default: str) -> str:
+    """Read a model pin from Streamlit secrets, then env, else the default."""
+    try:
+        import streamlit as st
+        value = st.secrets.get(key)
+        if value:
+            return str(value).strip()
+    except Exception:
+        pass
+    return os.environ.get(key, default).strip() or default
+
+
+GEMINI_AUDIO_MODEL = _pinned("GEMINI_AUDIO_MODEL", DEFAULT_GEMINI_AUDIO_MODEL)
+CLAUDE_WRITING_MODEL = _pinned("CLAUDE_WRITING_MODEL", DEFAULT_CLAUDE_WRITING_MODEL)
 
 DEFAULT_ROOT_PATH = Path(".")
 
