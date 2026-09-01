@@ -1,26 +1,30 @@
 """
-TEMPORARY SHIM — safe to delete once Streamlit Cloud is pointed at ../app.py.
+DO NOT DELETE — this is the entrypoint Streamlit Cloud actually launches.
 
-The app used to live in this subfolder, so Streamlit Cloud's "Main file path"
-setting still points here. The code moved to the repo root; without this file
-that setting resolves to nothing and the deployed app fails to start.
+The deployed app
+(publisher-final-delivery-v2-claude-and-gemini.streamlit.app) was created with
+its "Main file path" set to this location, back when the whole app lived in
+this subfolder. Community Cloud does not let that setting be edited after
+deployment — the only way to change it is to delete and redeploy the app, which
+would mean re-entering every secret and reclaiming the subdomain. Not worth it.
 
-This forwards to the real entrypoint so the live app keeps working until the
-setting can be changed in the Streamlit Cloud dashboard.
+So the code lives at the repo root, where it belongs, and this file forwards to
+it. It is deliberate, not leftover. Deleting it takes the live app down.
 
-To remove: set Main file path to `app.py`, reboot the app, delete this folder.
+If the app is ever redeployed from scratch, set Main file path to `app.py` and
+this folder can go.
 """
+import os
 import pathlib
 import runpy
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Imports (engine, prompts, models…) and the asset folders are resolved
-# relative to the repo root, so both the import path and the working directory
-# have to point there before the real app runs.
+# Imports (engine, prompts, models…) and the asset folders (01_VISUAL_REFERENCES,
+# 02_VOICE_GUIDES) are both resolved relative to the repo root, so the import
+# path and the working directory have to point there before the real app runs.
 sys.path.insert(0, str(REPO_ROOT))
-import os
 os.chdir(REPO_ROOT)
 
 runpy.run_path(str(REPO_ROOT / "app.py"), run_name="__main__")

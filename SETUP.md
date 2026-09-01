@@ -73,9 +73,14 @@ streamlit run app.py
 2. Go to **share.streamlit.io**
 3. Connect your GitHub repo
 4. Set the main file path to `app.py` (it is at the repo root)
-   - A temporary shim at `Publisher-Final-Delivery-v2/app.py` forwards to it, so
-     a deploy still pointing at the old nested path keeps working. Delete that
-     folder once the setting is changed.
+
+**The existing deployment is different.** It was created when the app lived in a
+subfolder, so its Main file path points at `Publisher-Final-Delivery-v2/app.py`.
+Community Cloud cannot edit that setting after deployment — changing it means
+deleting and redeploying the app, re-entering every secret and reclaiming the
+subdomain. Instead, `Publisher-Final-Delivery-v2/app.py` is a forwarder to the
+real entrypoint at the repo root. **Do not delete it — the live app launches
+through it.** Only a from-scratch redeploy makes it removable.
 5. Add your API keys under **Settings → Secrets**
 6. Share the app URL with your team — no installation required, browser only
 
