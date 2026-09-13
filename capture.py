@@ -30,12 +30,14 @@ BASE_COLUMNS = ["Title", "Mix Type", "Track Description", "Overall Consensus",
                 "Keywords", "Tip", "Album", "Album Description"]
 STATUS_COLUMNS = ["PFD_Status", "PFD_Block_Reasons"]
 
+# The "TRACK: …"/"ALBUM: …" names are the master metadata sheets' SourceAudio
+# headers (read 2026-09-12), which is what Vesna's FINAL export will carry.
 DIFF_FIELDS = {
-    "track description": ["Track Description", "Description", "Track_Description", "Track Desc"],
-    "keywords": ["Keywords", "Tags", "Keyword"],
-    "album description": ["Album Description", "Album_Description", "Album Desc"],
+    "track description": ["Track Description", "TRACK: Description", "Description", "Track_Description"],
+    "keywords": ["Keywords", "TRACK: Keywords", "Tags", "Keyword"],
+    "album description": ["Album Description", "ALBUM: Description", "Album_Description"],
 }
-TITLE_ALIASES = ["Title", "Track Title", "Track Name", "Track"]
+TITLE_ALIASES = ["Title", "TRACK: Title", "TRACK: Display Title", "Track Title", "Track Name", "Track"]
 
 
 # ── Names and paths ────────────────────────────────────────────────────────────
