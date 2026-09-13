@@ -1,0 +1,190 @@
+{
+  "_source": "Master metadata sheets in Dropbox (/01 rMG Admin/03 Metadata, Registrations & Data), read 2026-09-12. rC/EPP ordered by ALBUM: Release Date; SSC has no date column, ordered by album code.",
+  "_note": "Read by Claude before writing an album description (do not repeat their nouns) and used to reject album names already in the catalog. Refresh from the master sheets when albums ship.",
+  "rC": [
+    {
+      "album": "Quiet Neighborhood",
+      "album_code": "rC057",
+      "release_date": "2026-08-20",
+      "description": "Tense, unsettling sound design compositions for horror, triler, Sci-Fi and suspense trailer campaigns"
+    },
+    {
+      "album": "Air Hunger",
+      "album_code": "rC056",
+      "release_date": "2026-07-03",
+      "description": "Cinematic trailer cues built on voice and breath for sci-fi and thriller campaigns: contagion, deep space, quarantine, the gasp for air."
+    },
+    {
+      "album": "Vessel",
+      "album_code": "rC055",
+      "release_date": "2026-01-21",
+      "description": "High-octane, conceptual, sound design based cues for theatrical marketing in science fiction, thriller, action and suspense genres."
+    },
+    {
+      "album": "Beyond Eden",
+      "album_code": "rC054",
+      "release_date": "2025-11-11",
+      "description": "Hybrid trailer compositions in the genres of science fiction, thriller, and suspense."
+    },
+    {
+      "album": "Games We Play",
+      "album_code": "rC053",
+      "release_date": "2025-06-05",
+      "description": "Evocative, dramatic compositions for stories in Thriller and Science Fiction domain."
+    },
+    {
+      "album": "Disposable Lives",
+      "album_code": "rC052",
+      "release_date": "2025-02-10",
+      "description": "Sound Design imaginings of stories based in not so distant, terrifying future."
+    },
+    {
+      "album": "Spirit Catcher",
+      "album_code": "rC051",
+      "release_date": "2024-11-13",
+      "description": "Foreboding, eerie trailer compositions with hints of horror and sci-fi."
+    },
+    {
+      "album": "Neon Noir",
+      "album_code": "rC050",
+      "release_date": "2024-02-21",
+      "description": "Haunting melodies and pulsating rhythms create a sense of suspense and intrigue set in dystopian worlds in the future."
+    },
+    {
+      "album": "Canvas of Time",
+      "album_code": "rC049",
+      "release_date": "2024-01-11",
+      "description": "Slowly evolving and intensifying cinematic compositions for theatrical marketing."
+    },
+    {
+      "album": "Origins",
+      "album_code": "rC048",
+      "release_date": "2023-10-17",
+      "description": "Every iconic story has a beginning, usually one that is humble and unexpected. This album is inspired by those stories."
+    }
+  ],
+  "SSC": [
+    {
+      "album": "Power Games",
+      "album_code": "SSC021",
+      "release_date": null,
+      "description": "Intense, dramatic compositions in Neo-classical style."
+    },
+    {
+      "album": "Of Shapes And Light",
+      "album_code": "SSC020",
+      "release_date": null,
+      "description": "Brittle and delicate collection of emotionally charged compositions in Neo-classical domain."
+    },
+    {
+      "album": "Battle Scars",
+      "album_code": "SSC019",
+      "release_date": null,
+      "description": "High energy orchestral tracks in the action and adventure domain."
+    },
+    {
+      "album": "Dulce Periculum",
+      "album_code": "SSC018",
+      "release_date": null,
+      "description": "Driving, dramatic and, at times, quirky Neo-Classical compositions for trailers and promos."
+    },
+    {
+      "album": "What If",
+      "album_code": "SSC017",
+      "release_date": null,
+      "description": "Unnerving, surreal sonic blueprints evolve slowly and methodically, from sparse and delicate openings to intense and dramatic conclusions"
+    },
+    {
+      "album": "The White Room",
+      "album_code": "SSC016",
+      "release_date": null,
+      "description": "Disorienting, disturbing compositions in neo-classical style depicting inner turmoil and paranoia."
+    },
+    {
+      "album": "Narrative",
+      "album_code": "SSC015",
+      "release_date": null,
+      "description": "Short sonic stories for trailers and promos"
+    },
+    {
+      "album": "Phonos",
+      "album_code": "SSC014",
+      "release_date": null,
+      "description": "Experimental vocal and neoclassical compositions suitable for psychological thriller and horror, sci-fi and drama trailers and promos"
+    },
+    {
+      "album": "Choices",
+      "album_code": "SSC013",
+      "release_date": null,
+      "description": "Organic cinematic compositions reflecting on dramatic situations and context."
+    },
+    {
+      "album": "Dra?",
+      "album_code": "SSC012",
+      "release_date": null,
+      "description": "Modern sonic blueprints of timeless stories and gripping archetypes."
+    }
+  ],
+  "EPP": [
+    {
+      "album": "Sounds Like Trouble - Flexing and Finessing",
+      "album_code": "EPP064",
+      "release_date": "2026-05-24",
+      "description": "Dark sub-bass hip-hop with swagger - built for sports promos, reality TV, and streetwear spots."
+    },
+    {
+      "album": "Sounds Like Mischief- Tiptoe Tactics",
+      "album_code": "EPP063",
+      "release_date": "2026-04-24",
+      "description": "A mischievous orchestral dramedy collection replete with sneaky woodwinds, mallets, and playful rhythmic tension"
+    },
+    {
+      "album": "Sounds Carefree - Touched",
+      "album_code": "EPP062",
+      "release_date": "2026-03-31",
+      "description": "High-voltage positivity building from intimate acoustic warmth to soaring, triumphant anthems."
+    },
+    {
+      "album": "Body Works",
+      "album_code": "EPP061",
+      "release_date": "2026-03-11",
+      "description": "A fusion of upbeat orchestral elegance and swagger-heavy hip-hop, delivering tension engineered to drive high-stakes sports highlights, edgy streetwear campaigns, and dark action promos."
+    },
+    {
+      "album": "Transparency",
+      "album_code": "EPP060",
+      "release_date": "2026-02-19",
+      "description": "A masterfully understated collection of guitar-driven atmospheres that moves seamlessly from intimate acoustic warmth to vast, cinematic desolation."
+    },
+    {
+      "album": "Wink Factor",
+      "album_code": "EPP059",
+      "release_date": "2025-12-12",
+      "description": "High-voltage positivity with an edge: hand-made rhythms and soulful swagger that will spark instant, authentic emotion."
+    },
+    {
+      "album": "El Viento",
+      "album_code": "EPP058",
+      "release_date": "2025-10-27",
+      "description": "Authentic cues from SouthWest borders drenched in grit, swagger and drama."
+    },
+    {
+      "album": "Light Mischief Ministry",
+      "album_code": "EPP057",
+      "release_date": "2025-08-12",
+      "description": "The magic of childhood innocence and wonder are evoked with these cinematic sonic short stories in a lush Hollywood orchestral style."
+    },
+    {
+      "album": "Room to Bloom",
+      "album_code": "EPP056",
+      "release_date": "2025-07-25",
+      "description": "Driving, energetic short stories full of youthful energy and drive, hope and magic, presented in the classic Hollywood orchestral sound."
+    },
+    {
+      "album": "Sounds Like Mystery - Questionable Things",
+      "album_code": "EPP055",
+      "release_date": "2025-03-31",
+      "description": "Dark, thrilling music for situations when things just don’t seem right."
+    }
+  ]
+}

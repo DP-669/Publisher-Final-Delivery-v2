@@ -83,6 +83,15 @@ def parse_columns_reference(text: str) -> List[str]:
     return lines
 
 
+def _block_reasons(track: Dict) -> str:
+    if (track.get("PFD_Status") or gate.BLOCKED) != gate.BLOCKED:
+        return ""
+    reasons = list(track.get("PFD_Block_Reasons") or []) or ["no status recorded"]
+    if track.get("PFD_Human_Note"):
+        reasons.append(f"human note: {track['PFD_Human_Note']}")
+    return "; ".join(reasons)
+
+
 def track_rows(app_data: Dict, catalog: str) -> pd.DataFrame:
     ctx = context_label(catalog)
     album = app_data.get("album_name_selected") or ""
@@ -102,9 +111,7 @@ def track_rows(app_data: Dict, catalog: str) -> pd.DataFrame:
             "Album": album,
             "Album Description": album_desc,
             "PFD_Status": t.get("PFD_Status") or gate.BLOCKED,
-            "PFD_Block_Reasons": "; ".join(t.get("PFD_Block_Reasons") or [])
-                                 if (t.get("PFD_Status") or gate.BLOCKED) == gate.BLOCKED
-                                 else "",
+            "PFD_Block_Reasons": _block_reasons(t),
         })
     columns = [c.replace("{context}", ctx) for c in BASE_COLUMNS] + STATUS_COLUMNS
     return pd.DataFrame(rows, columns=columns)
@@ -256,6 +263,18 @@ def write_draft(dbx, catalog: str, album_code: str, album: str, csv_bytes: bytes
     path = capture_paths(catalog, album_code, album)["draft"]
     dbx.files_upload(csv_bytes, path, mode=_overwrite(), mute=True)
     return path
+
+
+def export_album(dbx, app_data: Dict, catalog: str, album_code: str,
+                 reference: Optional[List[str]] = None) -> Tuple[bytes, str, str]:
+    """
+    Build the ZIP and write the untouched DRAFT CSV to Dropbox in one step, so
+    no export ever happens without its DRAFT. Returns (zip_bytes, zip_name, draft_path).
+    """
+    zip_bytes, zip_name = build_zip(app_data, catalog, album_code, reference)
+    album = app_data.get("album_name_selected") or "album"
+    draft_path = write_draft(dbx, catalog, album_code, album, build_csv(app_data, catalog, reference))
+    return zip_bytes, zip_name, draft_path
 
 
 def read_columns_reference(dbx) -> Optional[List[str]]:

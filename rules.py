@@ -214,6 +214,21 @@ class Rules:
                     words.add(w.lower())
         return sorted(words)
 
+    # ── Few-shot examples ─────────────────────────────────────────────────────
+    def few_shot(self, catalog: str, kind: str) -> List[str]:
+        """
+        The active catalog's register examples from TUNABLE "Few-shot examples".
+        kind: "Track" or "Album". Other catalogs' examples are never returned.
+        """
+        code = catalog_code(catalog)
+        try:
+            body = self.tunable("Few-shot examples")
+        except RulesError:
+            return []
+        block = _split(body, "####").get(code, "")
+        prefix = f"{kind}:"
+        return [line[len(prefix):].strip() for line in block.splitlines() if line.startswith(prefix)]
+
     # ── Analysis schema block ─────────────────────────────────────────────────
     def analysis_schema_keys(self) -> List[str]:
         """Top-level keys in the TUNABLE 'Analysis schema' block, in order."""
@@ -263,6 +278,10 @@ def allowed_placement_words(catalog: str) -> List[str]:
 
 def fits_list(catalog: str) -> List[str]:
     return RULES.fits_list(catalog)
+
+
+def few_shot(catalog: str, kind: str) -> List[str]:
+    return RULES.few_shot(catalog, kind)
 
 
 def lanes() -> List[Dict[str, str]]:

@@ -198,6 +198,60 @@ def check_claude(pinned: str, api_key: str) -> Dict:
     return _compare(pinned, available, claude_parts, "tier")
 
 
+# ── Runtime resolution (v3) ────────────────────────────────────────────────────
+# v3 runs on the newest Opus and the newest Pro the keys can reach, found with
+# the same live listing the sidebar check uses. An explicit secret pin still
+# wins (a human lock), and a failed listing falls back to the pinned default.
+
+# Pro variants that do not take audio in and give text out.
+GEMINI_RESOLVE_EXCLUDE = ("image", "live", "native-audio", "computer-use", "robotics", "tts")
+
+
+def _newest(candidates: List[Dict]) -> Optional[str]:
+    if not candidates:
+        return None
+    # Newest version first; at equal version a stable build beats a preview,
+    # and a short alias beats a datestamped duplicate.
+    candidates.sort(key=lambda c: (c["version"], not c["preview"], -len(c["id"])), reverse=True)
+    return candidates[0]["id"]
+
+
+def latest_gemini_pro(available: List[str]) -> Optional[str]:
+    out = []
+    for mid in available:
+        if any(bad in mid.lower() for bad in GEMINI_RESOLVE_EXCLUDE):
+            continue
+        p = gemini_parts(mid)
+        if p and p["family"] == "pro":
+            out.append(p)
+    return _newest(out)
+
+
+def latest_claude_opus(available: List[str]) -> Optional[str]:
+    return _newest([p for p in (claude_parts(m) for m in available) if p and p["tier"] == "opus"])
+
+
+def resolve(slot: str, api_key: str, pinned: str, explicit: bool) -> Dict:
+    """
+    {'id', 'source', 'error'} for slot 'gemini' or 'claude'.
+    source: 'secret' (explicit pin), 'latest' (resolved live), 'fallback' (pin, check failed).
+    """
+    if explicit:
+        return {"id": pinned, "source": "secret", "error": None}
+    if not api_key:
+        return {"id": pinned, "source": "fallback", "error": "no API key"}
+    try:
+        if slot == "gemini":
+            found = latest_gemini_pro(list_gemini_models(api_key))
+        else:
+            found = latest_claude_opus(list_claude_models(api_key))
+    except Exception as exc:
+        return {"id": pinned, "source": "fallback", "error": f"{type(exc).__name__}: {exc}"}
+    if not found:
+        return {"id": pinned, "source": "fallback", "error": "no matching model in the provider list"}
+    return {"id": found, "source": "latest", "error": None}
+
+
 def summarize(report: Dict, label: str) -> str:
     """One-line human summary of a check result, for the sidebar."""
     if report.get("error"):
