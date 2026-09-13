@@ -41,4 +41,5 @@ Pull request: see "Where it lives" below.
 - **M-E deploy:** merge is one click by Damir (background-job rule). The live URL is login-protected, so an anonymous HTTP 200 cannot be observed; the iPad check above is the observation.
 
 ## Where it lives
-- Branch `v3-build` on GitHub `DP-669/Publisher-Final-Delivery-v2`, pull request into `main`.
+- Branch `v3-build` on GitHub `DP-669/Publisher-Final-Delivery-v2`.
+- Pull request into `main`: https://github.com/DP-669/Publisher-Final-Delivery-v2/pull/1
