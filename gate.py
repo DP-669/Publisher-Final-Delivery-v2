@@ -23,7 +23,7 @@ from typing import Dict, List, Optional
 from pydantic import ValidationError
 
 import rules
-from analysis_schema import (Analysis, EndingType, Presence, TempoBand, Writing, family_label,
+from analysis_schema import (Analysis, EndingType, Presence, TempoBand, Writing, families, family_label,
                              walk_families)
 
 PASSED = "PASSED"
@@ -49,7 +49,7 @@ BPM_TOL = 0.08                 # G10
 SDE_MAX_MUSICAL_FAMILIES = 2   # G15
 
 STRUCTURAL_RULES = ("G1", "G2", "G3", "G4")   # re-run once, no hint
-HINTED_RULES = tuple(f"G{i}" for i in range(5, 17))  # re-run once, rule named in the user text
+HINTED_RULES = tuple(f"G{i}" for i in range(5, 18))  # re-run once, rule named in the user text
 
 KNOWN_NAMES_PATH = Path(__file__).resolve().parent / "reference" / "known_names.txt"
 
@@ -109,10 +109,10 @@ def _timestamps(a: Analysis):
         yield f"the '{s.label}' section", s.t_end
     for t in a.modular_edit_points_t:
         yield "an edit point", t
-    for path, fam in walk_families(a.instrumentation):
-        for e in fam.evidence:
-            yield f"the {family_label(path)}", e.t_start
-            yield f"the {family_label(path)}", e.t_end
+    for obs in a.instrumentation:
+        for e in obs.evidence:
+            yield f"the {family_label(obs.family.value)}", e.t_start
+            yield f"the {family_label(obs.family.value)}", e.t_end
 
 
 def check_timestamps(a: Analysis, duration: float) -> List[Dict]:
@@ -121,11 +121,11 @@ def check_timestamps(a: Analysis, duration: float) -> List[Dict]:
     for what, t in _timestamps(a):
         if t < 0 or t > limit:
             return [failure("G1", what=what, t=float(t), duration=duration)]
-    for path, fam in walk_families(a.instrumentation):
-        for e in fam.evidence:
+    for obs in a.instrumentation:
+        for e in obs.evidence:
             if e.t_end < e.t_start:
-                return [failure("G1", what=f"the {family_label(path)}", t=float(e.t_end), duration=duration,
-                                backwards=True)]
+                return [failure("G1", what=f"the {family_label(obs.family.value)}", t=float(e.t_end),
+                                duration=duration, backwards=True)]
     return []
 
 
@@ -148,18 +148,22 @@ def check_sections(a: Analysis, duration: float) -> List[Dict]:
 
 
 def check_presence(a: Analysis) -> List[Dict]:
-    """G3: a present family carries evidence, confidence >= 0.6 and a prominence."""
+    """G3: a present family has confidence >= 0.6 and a prominence. Missing evidence is G17."""
     out = []
-    for path, fam in walk_families(a.instrumentation):
-        if not _present(fam):
+    for path, fam in walk_families(families(a)):
+        if not _present(fam) or not fam.evidence:
             continue
-        if not fam.evidence:
-            out.append(failure("G3", family=path, problem="no_evidence"))
-        elif fam.confidence < PRESENT_CONFIDENCE_MIN:
+        if fam.confidence < PRESENT_CONFIDENCE_MIN:
             out.append(failure("G3", family=path, problem="low_confidence", confidence=float(fam.confidence)))
         elif fam.prominence is None:
             out.append(failure("G3", family=path, problem="no_prominence"))
     return out
+
+
+def check_observations(a: Analysis) -> List[Dict]:
+    """G17: an Observation listed as present with no evidence. Re-run once, naming the families."""
+    missing = sorted({o.family.value for o in a.instrumentation if o.presence == "present" and not o.evidence})
+    return [failure("G17", families=missing)] if missing else []
 
 
 # ── G5–G10: the analysis against the waveform ──────────────────────────────────
@@ -229,7 +233,7 @@ def check_waveform(a: Analysis, m: Dict) -> List[Dict]:
             if rho is not None and rho < ENERGY_RHO_MIN:
                 out.append(failure("G9", rho=round(rho, 2)))
 
-    p = a.instrumentation.percussion
+    p = families(a).percussion
     bpm, measured_bpm = a.tempo.bpm_estimate, m.get("tempo_bpm")
     if ((_present(p.drum_kit) or _present(p.electronic_beats)) and bpm and measured_bpm
             and a.tempo.band != TempoBand.rubato):
@@ -254,7 +258,8 @@ def names_found(text: str) -> List[str]:
 
 def check_consistency(a: Analysis, mix_code: str) -> List[Dict]:
     out = []
-    p, v = a.instrumentation.percussion, a.instrumentation.voice
+    inst = families(a)
+    p, v = inst.percussion, inst.voice
     groove = _present(p.drum_kit) or _present(p.electronic_beats)
 
     if groove and a.tempo.band == TempoBand.rubato:
@@ -267,7 +272,7 @@ def check_consistency(a: Analysis, mix_code: str) -> List[Dict]:
     if a.dialogue_friendly and _present(v.solo_voice_lyrics):
         out.append(failure("G14"))
     if mix_code == "SDE":
-        musical = [path for path, fam in walk_families(a.instrumentation)
+        musical = [path for path, fam in walk_families(inst)
                    if _present(fam) and not path.startswith("sound_design.")
                    and path != "percussion.trailer_impacts"]
         if len(musical) > SDE_MAX_MUSICAL_FAMILIES:
@@ -282,11 +287,11 @@ def check_analysis(a: Analysis, measured: Dict, mix_code: str) -> List[Dict]:
     """Every rule that applies to a parsed analysis. Empty list = the listen holds up."""
     duration = measured["duration"]
     return (check_timestamps(a, duration) + check_sections(a, duration) + check_presence(a)
-            + check_waveform(a, measured) + check_consistency(a, mix_code))
+            + check_waveform(a, measured) + check_consistency(a, mix_code) + check_observations(a))
 
 
 def uncertain_families(a: Analysis) -> List[str]:
-    return [path for path, fam in walk_families(a.instrumentation) if fam.presence == Presence.uncertain]
+    return [path for path, fam in walk_families(families(a)) if fam.presence == Presence.uncertain]
 
 
 def listen_status(failures: List[Dict], uncertain: List[str]) -> str:
@@ -318,7 +323,11 @@ def retry_hint(failures: List[Dict]) -> str:
     """User-text addendum for a re-run. Names the failed rules; never gives the measured answer."""
     lines = []
     for f in failures:
-        hint = _HINTS.get(f["rule"])
+        if f["rule"] == "G17":
+            hint = ("these families were listed as present with no evidence: " + ", ".join(f.get("families") or [])
+                    + ". Every present family needs 1–2 evidence items; if you cannot point to it, mark it uncertain.")
+        else:
+            hint = _HINTS.get(f["rule"])
         if hint and hint not in lines:
             lines.append(hint)
     if not lines:
@@ -383,6 +392,11 @@ def plain_reason(f: Dict) -> str:
         return f"This is a sound design element, but it heard {f.get('count')} instrument parts."
     if r == "G16":
         return f"It compared the track to a real artist or film ({', '.join(f.get('names') or [])})."
+    if r == "G17":
+        names = [family_label(p) for p in f.get("families") or []]
+        if len(names) == 1:
+            return f"It said there is {names[0]} but didn't point to where you can hear it."
+        return f"It said there is {', '.join(names)} but didn't point to where you can hear them."
     if r == "NO_AUDIO":
         return "The file couldn't be opened to measure it."
     if r == "API":

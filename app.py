@@ -23,7 +23,7 @@ import capture
 import gate
 import models as model_registry
 import rules
-from analysis_schema import family_label
+from analysis_schema import family_label, find_observation
 from dropbox_pipeline import (
     crawl_album_folder, generate_alt_description, generate_cutdown_description, is_quota_error,
     resolve_shared_link, send_ntfy,
@@ -776,8 +776,7 @@ def render_fix_panel(track: dict):
                     unsafe_allow_html=True)
         for path in unsure:
             c = st.columns([3, 1, 1], vertical_alignment="center")
-            reason = ((((track.get("analysis") or {}).get("instrumentation") or {})
-                       .get(path.split(".")[0], {}).get(path.split(".")[1], {})).get("uncertain_reason") or "")
+            reason = (find_observation(track.get("analysis"), path) or {}).get("note") or ""
             c[0].markdown(f"**{family_label(path).capitalize()}**" + (f" — {reason}" if reason else ""))
             if c[1].button("Add it", key=f"add_{path}", disabled=not gemini_api_key):
                 with st.spinner("Rewriting…"):

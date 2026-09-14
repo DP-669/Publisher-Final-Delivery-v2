@@ -38,6 +38,43 @@ class TestCleanListen(unittest.TestCase):
         self.assertEqual(gate.listen_status([gate.failure("G5")], ["x.y"]), gate.BLOCKED)
 
 
+class TestFamilyMap(unittest.TestCase):
+    def test_unlisted_families_are_absent(self):
+        from analysis_schema import FAMILY_PATHS, Presence, build_family_map, walk_families
+        inst, dups = build_family_map(analysis().instrumentation)
+        paths = dict(walk_families(inst))
+        self.assertEqual(sorted(paths), sorted(FAMILY_PATHS))
+        self.assertEqual(len(paths), 31)
+        self.assertEqual(paths["percussion.drum_kit"].presence, Presence.present)
+        self.assertEqual(paths["voice.choir"].presence, Presence.absent)
+        self.assertEqual(dups, [])
+
+    def test_a_family_listed_twice_keeps_the_higher_confidence(self):
+        from analysis_schema import Presence, build_family_map
+        a = analysis_dict()
+        a["instrumentation"].append({"family": "percussion.drum_kit", **uncertain()})  # confidence 0.4 < 0.9
+        a["instrumentation"].append({"family": "voice.choir", **uncertain()})
+        a["instrumentation"].append({"family": "voice.choir", **present("supporting", 40, 59, "choir swells",
+                                                                        confidence=0.8)})
+        inst, dups = build_family_map(Analysis.model_validate(a).instrumentation)
+        self.assertEqual(dups, ["percussion.drum_kit", "voice.choir"])
+        self.assertEqual(inst.percussion.drum_kit.presence, Presence.present)
+        self.assertEqual(inst.voice.choir.presence, Presence.present)
+
+    def test_absent_is_not_a_legal_listed_presence(self):
+        a = analysis_dict()
+        a["instrumentation"].append({"family": "voice.choir", **dict(uncertain(), presence="absent")})
+        with self.assertRaises(gate.SchemaViolation):
+            gate.parse_analysis(json.dumps(a))
+
+    def test_uncertain_note_becomes_the_reason(self):
+        a = with_family(analysis_dict(), "strings.harp", uncertain("plucked, could be a harp or a kalimba"))
+        self.assertEqual(simplify(Analysis.model_validate(a))["do_not_claim"], ["strings.harp"])
+        from analysis_schema import families
+        self.assertEqual(families(Analysis.model_validate(a)).strings.harp.uncertain_reason,
+                         "plucked, could be a harp or a kalimba")
+
+
 class TestStructure(unittest.TestCase):
     def test_g1_timestamp_past_the_end(self):
         secs = analysis_dict()["sections"]
@@ -70,10 +107,17 @@ class TestStructure(unittest.TestCase):
         self.assertIn("G2", rules_of(failures))
         self.assertEqual(next(f for f in failures if f["rule"] == "G2")["problem"], "coverage")
 
-    def test_g3_present_without_evidence(self):
+    def test_g17_present_without_evidence(self):
         fam = present("lead")
         fam["evidence"] = []
-        self.assertIn("G3", rules_of(check(with_family(analysis_dict(), "percussion.drum_kit", fam))))
+        failures = check(with_family(analysis_dict(), "percussion.drum_kit", fam))
+        self.assertEqual(rules_of(failures), ["G17"])  # not reported twice as G3
+        self.assertEqual(failures[0]["families"], ["percussion.drum_kit"])
+        hint = gate.retry_hint(failures)
+        self.assertIn("percussion.drum_kit", hint)
+        self.assertIn("1–2 evidence items", hint)
+        self.assertEqual(gate.plain_reason(failures[0]),
+                         "It said there is drum kit but didn't point to where you can hear it.")
 
     def test_g3_present_with_low_confidence(self):
         fam = present("lead", confidence=0.5)
@@ -209,7 +253,9 @@ class TestReasonsAndHints(unittest.TestCase):
            gate.failure("G8", model="ring_out", measured=0.2), gate.failure("G9", rho=-1.0),
            gate.failure("G10", model=97, measured=120.0), gate.failure("G11"), gate.failure("G12"),
            gate.failure("G13"), gate.failure("G14"), gate.failure("G15", count=3),
-           gate.failure("G16", names=["Hans Zimmer"]), gate.failure("NO_AUDIO"), gate.failure("API")]
+           gate.failure("G16", names=["Hans Zimmer"]),
+           gate.failure("G17", families=["voice.choir", "strings.harp"]), gate.failure("NO_AUDIO"),
+           gate.failure("API")]
 
     def test_every_rule_has_a_plain_sentence_without_its_id(self):
         for f in self.ALL:

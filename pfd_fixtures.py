@@ -5,7 +5,7 @@ test_capture. Not a test module itself.
 """
 import copy
 
-from analysis_schema import Analysis, Instrumentation
+from analysis_schema import Analysis
 
 TITLE = "Sunny Ukulele Picnic"
 FILENAME = "Sunny_Ukulele_Picnic_FULL.mp3"
@@ -20,25 +20,27 @@ MEASURED = {
 
 
 def absent():
-    return {"presence": "absent", "prominence": None, "confidence": 0.9, "evidence": [], "uncertain_reason": None}
+    """Absent families are not listed: with_family(a, path, absent()) removes the observation."""
+    return None
 
 
-def present(prominence="supporting", t_start=20.0, t_end=40.0, what="clearly audible", confidence=0.9):
+def present(prominence="supporting", t_start=20.0, t_end=40.0, what="clearly audible", confidence=0.9, note=None):
     return {"presence": "present", "prominence": prominence, "confidence": confidence,
-            "evidence": [{"t_start": t_start, "t_end": t_end, "what": what}], "uncertain_reason": None}
+            "evidence": [{"t_start": t_start, "t_end": t_end, "what": what}], "note": note}
 
 
 def uncertain(reason="could be a synth pad or a string section"):
-    return {"presence": "uncertain", "prominence": None, "confidence": 0.4, "evidence": [], "uncertain_reason": reason}
+    return {"presence": "uncertain", "prominence": None, "confidence": 0.4, "evidence": [], "note": reason}
 
 
-def _instrumentation():
-    out = {}
-    for group, field in Instrumentation.model_fields.items():
-        out[group] = {name: absent() for name in field.annotation.model_fields}
-    out["percussion"]["drum_kit"] = present("lead", 20.0, 40.0, "kick and snare groove")
-    out["strings"]["orchestral_strings"] = present("supporting", 0.0, 59.0, "bowed string section")
-    return out
+def with_family(a: dict, path: str, fam) -> dict:
+    """Replace (or remove, when fam is None) the observation for one family."""
+    a = copy.deepcopy(a)
+    obs = [o for o in a["instrumentation"] if o["family"] != path]
+    if fam is not None:
+        obs.append({"family": path, **fam})
+    a["instrumentation"] = obs
+    return a
 
 
 def analysis_dict(**over):
@@ -55,7 +57,10 @@ def analysis_dict(**over):
             {"t_start": 40.0, "t_end": 59.0, "label": "peak", "energy": 5, "what_changes": "full ensemble"},
         ],
         "ending": {"type": "ring_out", "final_accent_t": 57.0, "tail_seconds": 2.5},
-        "instrumentation": _instrumentation(),
+        "instrumentation": [
+            {"family": "percussion.drum_kit", **present("lead", 20.0, 40.0, "kick and snare groove")},
+            {"family": "strings.orchestral_strings", **present("supporting", 0.0, 59.0, "bowed string section")},
+        ],
         "lyrics": {"has_intelligible_words": False, "language": None, "sample_phrase": None},
         "hybridity_electronic_pct": 10,
         "dialogue_friendly": False,
@@ -66,13 +71,6 @@ def analysis_dict(**over):
         "sounds_like_no_names": "Dark string build over a tight kit, ending in a long ring-out.",
     }
     a.update(copy.deepcopy(over))
-    return a
-
-
-def with_family(a: dict, path: str, fam: dict) -> dict:
-    group, name = path.split(".")
-    a = copy.deepcopy(a)
-    a["instrumentation"][group][name] = fam
     return a
 
 

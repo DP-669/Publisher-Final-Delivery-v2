@@ -102,17 +102,55 @@ class TestListen(ListenCase):
     def test_call_a_config_and_context(self):
         self.replies(analysis_dict())
         self.engine.listen(AUDIO, ".mp3", "sparse", "k")
+        import engine as engine_module
+        prompt_mode = engine_module.CALL_A_MODE == "prompt"
         call = self.calls()[0]
         config = call.kwargs["config"]
-        self.assertIs(config.response_schema, Analysis)
+        self.assertIs(config.response_schema, None if prompt_mode else Analysis)
+        self.assertEqual(config.response_mime_type, "application/json")
         self.assertEqual((config.temperature, config.top_p, config.top_k, config.candidate_count,
                           config.max_output_tokens), (0.0, 1.0, 1, 1, 6000))
-        self.assertEqual(config.system_instruction, self.engine.prompts.call_a_system(60.0))
+        self.assertEqual(config.system_instruction,
+                         self.engine.prompts.call_a_system(60.0, include_shape=prompt_mode))
         self.assertIn("Duration of this file: 60.0 seconds", config.system_instruction)
+        self.assertIn("List every family you hear as present or uncertain. Do not list absent families. "
+                      "Never list a family twice.", config.system_instruction)
         self.assertEqual(call.kwargs["contents"][1],
                          "Mix type: SPARSE. Duration: 60.0 s. Listen to the whole file. Report the analysis.")
         for catalog_word in ("redCola", "Short Story", "Ekonomic", "PFD RULES", "Trailer"):
             self.assertNotIn(catalog_word, config.system_instruction + call.kwargs["contents"][1])
+
+    def test_prompt_fallback_path(self):
+        import json as _json
+        self.replies(analysis_dict(), "not json", "not json")
+        with patch("engine.CALL_A_MODE", "prompt"):
+            self.engine.listen(AUDIO, ".mp3", "full", "k")
+            result = self.engine.listen(AUDIO, ".mp3", "full", "k")
+        config = self.calls()[0].kwargs["config"]
+        self.assertIsNone(config.response_schema)
+        self.assertEqual(config.response_mime_type, "application/json")
+        shape = config.system_instruction.split("JSON Schema. Keep the property order; no markdown, no commentary.\n")[1]
+        self.assertEqual(_json.loads(shape), Analysis.model_json_schema())
+        self.assertEqual(result["failures"][0]["rule"], "G4")  # same Pydantic validation
+
+    def test_schema_path(self):
+        self.replies(analysis_dict())
+        with patch("engine.CALL_A_MODE", "schema"):
+            result = self.engine.listen(AUDIO, ".mp3", "full", "k")
+        config = self.calls()[0].kwargs["config"]
+        self.assertIs(config.response_schema, Analysis)
+        self.assertNotIn("JSON Schema", config.system_instruction)
+        self.assertEqual(result["status"], gate.PASSED)
+
+    def test_duplicate_family_is_recorded(self):
+        a = analysis_dict()
+        a["instrumentation"].append({"family": "percussion.drum_kit", **uncertain()})
+        self.replies(a)
+        with self.assertLogs("pfd", level="WARNING") as logs:
+            result = self.engine.listen(AUDIO, ".mp3", "full", "k")
+        self.assertEqual(result["duplicates"], ["percussion.drum_kit"])
+        self.assertTrue(any("listed a family twice" in m for m in logs.output))
+        self.assertEqual(result["status"], gate.PASSED)
 
     def test_the_audio_is_actually_sent_as_bytes(self):
         self.replies(analysis_dict())
@@ -214,7 +252,8 @@ class TestFixActions(ListenCase):
         self.assertEqual(len(self.calls()), 3)
         self.assertIs(self.calls()[2].kwargs["config"].response_schema, Writing)
         self.assertEqual(track["simple"]["do_not_claim"], [])
-        self.assertEqual(track["analysis"]["instrumentation"]["keys_and_synths"]["synth_pad"]["presence"], "present")
+        from analysis_schema import find_observation
+        self.assertEqual(find_observation(track["analysis"], "keys_and_synths.synth_pad")["presence"], "present")
         self.assertEqual(track["PFD_Status"], gate.PASSED)
 
     def test_leave_it_out_clears_the_note(self):

@@ -40,6 +40,7 @@ Definitions decide ambiguity:
 
 Three states: present (point to it, 1-3 evidence items, confidence >= 0.6), absent (listened, not there), uncertain (give reason — this is correct, never a failure).
 Never present with confidence < 0.6. Never present without evidence.
+List every family you hear as present or uncertain. Do not list absent families. Never list a family twice.
 Grounding fields will be checked against the waveform. Answer from listening.
 Energy in sections: 1 = quietest in this track, 5 = loudest in this track.
 Fill scratchpad first (start/middle/end, 3 most prominent sources, each ambiguity and which definition resolves it). Then fill every field. JSON only."""
@@ -94,8 +95,15 @@ def _redo(prompt: str, is_redo: bool, guidance: str) -> str:
 
 class PromptEngine:
     # ── Call A: listen (Gemini, audio) ────────────────────────────────────────
-    def call_a_system(self, duration_seconds: float) -> str:
-        return CALL_A_SYSTEM.format(duration_seconds=duration_seconds)
+    def call_a_system(self, duration_seconds: float, include_shape: bool = False) -> str:
+        """include_shape: the no-response_schema fallback pastes the JSON Schema into the brief."""
+        text = CALL_A_SYSTEM.format(duration_seconds=duration_seconds)
+        if include_shape:
+            from analysis_schema import Analysis
+            shape = json.dumps(Analysis.model_json_schema(), separators=(",", ":"))
+            text += ("\n\nReturn exactly one JSON object that validates against this JSON Schema. "
+                     "Keep the property order; no markdown, no commentary.\n" + shape)
+        return text
 
     def call_a_user(self, mix_type: str, duration_seconds: float, hint: str = "", correction: str = "") -> str:
         text = CALL_A_USER.format(mix_type=gate.mix_type_code(mix_type), duration_seconds=duration_seconds)

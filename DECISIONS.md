@@ -88,5 +88,12 @@ v3 entries above that mention tabs, the second listen or the writer test are sup
 - persistence.py and feedback.py deleted · replaced by state.json; the redo log had no v4 screen · `git show v3-final:persistence.py`.
 - Album details are written on demand with buttons, not automatically · they use Claude and need the track descriptions first · call them at the end of `render_progress`.
 
+## Call A schema path
+- Instrumentation is a flat list of Observations (≤ 20, present or uncertain only) with a Python-built 31-family map · Damir's schema decision after Gemini rejected the nested 31-family schema (320 properties) · restore the nested `Instrumentation` as the field type.
+- **Path shipped: prompt** (`engine.CALL_A_MODE = "prompt"`): JSON mode, the Analysis JSON Schema in the system instruction, Pydantic validation (violations are G4) · `gemini-3.1-pro-preview` also rejected the flat schema with 400 INVALID_ARGUMENT (base analysis alone OK, Observation list alone OK, the two together rejected even without the enum); the approved fallback rule applies; live, the prompt path returned valid JSON twice within 6000 tokens · set `CALL_A_MODE = "schema"`.
+- Duplicate families keep the higher confidence, logged as a warning and recorded in `result["duplicates"]` · spec · `analysis_schema.build_family_map`.
+- G17 (present, no evidence) is read from the raw list, and G3 skips evidence-less families so the problem is reported once; its retry hint quotes the family names · spec: "same as G3, one retry quoting the violation" · `gate.check_observations`.
+- Call A is never split into several audio calls · Damir: one listen only · none.
+
 ## Open
-- BLOCKER: Gemini rejects the Call A `Analysis` schema (schema-size limit between ~100 and ~140 properties; the spec has 320). Options A/B/C in GATE_FIX.md. Waiting on Damir.
+- One live track, BLOCKED on G5/G9/G10. The local waveform check shows the model was wrong on each (silent 1.5 s lead-in, reversed intro energy, 115 vs 68/136 BPM). The block rate across an album is unmeasured: run one small album before touching thresholds.

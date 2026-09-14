@@ -6,6 +6,13 @@ in property order, so analysis_scratchpad comes first and the model writes its
 notes before it commits to any answer. Writing is Call B (Gemini writes from
 the analysis, no audio).
 
+Instrumentation is sent to Gemini as a flat list of Observations — only the
+families heard as present or uncertain. The nested 31-family schema was too
+large for Gemini's structured output (400 INVALID_ARGUMENT, see GATE_FIX.md).
+build_family_map() turns the list back into the full 31-family map
+(Instrumentation); every unlisted family is absent. simplify(), walk_families()
+and the gate read that map, never the raw list.
+
 simplify() reduces an Analysis to the flat facts the writers, the lane
 proposal and the Review screen use, plus do_not_claim: every family the model
 was unsure about. Nothing in do_not_claim may be mentioned in copy.
@@ -13,7 +20,7 @@ was unsure about. Nothing in do_not_claim may be mentioned in copy.
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, conlist, confloat
 
@@ -59,18 +66,64 @@ class MixType(str, Enum):
     sde = "SDE"
 
 
+class FamilyName(str, Enum):
+    percussion_drum_kit = "percussion.drum_kit"
+    percussion_electronic_beats = "percussion.electronic_beats"
+    percussion_orchestral_percussion = "percussion.orchestral_percussion"
+    percussion_trailer_impacts = "percussion.trailer_impacts"
+    percussion_hand_and_world_percussion = "percussion.hand_and_world_percussion"
+    strings_orchestral_strings = "strings.orchestral_strings"
+    strings_solo_bowed_string = "strings.solo_bowed_string"
+    strings_synth_string_pad = "strings.synth_string_pad"
+    strings_harp = "strings.harp"
+    strings_acoustic_guitar = "strings.acoustic_guitar"
+    strings_electric_guitar = "strings.electric_guitar"
+    strings_world_plucked = "strings.world_plucked"
+    keys_piano = "keys_and_synths.piano"
+    keys_electric_piano_or_organ = "keys_and_synths.electric_piano_or_organ"
+    keys_synth_pad = "keys_and_synths.synth_pad"
+    keys_synth_lead_or_arp = "keys_and_synths.synth_lead_or_arp"
+    keys_pulses_and_ostinati = "keys_and_synths.pulses_and_ostinati"
+    bass_live_bass = "bass.live_bass"
+    bass_synth_bass = "bass.synth_bass"
+    bass_drone_or_sub = "bass.drone_or_sub"
+    winds_orchestral_brass = "winds.orchestral_brass"
+    winds_hybrid_or_synth_brass = "winds.hybrid_or_synth_brass"
+    winds_woodwinds = "winds.woodwinds"
+    winds_world_wind = "winds.world_wind"
+    voice_solo_voice_lyrics = "voice.solo_voice_lyrics"
+    voice_solo_voice_wordless = "voice.solo_voice_wordless"
+    voice_choir = "voice.choir"
+    voice_vocal_chops_fx = "voice.vocal_chops_fx"
+    voice_spoken_or_shouted = "voice.spoken_or_shouted"
+    sound_design_textures_and_atmos = "sound_design.textures_and_atmos"
+    sound_design_processed_or_reversed = "sound_design.processed_or_reversed"
+
+
 class Evidence(BaseModel):
     t_start: confloat(ge=0)
     t_end: confloat(ge=0)
     what: str = Field(max_length=120)
 
 
+class Observation(BaseModel):
+    family: FamilyName
+    presence: Literal["present", "uncertain"]  # absent families are simply not listed
+    prominence: Optional[Prominence] = None    # required when present
+    confidence: confloat(ge=0, le=1)
+    evidence: List[Evidence] = Field(default_factory=list, max_length=2)  # 1-2 when present, empty when uncertain
+    note: Optional[str] = Field(default=None, max_length=120)  # instrument name or uncertain reason
+
+
+# ── The full 31-family map (built in Python, never sent to Gemini) ─────────────
+
 class Family(BaseModel):
     presence: Presence
     prominence: Optional[Prominence] = None
-    confidence: confloat(ge=0, le=1)
-    evidence: List[Evidence] = Field(default_factory=list, max_length=3)
-    uncertain_reason: Optional[str] = Field(default=None, max_length=160)
+    confidence: confloat(ge=0, le=1) = 0.0
+    evidence: List[Evidence] = Field(default_factory=list)
+    uncertain_reason: Optional[str] = None
+    note: Optional[str] = None
 
 
 class Percussion(BaseModel):
@@ -179,7 +232,7 @@ class Analysis(BaseModel):
     energy_arc: EnergyArc
     sections: conlist(Section, min_length=2, max_length=10)
     ending: Ending
-    instrumentation: Instrumentation
+    instrumentation: List[Observation] = Field(max_length=20)  # replaces nested Instrumentation
     lyrics: Lyrics
     hybridity_electronic_pct: int = Field(ge=0, le=100)
     dialogue_friendly: bool
@@ -200,9 +253,54 @@ class Writing(BaseModel):
     tip: str = Field(max_length=200)
 
 
-for _model in (Evidence, Family, Percussion, Strings, KeysAndSynths, Bass, Winds, Voice, SoundDesign,
+for _model in (Evidence, Observation, Family, Percussion, Strings, KeysAndSynths, Bass, Winds, Voice, SoundDesign,
                Instrumentation, Section, Ending, Tempo, Lyrics, Grounding, Analysis, Writing):
     _model.model_rebuild()
+
+FAMILY_PATHS = [f.value for f in FamilyName]
+
+
+# ── Observations → full family map ─────────────────────────────────────────────
+
+def build_family_map(observations: List[Observation]) -> Tuple[Instrumentation, List[str]]:
+    """
+    The full 31-family map. Listed families take their Observation; every unlisted
+    family is absent. A family listed twice keeps the higher-confidence entry;
+    those family names are returned so the caller can log them.
+    """
+    chosen: Dict[str, Observation] = {}
+    duplicates: List[str] = []
+    for obs in observations:
+        path = obs.family.value
+        if path in chosen:
+            duplicates.append(path)
+            if obs.confidence <= chosen[path].confidence:
+                continue
+        chosen[path] = obs
+    groups: Dict[str, Dict[str, Family]] = {}
+    for path in FAMILY_PATHS:
+        group, name = path.split(".")
+        obs = chosen.get(path)
+        if obs is None:
+            fam = Family(presence=Presence.absent)
+        else:
+            fam = Family(presence=Presence(obs.presence), prominence=obs.prominence, confidence=obs.confidence,
+                         evidence=list(obs.evidence), note=obs.note,
+                         uncertain_reason=obs.note if obs.presence == "uncertain" else None)
+        groups.setdefault(group, {})[name] = fam
+    return Instrumentation.model_validate(groups), sorted(set(duplicates))
+
+
+def families(a: Analysis) -> Instrumentation:
+    return build_family_map(a.instrumentation)[0]
+
+
+def find_observation(analysis: dict, path: str) -> Optional[dict]:
+    """The listed Observation (as a dict) for a family path in a stored analysis, or None."""
+    for obs in (analysis or {}).get("instrumentation") or []:
+        if obs.get("family") == path:
+            return obs
+    return None
 
 
 # ── Simplify ───────────────────────────────────────────────────────────────────
@@ -219,9 +317,8 @@ def walk_families(inst):
 
 
 def simplify(a: Analysis) -> dict:
-    p, s, k, b, w, v = (a.instrumentation.percussion, a.instrumentation.strings,
-                        a.instrumentation.keys_and_synths, a.instrumentation.bass,
-                        a.instrumentation.winds, a.instrumentation.voice)
+    inst = families(a)
+    p, s, k, b, w, v = (inst.percussion, inst.strings, inst.keys_and_synths, inst.bass, inst.winds, inst.voice)
     drums = (_on(p.drum_kit) or _on(p.electronic_beats)
              or _on(p.hand_and_world_percussion, ("lead", "supporting"))
              or (_on(p.orchestral_percussion, ("lead", "supporting")) and a.tempo.band != TempoBand.rubato))
@@ -230,7 +327,7 @@ def simplify(a: Analysis) -> dict:
     orchestral = strings_real or _on(w.orchestral_brass) or _on(w.woodwinds) or _on(p.orchestral_percussion)
     electronic = (_on(k.synth_pad) or _on(k.synth_lead_or_arp) or _on(b.synth_bass)
                   or _on(p.electronic_beats) or _on(s.synth_string_pad) or _on(w.hybrid_or_synth_brass))
-    uncertain = [n for n, fam in walk_families(a.instrumentation) if fam.presence == Presence.uncertain]
+    uncertain = [n for n, fam in walk_families(inst) if fam.presence == Presence.uncertain]
     return {
         "drums": drums, "vocals": vocals, "choir": _on(v.choir),
         "has_lyrics": a.lyrics.has_intelligible_words,
@@ -238,7 +335,7 @@ def simplify(a: Analysis) -> dict:
         "tempo_band": a.tempo.band.value, "bpm": a.tempo.bpm_estimate,
         "ending_type": a.ending.type.value, "energy_arc": a.energy_arc.value,
         "dialogue_friendly": a.dialogue_friendly,
-        "lead_sources": [n for n, fam in walk_families(a.instrumentation)
+        "lead_sources": [n for n, fam in walk_families(inst)
                          if fam.presence == Presence.present and fam.prominence == Prominence.lead],
         "do_not_claim": uncertain,
     }

@@ -29,7 +29,7 @@ import capture
 import gate
 import rules
 import waveform
-from analysis_schema import Analysis, Presence, Writing, family_label, simplify
+from analysis_schema import Analysis, Presence, Writing, build_family_map, family_label, find_observation, simplify
 from pfd_errors import report
 from prompts import PromptEngine
 
@@ -74,6 +74,16 @@ CALL_B_CONFIG = types.GenerateContentConfig(
     temperature=0.7, top_p=0.95,
     candidate_count=1, max_output_tokens=2500,
 )
+
+# Which Call A path ships (DECISIONS.md → "Call A schema path").
+#   "schema": Gemini constrained decoding with response_schema=Analysis.
+#   "prompt": the fallback if Gemini rejects the schema — JSON mode only, the JSON
+#             Schema pasted into the system instruction, same Pydantic validation
+#             (a violation is G4).
+# 2026-09-14: gemini-3.1-pro-preview rejected both the nested and the flat Analysis
+# schema with 400 INVALID_ARGUMENT, so the prompt path ships.
+CALL_A_MODE = "prompt"
+CALL_A_PROMPT_CONFIG = CALL_A_CONFIG.model_copy(update={"response_schema": None})
 
 # Wall-clock estimate per analysed file (listen, gate, write), for the Start
 # screen. v3's live listen took ~28 s before its second listen; tune from runs.
@@ -327,18 +337,25 @@ class IngestionEngine:
 
         client = self._client(gemini_api_key)
         audio = self._audio_part(client, file_bytes, ext)
+        prompt_mode = CALL_A_MODE == "prompt"
+        config = CALL_A_PROMPT_CONFIG if prompt_mode else CALL_A_CONFIG
+        system = self.prompts.call_a_system(duration, include_shape=prompt_mode)
         failures: List[Dict] = []
         for attempt in (1, 2):
             result["attempts"] = attempt
             user = self.prompts.call_a_user(mix, duration, hint=gate.retry_hint(failures),
                                             correction=result["correction"])
-            text = self._generate(client, [audio, user], CALL_A_CONFIG, self.prompts.call_a_system(duration))
+            text = self._generate(client, [audio, user], config, system)
             try:
                 analysis = gate.parse_analysis(text)
             except gate.SchemaViolation as exc:
                 log.warning("Call A schema violation (attempt %s): %s", attempt, exc)
                 failures = [gate.failure("G4", error=str(exc)[:400])]
                 continue
+            _, duplicates = build_family_map(analysis.instrumentation)
+            if duplicates:
+                log.warning("Call A listed a family twice; kept the higher confidence: %s", ", ".join(duplicates))
+            result["duplicates"] = duplicates
             result["analysis"] = analysis.model_dump(mode="json")
             result["simple"] = simplify(analysis)
             result["uncertain"] = gate.uncertain_families(analysis)
@@ -570,12 +587,11 @@ class IngestionEngine:
     def add_family(self, track: Dict, family_path: str, catalog: str, gemini_api_key: str,
                    claude_api_key: str, lane: Optional[str] = None) -> bool:
         """The editor confirms an uncertain family is there. Call B only — no re-listen."""
-        group, name = family_path.split(".", 1)
-        fam = ((track.get("analysis") or {}).get("instrumentation") or {}).get(group, {}).get(name)
-        if fam is None:
+        obs = find_observation(track.get("analysis"), family_path)
+        if obs is None:
             raise ValueError(f"No family '{family_path}' in the analysis.")
-        fam.update({"presence": Presence.present.value, "prominence": fam.get("prominence") or "supporting",
-                    "confidence": 1.0, "uncertain_reason": "Confirmed by an editor who listened."})
+        obs.update({"presence": Presence.present.value, "prominence": obs.get("prominence") or "supporting",
+                    "confidence": 1.0, "note": "Confirmed by an editor who listened."})
         simple = track.get("simple") or {}
         simple["do_not_claim"] = [p for p in simple.get("do_not_claim") or [] if p != family_path]
         track.setdefault("PFD_Added", []).append(family_path)
