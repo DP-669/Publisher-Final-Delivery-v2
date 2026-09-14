@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 import gate  # noqa: E402
 import waveform  # noqa: E402
-from analysis_schema import walk_families  # noqa: E402
+from analysis_schema import build_family_map, walk_families  # noqa: E402
 from engine import CALL_A_CONFIG, GEMINI_AUDIO_MODEL, IngestionEngine, _secret_value  # noqa: E402
 
 CONFIGS = {
@@ -37,7 +37,8 @@ CONFIGS = {
 
 
 def presence_map(analysis) -> dict:
-    return {path: fam.presence.value for path, fam in walk_families(analysis.instrumentation)}
+    inst, _ = build_family_map(analysis.instrumentation)
+    return {path: fam.presence.value for path, fam in walk_families(inst)}
 
 
 def agreement(runs: list) -> tuple:

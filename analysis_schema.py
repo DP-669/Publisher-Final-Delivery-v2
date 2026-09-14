@@ -232,7 +232,7 @@ class Analysis(BaseModel):
     energy_arc: EnergyArc
     sections: conlist(Section, min_length=2, max_length=10)
     ending: Ending
-    instrumentation: List[Observation] = Field(max_length=20)  # replaces nested Instrumentation
+    instrumentation: List[Observation]  # replaces nested Instrumentation (max_length removed: Gemini rejects maxItems>7 on complex nested lists)
     lyrics: Lyrics
     hybridity_electronic_pct: int = Field(ge=0, le=100)
     dialogue_friendly: bool

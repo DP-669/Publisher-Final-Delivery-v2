@@ -97,3 +97,7 @@ v3 entries above that mention tabs, the second listen or the writer test are sup
 
 ## Open
 - One live track, BLOCKED on G5/G9/G10. The local waveform check shows the model was wrong on each (silent 1.5 s lead-in, reversed intro energy, 115 vs 68/136 BPM). The block rate across an album is unmeasured: run one small album before touching thresholds.
+
+## Self-agreement runs
+Written by scripts/self_agreement.py.
+- 2026-09-14 · redcola trailer demo jaed.mp3 · gemini-3.1-pro-preview · a_temp0_topk1: 100.0% (3/5 valid) · b_temp1: 83.9% (4/5 valid)
