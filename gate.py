@@ -36,7 +36,10 @@ INLINE_LIMIT_BYTES = 15 * 1024 * 1024   # larger files go through the Files API
 MIX_TYPES = ("FULL", "SPARSE", "SDE")
 ENDING_TYPES = ["Hard Cut", "Button", "Ring-out"]
 TEMPO_BANDS = ["Slow", "Mid", "Fast", "Rubato"]
-VERIFIED_CLAIMS = ("drums", "vocals", "choir", "tempo_band", "ending_type")
+# What the second listen audits. Only facts two listens reliably agree on:
+# drums (timpani vs none) and tempo band flipped between listens of the same
+# file, and duration is already checked against the file in code. See GATE_FIX.md.
+VERIFIED_CLAIMS = ("vocals", "choir", "ending_type")
 
 
 class SchemaViolation(RuntimeError):
@@ -160,8 +163,8 @@ def verification_schema() -> Dict:
     verdict = {"type": "STRING", "enum": ["TRUE", "FALSE"]}
     return {
         "type": "OBJECT",
-        "properties": {**{c: verdict for c in VERIFIED_CLAIMS}, "duration_seconds": {"type": "NUMBER"}},
-        "required": list(VERIFIED_CLAIMS) + ["duration_seconds"],
+        "properties": {c: verdict for c in VERIFIED_CLAIMS},
+        "required": list(VERIFIED_CLAIMS),
     }
 
 
@@ -227,11 +230,9 @@ def parse_analysis(text: str) -> Dict:
 
 def parse_verification(text: str) -> Dict:
     obj = _load_json(text, "verification")
-    problems = [f"missing '{k}'" for k in list(VERIFIED_CLAIMS) + ["duration_seconds"] if k not in obj]
+    problems = [f"missing '{k}'" for k in VERIFIED_CLAIMS if k not in obj]
     problems += [f"{k} must be TRUE or FALSE" for k in VERIFIED_CLAIMS
                  if k in obj and obj[k] not in ("TRUE", "FALSE")]
-    if "duration_seconds" in obj and not _is_num(obj["duration_seconds"]):
-        problems.append("duration_seconds is not a number")
     if problems:
         raise SchemaViolation("verification: " + "; ".join(problems))
     return obj
@@ -244,10 +245,8 @@ def claims_for(analysis: Dict) -> Dict[str, str]:
     f = analysis["facts"]
     yes = lambda b: "present" if b else "absent"
     return {
-        "drums": f"Drums are {yes(f['drums'])}.",
         "vocals": f"Vocals are {yes(f['vocals'])}.",
         "choir": f"Choir is {yes(f['choir'])}.",
-        "tempo_band": f"The tempo band is {f['tempo_band']}.",
         "ending_type": f"The ending type is {analysis['ending_type']}.",
     }
 
@@ -256,12 +255,8 @@ def within_tolerance(claimed: float, real: float) -> bool:
     return abs(claimed - real) <= DURATION_TOLERANCE * real
 
 
-def disagreements(verification: Dict, real_duration: float) -> List[str]:
-    out = [f"second listen disagrees: {c}" for c in VERIFIED_CLAIMS if verification.get(c) != "TRUE"]
-    heard = verification.get("duration_seconds")
-    if not _is_num(heard) or not within_tolerance(float(heard), real_duration):
-        out.append(f"second listen duration {heard}s vs file {real_duration:.1f}s (>8%)")
-    return out
+def disagreements(verification: Dict) -> List[str]:
+    return [f"second listen disagrees: {c}" for c in VERIFIED_CLAIMS if verification.get(c) != "TRUE"]
 
 
 # ── Physical checks on an analysis ─────────────────────────────────────────────
@@ -352,19 +347,33 @@ def sentences(text: str) -> List[str]:
     return [s for s in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if s.strip()]
 
 
+def _fits_key(tag: str) -> str:
+    """
+    Comparison key for a Fits tag: lowercase, single spaces, plural folded, so
+    'documentaries' matches 'Documentary'. Comparison only; the description
+    keeps the tag exactly as written.
+    """
+    t = " ".join((tag or "").lower().split())
+    if t.endswith("ies") and len(t) > 4:
+        return t[:-3] + "y"
+    if t.endswith("s") and not t.endswith("ss"):
+        return t[:-1]
+    return t
+
+
 def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = None) -> List[str]:
     if tags is None:
         return ["description does not end with a 'Fits:' line"]
     reasons = []
     if not 2 <= len(tags) <= 3:
         reasons.append(f"Fits line has {len(tags)} tags (must be 2–3)")
-    legal = {t.lower() for t in rules.fits_list(catalog)}
+    legal = {_fits_key(t) for t in rules.fits_list(catalog)}
     is_epp = rules.catalog_code(catalog) == "EPP"
     lane_names = {n.lower() for n in rules.lane_names()}
     for i, tag in enumerate(tags):
         if is_epp and i == 0 and (tag.lower() == (lane or "").lower() or (not lane and tag.lower() in lane_names)):
             continue
-        if tag.lower() not in legal:
+        if _fits_key(tag) not in legal:
             reasons.append(f"Fits tag '{tag}' is not in the {rules.catalog_code(catalog)} placement list")
     if is_epp and lane and (not tags or tags[0].lower() != lane.lower()):
         reasons.append(f"first Fits tag must be the lane '{lane}'")

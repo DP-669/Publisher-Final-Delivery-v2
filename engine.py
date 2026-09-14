@@ -313,7 +313,7 @@ class IngestionEngine:
                 client, [audio, self.prompts.verification_prompt(gate.claims_for(analysis))],
                 gate.verification_schema(), catalog))
             result["analysis"], result["verification"] = analysis, verification
-            disagree = gate.disagreements(verification, real)
+            disagree = gate.disagreements(verification)
             if not disagree:
                 break
 

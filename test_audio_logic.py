@@ -55,7 +55,7 @@ class TestAnalysisRequest(unittest.TestCase):
         _, client = self._run(mock_genai, [analysis(), verification()])
         prompt = client.models.generate_content.call_args_list[1].kwargs["contents"][1]
         self.assertTrue(prompt.startswith("Here are claims about this audio. Answer each TRUE or FALSE."))
-        self.assertIn("Drums are present.", prompt)
+        self.assertIn("Vocals are absent.", prompt)
         self.assertNotIn("Rising pressure", prompt)  # the first listen's prose is not shown to the second
 
     @patch("engine.genai")

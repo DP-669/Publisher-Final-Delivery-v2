@@ -36,10 +36,8 @@ def analysis(**over):
     return a
 
 
-def verification(false=(), duration=30.0):
-    v = {c: ("FALSE" if c in false else "TRUE") for c in gate.VERIFIED_CLAIMS}
-    v["duration_seconds"] = duration
-    return v
+def verification(false=()):
+    return {c: ("FALSE" if c in false else "TRUE") for c in gate.VERIFIED_CLAIMS}
 
 
 class GateCase(unittest.TestCase):
@@ -80,20 +78,20 @@ class TestAnalysisGate(GateCase):
     @patch("engine.genai")
     def test_verification_false_twice_blocks(self, mock_genai):
         result, client = self.run_track(mock_genai, [
-            analysis(), verification(false=("drums",)),
-            analysis(), verification(false=("drums", "choir")),
+            analysis(), verification(false=("vocals",)),
+            analysis(), verification(false=("vocals", "choir")),
         ])
         self.assertEqual(result["status"], gate.BLOCKED)
         self.assertEqual(result["attempts"], 2)
         self.assertEqual(client.models.generate_content.call_count, 4)
         joined = " ".join(result["reasons"])
-        self.assertIn("drums", joined)
+        self.assertIn("vocals", joined)
         self.assertIn("choir", joined)
 
     @patch("engine.genai")
     def test_verification_false_once_then_true_passes(self, mock_genai):
         result, client = self.run_track(mock_genai, [
-            analysis(), verification(false=("tempo_band",)),
+            analysis(), verification(false=("ending_type",)),
             analysis(), verification(),
         ])
         self.assertEqual(result["status"], gate.PASSED, result["reasons"])
@@ -101,12 +99,14 @@ class TestAnalysisGate(GateCase):
         self.assertEqual(client.models.generate_content.call_count, 4)
 
     @patch("engine.genai")
-    def test_verification_duration_miss_triggers_rerun(self, mock_genai):
-        result, client = self.run_track(mock_genai, [
-            analysis(), verification(duration=60.0), analysis(), verification(duration=31.0),
-        ])
-        self.assertEqual(client.models.generate_content.call_count, 4)
-        self.assertEqual(result["status"], gate.PASSED)
+    def test_second_listen_audits_only_ending_vocals_choir(self, mock_genai):
+        self.assertEqual(set(gate.VERIFIED_CLAIMS), {"ending_type", "vocals", "choir"})
+        result, client = self.run_track(mock_genai, [analysis(), verification()])
+        self.assertEqual(result["status"], gate.PASSED, result["reasons"])
+        self.assertEqual(client.models.generate_content.call_count, 2)
+        second = repr(client.models.generate_content.call_args_list[1].kwargs["contents"]).lower()
+        for gone in ("drums", "tempo", "duration"):
+            self.assertNotIn(gone, second)
 
     @patch("engine.genai")
     def test_schema_violation_is_a_hard_error(self, mock_genai):
@@ -204,6 +204,20 @@ class TestValidator(unittest.TestCase):
         self.assertTrue(any("banned" in x for x in r), r)
         r = gate.description_reasons("Low drone. It ends. No fits line here.", "rC")
         self.assertIn("description does not end with a 'Fits:' line", r)
+
+    def test_fits_tags_match_regardless_of_case_or_plural(self):
+        self.assertEqual(gate.fits_reasons(["documentaries", "PRESTIGE tv"], "SSC"), [])
+        self.assertEqual(gate.fits_reasons(["trailers", "tv promo", "Documentary"], "rC"), [])
+        self.assertTrue(gate.fits_reasons(["Documentary", "Advertising"], "rC"))
+        desc = "Strings hold a long line. They end softly. Fits: documentaries, Film"
+        self.assertEqual(gate.split_fits(desc)[1], ["documentaries", "Film"])  # casing untouched
+
+    def test_analysis_prompt_makes_the_fits_line_a_hard_requirement(self):
+        import prompts
+        prompt = prompts.PromptEngine().analysis_prompt("full", "SSC")
+        self.assertIn("HARD REQUIREMENT", prompt)
+        self.assertIn("MUST end with a Fits line", prompt)
+        self.assertIn(", ".join(rules.fits_list("SSC")), prompt)
 
     def test_ssc_trailer_only_forbidden_as_lead(self):
         body = "Strings hold a long line. Works under a trailer's quiet middle. Fits: Film, Drama"

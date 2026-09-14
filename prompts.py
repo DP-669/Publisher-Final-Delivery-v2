@@ -70,11 +70,15 @@ TRACK DESCRIPTION SPEC:
 KEYWORDS SPEC:
 {rules.tunable("Keywords")}
 {_examples(catalog, "Track")}
+HARD REQUIREMENT — THE FITS LINE (not a guideline):
+The description MUST end with a Fits line in exactly this form: Fits: [tag1], [tag2], [tag3]
+Use 2–3 tags, each copied exactly from this list: {", ".join(rules.fits_list(catalog))}.
+Nothing comes after the Fits line. A description that does not end with it is rejected by code and the track is BLOCKED.
 For EPP, leave the lane out of keywords and Fits; code adds it once the album's lane is confirmed."""
 
     def verification_prompt(self, claims: Dict[str, str]) -> str:
         lines = "\n".join(f"- {key}: {text}" for key, text in claims.items())
-        return f"""Here are claims about this audio. Answer each TRUE or FALSE. Also state the duration in seconds.
+        return f"""Here are claims about this audio. Answer each TRUE or FALSE.
 
 {lines}"""
 
