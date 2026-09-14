@@ -1,14 +1,14 @@
 """
-Publisher Final Delivery — task templates.
+Publisher Final Delivery — task templates (v4).
 
-This file holds task wording only: what to do with which inputs, and what shape
-to return. Every rule (banned words, catalog DNA, placement lists, Fits, lanes,
-format specs) lives in PFD_RULES.md and reaches the model two ways:
+Call A (listen) is deliberately rule-free and catalog-free: its system prompt is
+the analyst brief below, with the file's measured duration, and nothing else.
+No title, filename, catalog name or prior track ever reaches it.
 
-  - rules.system_instruction(catalog): the system prompt on every call
-  - rules.tunable("<section>"): the TUNABLE spec a template quotes verbatim
-
-If a template ever seems to need a rule, add it to PFD_RULES.md instead.
+Every writing call (Call B and the Claude writers) receives
+rules.system_instruction(catalog) as its system prompt and quotes the TUNABLE
+specs from PFD_RULES.md. If a writing template ever seems to need a rule, add
+it to PFD_RULES.md instead.
 """
 import json
 from typing import Dict, List, Optional
@@ -25,17 +25,55 @@ FILM_STOCK = {
     "EPP": "Kodachrome 64",
 }
 
+CALL_A_SYSTEM = """You are an audio analyst for a production-music publisher. You will hear one MP3.
+Report only what is audible. Nothing about this file except its duration is known to you.
+
+Duration of this file: {duration_seconds:.1f} seconds. Every timestamp must be between 0 and {duration_seconds:.1f}.
+
+Definitions decide ambiguity:
+- drum_kit: kit playing a groove (kick/snare/hat pattern). Timpani = orchestral_percussion. Taiko = hand_and_world_percussion. Programmed trap = electronic_beats.
+- orchestral_strings: bowed SECTION with ensemble movement and bow articulation. Static sustained pad = synth_string_pad. If unsure, mark uncertain.
+- choir: 3+ voices as a group. One voice with reverb = solo_voice_wordless.
+- live_bass: finger/pick articulation. synth_bass: electronic tone or 808. Static low sustain = drone_or_sub.
+- orchestral_brass: section blend and breath. Braams/synthetic = hybrid_or_synth_brass.
+- Ostinati also reported under pulses_and_ostinati plus their instrument family.
+
+Three states: present (point to it, 1-3 evidence items, confidence >= 0.6), absent (listened, not there), uncertain (give reason — this is correct, never a failure).
+Never present with confidence < 0.6. Never present without evidence.
+List every family you hear as present or uncertain. Do not list absent families. Never list a family twice.
+Grounding fields will be checked against the waveform. Answer from listening.
+Energy in sections: 1 = quietest in this track, 5 = loudest in this track.
+Fill scratchpad first (start/middle/end, 3 most prominent sources, each ambiguity and which definition resolves it). Then fill every field. JSON only."""
+
+CALL_A_USER = "Mix type: {mix_type}. Duration: {duration_seconds:.1f} s. Listen to the whole file. Report the analysis."
+
+WRITER_GROUNDING = ("You may only mention instruments present in the analysis. "
+                    "Anything in do_not_claim is never mentioned.")
+
 
 def _json_block(data) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
-def _voices(track: Dict) -> Dict:
-    """The analysis fields a writer may use. Never the title."""
-    a = track.get("analysis") or {}
-    return {k: a.get(k) for k in ("mix_type", "duration_seconds", "ending_type", "events", "facts",
-                                   "job", "narrative_map", "trailer_or_campaign_voice",
-                                   "editor_voice", "supervisor_voice", "keywords", "tip")}
+def writer_analysis(analysis: Dict) -> Dict:
+    """The analysis a writer sees: everything except the scratchpad."""
+    return {k: v for k, v in (analysis or {}).items() if k != "analysis_scratchpad"}
+
+
+def _writer_context(track: Dict) -> str:
+    simple = track.get("simple") or {}
+    return (f"ANALYSIS:\n{_json_block(writer_analysis(track.get('analysis')))}\n\n"
+            f"do_not_claim: {_json_block(simple.get('do_not_claim') or [])}\n\n{WRITER_GROUNDING}")
+
+
+def _voices(track: Dict, catalog: str) -> Dict:
+    import capture
+    return {
+        "trailer_or_campaign_voice": track.get(capture.context_label(catalog), ""),
+        "editor_voice": track.get("Editor Description", ""),
+        "supervisor_voice": track.get("Supervisor Description", ""),
+        "tip": track.get("Tip", ""),
+    }
 
 
 def _examples(catalog: str, kind: str) -> str:
@@ -47,22 +85,42 @@ def _examples(catalog: str, kind: str) -> str:
             f"match their specificity, not their format):\n{lines}\n")
 
 
+def _redo(prompt: str, is_redo: bool, guidance: str) -> str:
+    if is_redo:
+        prompt += "\n\nThis is a redo: take a different angle from the previous version."
+    if guidance:
+        prompt += f"\n\nEditor guidance for this version: {guidance}"
+    return prompt
+
+
 class PromptEngine:
-    # ── Tab 01: analysis (Gemini). Audio + mix type only. ─────────────────────
-    def analysis_prompt(self, mix_type: str, catalog: str) -> str:
-        mix = gate.mix_type_code(mix_type)
-        return f"""Listen to the attached audio. It is a {mix} mix ({'full mix' if mix == 'FULL' else 'sparse mix' if mix == 'SPARSE' else 'sound design element'}).
-You are given no title, album or composer. Describe only what you hear.
+    # ── Call A: listen (Gemini, audio) ────────────────────────────────────────
+    def call_a_system(self, duration_seconds: float, include_shape: bool = False) -> str:
+        """include_shape: the no-response_schema fallback pastes the JSON Schema into the brief."""
+        text = CALL_A_SYSTEM.format(duration_seconds=duration_seconds)
+        if include_shape:
+            from analysis_schema import Analysis
+            shape = json.dumps(Analysis.model_json_schema(), separators=(",", ":"))
+            text += ("\n\nReturn exactly one JSON object that validates against this JSON Schema. "
+                     "Keep the property order; no markdown, no commentary.\n" + shape)
+        return text
 
-Return one JSON object matching the response schema:
-- mix_type: "{mix}"
-- duration_seconds: the length of the audio as you hear it
-- ending_type, events (3–6, each with t in seconds from the start), facts: hard facts only
-- job, narrative_map, trailer_or_campaign_voice, editor_voice, supervisor_voice, keywords, tip: as specified below
-- description: the finished track description, written to the spec below
+    def call_a_user(self, mix_type: str, duration_seconds: float, hint: str = "", correction: str = "") -> str:
+        text = CALL_A_USER.format(mix_type=gate.mix_type_code(mix_type), duration_seconds=duration_seconds)
+        if correction:
+            text += (f"\nAn editor who listened to this file says: {correction.strip()} "
+                     "Treat that as true and make every field agree with it.")
+        if hint:
+            text += f"\n{hint}"
+        return text
 
-ANALYSIS SCHEMA SPEC:
-{rules.tunable("Analysis schema")}
+    # ── Call B: write (Gemini, text only) ─────────────────────────────────────
+    def call_b_prompt(self, track: Dict, catalog: str, is_redo: bool = False, guidance: str = "") -> str:
+        prompt = f"""Write the metadata for one track from this analysis of its audio. Return one JSON object matching the response schema.
+- trailer_or_campaign_voice, editor_voice, supervisor_voice: 1–2 sentences each, catalog-specific.
+- description: the finished track description, fusing the three voices, written to the spec below.
+- keywords: written to the spec below.
+- tip: one line for the editor.
 
 TRACK DESCRIPTION SPEC:
 {rules.tunable("Track description")}
@@ -70,34 +128,29 @@ TRACK DESCRIPTION SPEC:
 KEYWORDS SPEC:
 {rules.tunable("Keywords")}
 {_examples(catalog, "Track")}
+{_writer_context(track)}
+
 For EPP, leave the lane out of keywords and Fits; code adds it once the album's lane is confirmed."""
-
-    def verification_prompt(self, claims: Dict[str, str]) -> str:
-        lines = "\n".join(f"- {key}: {text}" for key, text in claims.items())
-        return f"""Here are claims about this audio. Answer each TRUE or FALSE. Also state the duration in seconds.
-
-{lines}"""
+        return _redo(prompt, is_redo, guidance)
 
     def keyword_shorten_prompt(self, keyword: str) -> str:
         return f"Rephrase '{keyword}' as exactly 1, 2, or 3 words. Preserve meaning. Return ONLY the new keyword."
 
-    # ── Tab 02: track descriptions (writer modes) ─────────────────────────────
+    # ── Claude writer modes ───────────────────────────────────────────────────
     def track_synth_prompt(self, track: Dict, catalog: str, is_redo: bool = False, guidance: str = "") -> str:
-        """claude_synth: write the description from the analysis voices."""
+        """claude_synth: write the description from the analysis and the voices."""
         prompt = f"""Write the track description from this analysis of the audio.
 
 TRACK DESCRIPTION SPEC:
 {rules.tunable("Track description")}
 {_examples(catalog, "Track")}
-ANALYSIS:
-{_json_block(_voices(track))}
+{_writer_context(track)}
+
+VOICES:
+{_json_block(_voices(track, catalog))}
 
 Return ONLY the description, ending with the Fits line. No preamble, no labels."""
-        if is_redo:
-            prompt += "\n\nThis is a redo: take a different angle from the previous version."
-        if guidance:
-            prompt += f"\n\nEditor guidance for this version: {guidance}"
-        return prompt
+        return _redo(prompt, is_redo, guidance)
 
     def track_edit_prompt(self, track: Dict, catalog: str, description: str, issues: List[str],
                           is_redo: bool = False, guidance: str = "") -> str:
@@ -107,8 +160,7 @@ Return ONLY the description, ending with the Fits line. No preamble, no labels."
 TRACK DESCRIPTION SPEC:
 {rules.tunable("Track description")}
 {_examples(catalog, "Track")}
-ANALYSIS (ground truth for facts):
-{_json_block(_voices(track))}
+{_writer_context(track)}
 
 DESCRIPTION TO EDIT:
 {description}
@@ -116,14 +168,11 @@ DESCRIPTION TO EDIT:
 PROBLEMS FOUND BY CODE: {"; ".join(issues) if issues else "none"}
 
 Return ONLY the edited description, ending with the Fits line."""
-        if is_redo:
-            prompt += "\n\nThis is a redo: take a different angle from the previous version."
-        if guidance:
-            prompt += f"\n\nEditor guidance for this version: {guidance}"
-        return prompt
+        return _redo(prompt, is_redo, guidance)
 
-    def track_gate_prompt(self, description: str, issues: List[str]) -> str:
+    def track_gate_prompt(self, track: Dict, description: str, issues: List[str]) -> str:
         """gemini mode: Claude gates Gemini's text and touches only broken sentences."""
+        do_not_claim = (track.get("simple") or {}).get("do_not_claim") or []
         return f"""Gate this track description. Run the Cliché Test on each sentence, check catalog contamination and length against the spec, and consider the problems code already found.
 
 TRACK DESCRIPTION SPEC:
@@ -132,12 +181,15 @@ TRACK DESCRIPTION SPEC:
 DESCRIPTION:
 {description}
 
+do_not_claim: {_json_block(do_not_claim)}
+{WRITER_GROUNDING}
+
 PROBLEMS FOUND BY CODE: {"; ".join(issues) if issues else "none"}
 
 Edit ONLY sentences that fail. Leave passing sentences word for word. If nothing fails, return the description unchanged.
 Return ONLY the description, ending with the Fits line."""
 
-    # ── Tab 03: EPP lane and album description ────────────────────────────────
+    # ── EPP lane and album description ────────────────────────────────────────
     def lane_prompt(self, track_summaries: List[Dict], lanes: List[Dict]) -> str:
         lane_lines = "\n".join(
             f"- {l['name']} ({l['status']}){': ' + l['brief'] if l['brief'] else ''}" for l in lanes
@@ -152,8 +204,9 @@ ALBUM ANALYSIS (one entry per track):
 
 Return ONLY the lane name, exactly as written in the list."""
 
-    def album_description_prompt(self, catalog: str, track_descriptions: List[str], recent: List[str]) -> str:
-        return f"""Write the album description.
+    def album_description_prompt(self, catalog: str, track_descriptions: List[str], recent: List[str],
+                                 previous: str = "", guidance: str = "") -> str:
+        prompt = f"""Write the album description.
 
 ALBUM DESCRIPTION SPEC:
 {rules.tunable("Album description")}
@@ -162,35 +215,12 @@ THE CATALOG'S LAST ALBUM DESCRIPTIONS (read first; do not repeat their nouns):
 {self._bullets(recent) or "- (none available)"}
 
 TRACK DESCRIPTIONS:
-{self._bullets(track_descriptions)}
+{self._bullets(track_descriptions)}"""
+        if previous:
+            prompt += f"\n\nPREVIOUS VERSION: {previous}\nDIRECTION: {guidance or 'Write a stronger version.'}"
+        return prompt + "\n\nReturn ONLY the album description."
 
-Return ONLY the album description."""
-
-    def album_description_iteration_prompt(self, catalog: str, track_descriptions: List[str], recent: List[str],
-                                           history: List[Dict], guidance: str) -> str:
-        past = "\n".join(
-            f"- v{i}: {h['description']}" + (f"  (direction: {h['guidance']})" if h.get("guidance") else "")
-            for i, h in enumerate(history, 1)
-        )
-        return f"""Revise the album description. Build on the previous versions; apply the direction precisely.
-
-ALBUM DESCRIPTION SPEC:
-{rules.tunable("Album description")}
-
-THE CATALOG'S LAST ALBUM DESCRIPTIONS (do not repeat their nouns):
-{self._bullets(recent) or "- (none available)"}
-
-TRACK DESCRIPTIONS:
-{self._bullets(track_descriptions)}
-
-PREVIOUS VERSIONS:
-{past or "- (none)"}
-
-DIRECTION: {guidance or "Write the strongest version."}
-
-Return ONLY the album description."""
-
-    # ── Tab 04: album names ───────────────────────────────────────────────────
+    # ── Album names ───────────────────────────────────────────────────────────
     def album_names_prompt(self, album_description: str, track_descriptions: List[str],
                            count: int = 5, avoid: Optional[List[str]] = None) -> str:
         avoid_line = f"\nAlready rejected (do not reuse): {', '.join(avoid)}" if avoid else ""
@@ -206,7 +236,7 @@ TRACK DESCRIPTIONS:
 
 Return ONLY JSON: {{"names": [{{"name": "...", "rationale": "one line"}}]}}"""
 
-    # ── Tab 05: cover art ─────────────────────────────────────────────────────
+    # ── Cover art ─────────────────────────────────────────────────────────────
     def cover_art_prompt(self, catalog: str, album_name: str, album_description: str,
                          track_descriptions: List[str], keywords: str, ref_urls: List[str]) -> str:
         code = rules.catalog_code(catalog)
@@ -230,7 +260,7 @@ SREF URLS (one per prompt, in order):
 
 FORMAT: four prompts separated by blank lines, no numbering. After the fourth, a final line with the gut-check question from the spec, verbatim."""
 
-    # ── Tab 06: MailChimp ─────────────────────────────────────────────────────
+    # ── MailChimp ─────────────────────────────────────────────────────────────
     def mailchimp_prompt(self, album_name: str, album_description: str,
                          track_descriptions: List[str]) -> str:
         return f"""Write the MailChimp intro for this album.
@@ -244,22 +274,6 @@ TRACK DESCRIPTIONS (context):
 {self._bullets(track_descriptions)}
 
 Return ONLY the intro."""
-
-    # ── Tab 07: fix existing copy ─────────────────────────────────────────────
-    def manual_refinement_prompt(self, content: str, content_type: str) -> str:
-        spec_section = {
-            "Track Description": "Track description",
-            "Album Description": "Album description",
-            "MailChimp Intro": "MailChimp intro",
-            "Album Name": "Album names",
-        }.get(content_type)
-        spec = f"\n\nSPEC:\n{rules.tunable(spec_section)}" if spec_section else ""
-        return f"""Rewrite this {content_type} so it obeys the rules. Keep what is specific and true; cut what is generic.{spec}
-
-ORIGINAL:
-{content}
-
-Return ONLY the rewritten content."""
 
     @staticmethod
     def _bullets(items: List[str]) -> str:

@@ -1,3 +1,15 @@
+# PFD v4 — Call A schema path (2026-09-14)
+
+**Shipped: the prompt path.** Call A uses `response_mime_type="application/json"` with no `response_schema`. The Analysis JSON Schema is pasted into the system instruction and validated with the Pydantic model; a validation failure is G4. The switch is `engine.CALL_A_MODE`.
+
+- Why: on `gemini-3.1-pro-preview`, both the nested 31-family schema and Damir's flat observation-list schema return `400 INVALID_ARGUMENT` as a constrained schema.
+- Live check: one real 71 s redCola full mix. Valid JSON on both attempts within 6000 tokens, 60 s total. BLOCKED on G5/G9/G10, and a local waveform check shows the model's claims were wrong on each.
+- Details: GATE_FIX.md → "Call A schema path". Full v4 change list: V4_CHANGES.md.
+
+The v3 report below is kept as history.
+
+---
+
 # PFD v3 — Build Report (2026-09-12, live checks re-run 2026-09-13)
 
 ## Damir's only job afterwards

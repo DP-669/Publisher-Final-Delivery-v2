@@ -75,6 +75,52 @@ class TestExport(unittest.TestCase):
         self.assertEqual(capture.detect_album_code("no code here"), "")
 
 
+class TestV4Rows(unittest.TestCase):
+    def test_skipped_tracks_are_not_exported(self):
+        data = _app_data()
+        data["tracks"].append(dict(data["tracks"][0], Title="Skipped One", PFD_Skipped=True))
+        self.assertEqual(list(capture.track_rows(data, "EPP")["Title"]), ["Glass Hours Full Mix"])
+
+    def test_uncertainty_and_corrections_travel_as_notes(self):
+        data = _app_data(gate.PASSED_WITH_UNCERTAINTY)
+        data["tracks"][0]["PFD_Gate"] = {"uncertain": ["strings.harp", "voice.choir"], "override_note": ""}
+        data["tracks"][0]["PFD_Dismissed"] = ["voice.choir"]
+        row = capture.track_rows(data, "EPP").iloc[0]
+        self.assertEqual(row["PFD_Status"], "PASSED_WITH_UNCERTAINTY")
+        self.assertEqual(row["PFD_Block_Reasons"], "Not sure about (not mentioned): harp.")
+
+
+class TestState(unittest.TestCase):
+    def test_state_round_trip(self):
+        import json
+        dbx = MagicMock()
+        state = {"album_code": "SSC042", "tracks": [], "catalog": "SSC"}
+        path = capture.save_state(dbx, "SSC042", state)
+        self.assertEqual(path, "/PFD-App/albums/SSC042/state.json")
+        data, written = dbx.files_upload.call_args.args[:2]
+        self.assertEqual((json.loads(data), written), (state, path))
+        dbx.files_download.return_value = (MagicMock(), MagicMock(content=data))
+        self.assertEqual(capture.load_state(dbx, "SSC042"), state)
+
+    def test_recent_albums_newest_first(self):
+        import datetime
+        import json
+        dbx = MagicMock()
+        entries = []
+        for code, day in (("RC055", 3), ("SSC042", 9)):
+            e = MagicMock()
+            e.name, e.path_display = "state.json", f"/PFD-App/albums/{code}/state.json"
+            e.server_modified = datetime.datetime(2026, 9, day)
+            entries.append(e)
+        dbx.files_list_folder.return_value = MagicMock(entries=entries, has_more=False)
+        states = {e.path_display: json.dumps({"album_code": e.path_display.split("/")[3], "catalog": "SSC",
+                                              "run_status": "review", "exported_at": None}).encode()
+                  for e in entries}
+        dbx.files_download.side_effect = lambda path: (MagicMock(), MagicMock(content=states[path]))
+        rows = capture.list_recent_albums(dbx)
+        self.assertEqual([r["code"] for r in rows], ["SSC042", "RC055"])
+        self.assertEqual((rows[0]["date"], rows[0]["status"], rows[0]["exported"]), ("2026-09-09", "review", False))
+
 class TestDiff(unittest.TestCase):
     def test_word_edit_distance(self):
         self.assertEqual(capture.word_edit_distance("a b c", "a b c"), 0)

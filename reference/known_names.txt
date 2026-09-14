@@ -1,0 +1,87 @@
+# G16: names that must never appear in `sounds_like_no_names`.
+# One per line, case-insensitive, matched as whole words. Lines starting with # are ignored.
+# Seed list (2026-09-14): composers, artists and films most often used as sound-alikes
+# for trailer, orchestral and production music. Add names as they turn up.
+Hans Zimmer
+Zimmer
+John Williams
+Ennio Morricone
+Morricone
+Howard Shore
+James Horner
+Danny Elfman
+Thomas Newman
+Alexandre Desplat
+Ludwig Göransson
+Ludwig Goransson
+Hildur Guðnadóttir
+Hildur Gudnadottir
+Jóhann Jóhannsson
+Johann Johannsson
+Max Richter
+Ólafur Arnalds
+Olafur Arnalds
+Nils Frahm
+Trent Reznor
+Atticus Ross
+Junkie XL
+Tom Holkenborg
+Jerry Goldsmith
+Bernard Herrmann
+Philip Glass
+Arvo Pärt
+Arvo Part
+Clint Mansell
+Michael Giacchino
+Ramin Djawadi
+Two Steps from Hell
+Audiomachine
+Immediate Music
+Thomas Bergersen
+Brand X Music
+Daft Punk
+Vangelis
+Mica Levi
+Jonny Greenwood
+Radiohead
+Sigur Rós
+Sigur Ros
+Explosions in the Sky
+Kanye West
+Travis Scott
+Metro Boomin
+Billie Eilish
+Beyoncé
+Beyonce
+Taylor Swift
+Eminem
+The Weeknd
+Imagine Dragons
+Lorne Balfe
+Harry Gregson-Williams
+Rupert Gregson-Williams
+Steve Jablonsky
+Brian Tyler
+Henry Jackman
+Kevin Kiner
+Bear McCreary
+Inception
+Interstellar
+Blade Runner
+The Dark Knight
+Star Wars
+Jurassic Park
+Lord of the Rings
+Game of Thrones
+Stranger Things
+Oppenheimer
+Gladiator
+Pirates of the Caribbean
+Mission: Impossible
+James Bond
+The Social Network
+Sicario
+Chernobyl
+The Last of Us
+Westworld
+Mad Max

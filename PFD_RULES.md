@@ -1,5 +1,5 @@
 # PFD_RULES.md
-version: 0.1 (draft, 2026-09-12)
+version: 0.3 (draft, 2026-09-14)
 status: DRAFT — becomes v1.0 when Claude Code merges the M2 build and Damir runs the first real track.
 
 This file is the only place PFD rules live. The app reads it at startup and injects the LOCKED section plus the active catalog's block into every model call. Editing this file changes the app's behavior on the next deploy. Nothing in prompts.py may contradict it; if it does, prompts.py is wrong.
@@ -21,7 +21,7 @@ A run is rC, SSC or EPP. Never mixed. The active catalog's DNA block is injected
 - The audio-analysis prompt never receives the track title, album name, composer, or filename. It receives audio and mix type only. The title is joined to the result afterwards, in code.
 - Every analysis must return: duration_seconds, ending_type, 3–6 timestamped events, and hard facts (drums present, vocals present, choir present, tempo band, energy arc).
 - Duration is checked against the real file. Timestamps past the real duration fail the track.
-- A second, independent listen audits the hard facts. Disagreement re-runs once; a second disagreement marks the track BLOCKED for a human ear.
+- Every present claim carries timestamped evidence. Python verifies timing, ending, loudness shape and section ordering against the decoded waveform (librosa). Contradiction with the waveform or with itself blocks the track; uncertainty never does.
 - BLOCKED is a real state. It is shown in the app and carried into the export. It is never silently converted to a result.
 - No silent failure anywhere on the analysis or export path. If it failed, the user sees it.
 
@@ -76,21 +76,26 @@ Placement list for Fits: the album's lane first, then two of: Advertising, Reali
 ## TUNABLE
 The improvement loop may propose edits here, one at a time, after five albums have DRAFT/FINAL pairs. Damir approves by merging.
 
-### Analysis schema (Gemini, one JSON object per track)
+### Analysis schema (Gemini Call A, one JSON object per track; the Pydantic model in analysis_schema.py is authoritative)
 ```
+analysis_scratchpad: string                  # filled first: start/middle/end, 3 most prominent sources, each ambiguity
 mix_type: FULL | SPARSE | SDE
-duration_seconds: number
-ending_type: Hard Cut | Button | Ring-out
-events: [{t: seconds, what: string}]        # 3–6 entries
-facts: {drums: bool, vocals: bool, choir: bool, tempo_band: Slow|Mid|Fast|Rubato, energy_arc: string}
-job: string                                  # one sentence: what this track is FOR (the engine)
+grounding: {first_sound_t, loudest_moment_t, quietest_stretch_t, ends_with_silence_seconds}   # checked against the waveform
+tempo: {band: rubato|slow|mid|fast|very_fast, bpm_estimate, pulse_confidence}
+energy_arc: static | build | build_drop_build | crest_then_decay | waves
+sections: [{t_start, t_end, label, energy 1–5, what_changes}]   # 2–10, ordered, covering ≥90% of the file
+ending: {type: hard_cut|button|ring_out|fade_out, final_accent_t, tail_seconds}
+instrumentation: [{family, presence: present|uncertain, prominence, confidence, evidence ≤2, note}]   # ≤20; only families heard; unlisted of the 31 = absent
+lyrics: {has_intelligible_words, language, sample_phrase}
+hybridity_electronic_pct: 0–100
+dialogue_friendly: bool
+modular_edit_points_t: [seconds]             # ≤8
+the_job: string                              # what this track is FOR (the engine)
 narrative_map: string                        # A → B → C, with timestamps
-trailer_or_campaign_voice: string            # 1–2 sentences, catalog-specific
-editor_voice: string                         # 1–2 sentences: cut points, dialogue room, modularity
-supervisor_voice: string                     # 1–2 sentences: placement and tone
-keywords: [string]                           # 12–18, Title Case, ≤3 words each
-tip: string                                  # one line for the editor
+genre_tags: [string]                         # 2–6
+sounds_like_no_names: string                 # never an artist, composer or film name
 ```
+Call B (Gemini, text only) writes from this analysis, minus the scratchpad, plus the do_not_claim list: trailer_or_campaign_voice, editor_voice, supervisor_voice, description, keywords (12–18), tip.
 
 ### Track description
 - 2–3 sentences, then the Fits line.
@@ -100,7 +105,7 @@ tip: string                                  # one line for the editor
 - Writer: set by `track_writer` below.
 
 ### track_writer
-`gemini` — Gemini writes the description in the analysis pass; Claude gates and lightly edits.
+`gemini` — Gemini writes the description from the analysis (Call B, no audio); Claude gates and lightly edits.
 Other legal values: `claude_synth`, `claude_edit`. Set by the blind test (M3). Do not change without a recorded test.
 
 ### Keywords
@@ -151,4 +156,6 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
+- 0.3 — 2026-09-14 — Analysis schema: instrumentation is a flat list of observed families (Damir's schema decision); unlisted families are absent.
+- 0.2 — 2026-09-14 — v4 gate: the second listen is replaced by waveform verification (LOCKED bullet, by Damir's instruction); Analysis schema block rewritten for the v4 Call A schema; track_writer wording follows Call B.
 - 0.1 — 2026-09-12 — first draft, from the Fable planning session. Supersedes Drive pfd-skill v1.0, Dropbox pfd-delivery, RULES.md, EDIT-LOG.md, CHANGELOG.md, the Gemini GEM, GEMINI.md and Council_Personas.json.

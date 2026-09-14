@@ -10,7 +10,7 @@ Sub-publishers say EPP "does everything" and doesn't stick. The catalog already 
 - The album title is 2–3 words and never contains the lane.
 - The lane is the first keyword on every track and the first Fits tag.
 - A new lane is created only when two albums need it. One album is not a lane.
-- Lanes are proposed by the app from the analysis and confirmed by Damir in Tab 03.
+- Lanes are proposed by the app from the analysis and confirmed by Damir in Review → Album details.
 
 ## Active lanes (used since 2024)
 | Lane | Albums | Tracks | Last release | Recent examples |

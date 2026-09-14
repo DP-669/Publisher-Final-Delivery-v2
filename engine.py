@@ -1,13 +1,16 @@
 """
-Publisher Final Delivery — engine (v3).
+Publisher Final Delivery — engine (v4).
 
-- Gemini: audio analysis behind the hallucination gate (gate.py). The analysis
-  call receives audio bytes, the mix type and the catalog's rules — never the
-  title, album, composer or filename. The title is joined afterwards, here.
-- Claude: track-description gating/editing (per `track_writer`), album
-  description, names, lane proposal, MailChimp, cover-art prompts.
-- Every model call's system prompt is rules.system_instruction(catalog).
-- Dropbox: folder access and capture. Nothing writes to Google Drive.
+- Listen (Call A, Gemini + audio): the analyst brief, the measured duration,
+  the audio and the mix type. Never the title, album, composer, filename,
+  catalog or a previous track. The title is joined afterwards, here.
+- Gate (gate.py): the analysis is checked against the decoded waveform
+  (waveform.py) and against itself. One re-run; a second failure blocks.
+- Write (Call B, Gemini, text only): the analysis without its scratchpad, the
+  do_not_claim list, the catalog rules and few-shot examples.
+- Claude: description gating/editing per `track_writer`, album description,
+  names, lane proposal, MailChimp, cover-art prompts.
+- Dropbox: folder access, album state and capture. Nothing writes to Google Drive.
 """
 import io
 import json
@@ -25,15 +28,17 @@ from google.genai import types
 import capture
 import gate
 import rules
+import waveform
+from analysis_schema import Analysis, Presence, Writing, build_family_map, family_label, find_observation, simplify
 from pfd_errors import report
 from prompts import PromptEngine
 
 log = logging.getLogger("pfd")
 
 # ── Model pins ────────────────────────────────────────────────────────────────
-# v3 resolves the newest Opus / newest Pro at runtime (models.resolve). These
-# pins are the fallback when that check fails. Setting GEMINI_AUDIO_MODEL or
-# CLAUDE_WRITING_MODEL in Streamlit secrets (or env) locks the model instead.
+# The app resolves the newest Opus / newest Pro at runtime (models.resolve).
+# These pins are the fallback when that check fails. Setting GEMINI_AUDIO_MODEL
+# or CLAUDE_WRITING_MODEL in Streamlit secrets (or env) locks the model instead.
 DEFAULT_GEMINI_AUDIO_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_CLAUDE_WRITING_MODEL = "claude-sonnet-5"
 
@@ -55,6 +60,34 @@ GEMINI_PIN_EXPLICIT = _secret_value("GEMINI_AUDIO_MODEL") is not None
 CLAUDE_PIN_EXPLICIT = _secret_value("CLAUDE_WRITING_MODEL") is not None
 GEMINI_AUDIO_MODEL = _secret_value("GEMINI_AUDIO_MODEL") or DEFAULT_GEMINI_AUDIO_MODEL
 CLAUDE_WRITING_MODEL = _secret_value("CLAUDE_WRITING_MODEL") or DEFAULT_CLAUDE_WRITING_MODEL
+
+# ── Generation configs (v4 build spec) ─────────────────────────────────────────
+CALL_A_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+    response_schema=Analysis,
+    temperature=0.0, top_p=1.0, top_k=1,
+    candidate_count=1, max_output_tokens=6000,
+)
+CALL_B_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+    response_schema=Writing,
+    temperature=0.7, top_p=0.95,
+    candidate_count=1, max_output_tokens=2500,
+)
+
+# Which Call A path ships (DECISIONS.md → "Call A schema path").
+#   "schema": Gemini constrained decoding with response_schema=Analysis.
+#   "prompt": the fallback if Gemini rejects the schema — JSON mode only, the JSON
+#             Schema pasted into the system instruction, same Pydantic validation
+#             (a violation is G4).
+# 2026-09-14: gemini-3.1-pro-preview rejected both the nested and the flat Analysis
+# schema with 400 INVALID_ARGUMENT, so the prompt path ships.
+CALL_A_MODE = "prompt"
+CALL_A_PROMPT_CONFIG = CALL_A_CONFIG.model_copy(update={"response_schema": None})
+
+# Wall-clock estimate per analysed file (listen, gate, write), for the Start
+# screen. v3's live listen took ~28 s before its second listen; tune from runs.
+SECONDS_PER_TRACK = 45
 
 DEFAULT_ROOT_PATH = Path(".")
 REFERENCE_DIR = Path(__file__).resolve().parent / "reference"
@@ -82,6 +115,9 @@ MIX_SUFFIX_PATTERNS = [
     r'[\s_-]+(?:mix|master)(?:[\s_]\d+)?$',
     r'[\s_]+\d+$',
 ]
+
+SKIPPED = "SKIPPED"
+ANALYSED_MIXES = ("full", "full_mix", "sparse", "sound_design", "sde", "unknown")
 
 
 class ClaudeError(RuntimeError):
@@ -114,6 +150,18 @@ def recent_album_descriptions(catalog: str) -> List[Dict]:
     return (data.get(rules.catalog_code(catalog)) or [])[:10]
 
 
+def is_alt_or_cutdown(track: Dict) -> bool:
+    mix = (track.get("Mix Type") or "").lower()
+    return mix == "alt" or mix.startswith("cutdown")
+
+
+def remaining_uncertain(track: Dict) -> List[str]:
+    """Uncertain families the editor has neither added nor dismissed."""
+    g = track.get("PFD_Gate") or {}
+    done = set(track.get("PFD_Added") or []) | set(track.get("PFD_Dismissed") or [])
+    return [u for u in g.get("uncertain") or [] if u not in done]
+
+
 class IngestionEngine:
     def __init__(self, root_path: Optional[str] = None):
         self.root_path = Path(root_path) if root_path else DEFAULT_ROOT_PATH
@@ -141,9 +189,6 @@ class IngestionEngine:
         for key in self.folders:
             self.folders[key] = next((d for d in subdirs if key.lower() in d.name.lower()), None)
 
-    def _context_desc_label(self, catalog: str) -> str:
-        return capture.context_label(catalog)
-
     # ── Dropbox ────────────────────────────────────────────────────────────────
     def get_dropbox_client(self, dropbox_token: str = None):
         try:
@@ -159,16 +204,6 @@ class IngestionEngine:
             return dbx_mod.Dropbox(dropbox_token)
         raise RuntimeError("No Dropbox credentials: set DROPBOX_APP_KEY, DROPBOX_APP_SECRET and DROPBOX_REFRESH_TOKEN.")
 
-    def list_dropbox_audio_files(self, dropbox_token: str, folder_path: str = "") -> List[Dict]:
-        try:
-            dbx = self.get_dropbox_client(dropbox_token)
-            result = dbx.files_list_folder(folder_path)
-        except Exception as e:
-            raise RuntimeError(f"Dropbox connection failed: {e}")
-        return [{"name": e.name, "path": e.path_lower, "size": e.size}
-                for e in result.entries
-                if hasattr(e, "size") and os.path.splitext(e.name.lower())[1] in AUDIO_MIME_MAP]
-
     def download_bytes_from_dropbox(self, dropbox_token: str, file_path: str) -> bytes:
         try:
             dbx = self.get_dropbox_client(dropbox_token)
@@ -176,14 +211,6 @@ class IngestionEngine:
             return response.content
         except Exception as e:
             raise RuntimeError(f"Dropbox download failed: {e}")
-
-    def upload_bytes_to_dropbox(self, dropbox_token: str, data: bytes, dropbox_dest: str):
-        try:
-            import dropbox as dbx_mod
-            client = self.get_dropbox_client(dropbox_token)
-            client.files_upload(data, dropbox_dest, mode=dbx_mod.files.WriteMode.overwrite, mute=True)
-        except Exception as e:
-            raise RuntimeError(f"Dropbox upload failed: {e}")
 
     # ── Keywords ───────────────────────────────────────────────────────────────
     def _banned_keywords(self) -> List[str]:
@@ -249,6 +276,10 @@ class IngestionEngine:
             report("Keyword-review ntfy alert failed", exc)
 
     # ── Gemini plumbing ────────────────────────────────────────────────────────
+    @staticmethod
+    def _client(gemini_api_key: str):
+        return genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600000))
+
     def _upload_to_gemini(self, file_bytes: bytes, ext: str, client):
         """Files API upload for large audio. The display name is generic: no title leaks."""
         uploaded = client.files.upload(
@@ -269,13 +300,8 @@ class IngestionEngine:
         mime = AUDIO_MIME_MAP.get(ext.lower(), "audio/mpeg")
         return types.Part(inline_data=types.Blob(mime_type=mime, data=file_bytes))
 
-    def _gemini_json(self, client, contents, schema: Dict, catalog: str) -> str:
-        config = types.GenerateContentConfig(
-            system_instruction=rules.system_instruction(catalog),
-            response_mime_type="application/json",
-            response_schema=schema,
-            temperature=gate.ANALYSIS_TEMPERATURE,
-        )
+    def _generate(self, client, contents, base_config, system_instruction: str) -> str:
+        config = base_config.model_copy(update={"system_instruction": system_instruction})
         try:
             response = client.models.generate_content(model=self.gemini_model, contents=contents, config=config)
         except Exception as exc:
@@ -285,110 +311,251 @@ class IngestionEngine:
             raise
         return response.text
 
-    # ── The gated analysis ─────────────────────────────────────────────────────
-    def analyze_track(self, file_bytes: bytes, ext: str, mix_type: str, catalog: str,
-                      gemini_api_key: str) -> Dict:
+    # ── Call A + gate ──────────────────────────────────────────────────────────
+    def listen(self, file_bytes: bytes, ext: str, mix_type: str, gemini_api_key: str,
+               correction: str = "", measured: Optional[Dict] = None) -> Dict:
         """
-        Real duration → analysis → independent verification → (one re-run) → code checks.
-        Returns {status, reasons, analysis_reasons, real_duration, analysis, verification, attempts}.
-        Raises gate.SchemaViolation when the model's JSON does not match the schema.
+        Waveform → Call A → gate, at most two Call A per track.
+        Returns {status, failures, measured, analysis, simple, uncertain, attempts, correction}.
+        API errors raise; a file that cannot be decoded is BLOCKED without calling the model.
         """
-        real = gate.read_duration(file_bytes, ext)
-        result = {"status": gate.BLOCKED, "reasons": [], "analysis_reasons": [], "real_duration": real,
-                  "analysis": None, "verification": None, "attempts": 0}
-        if real is None:
-            result["reasons"] = result["analysis_reasons"] = ["no_duration"]
-            return result
-
-        client = genai.Client(api_key=gemini_api_key, http_options=types.HttpOptions(timeout=600000))
-        audio = self._audio_part(client, file_bytes, ext)
         mix = gate.mix_type_code(mix_type)
+        result = {"status": gate.BLOCKED, "failures": [], "measured": None, "analysis": None,
+                  "simple": None, "uncertain": [], "attempts": 0, "correction": (correction or "").strip()}
+        if measured is None:
+            try:
+                measured = waveform.measure_bytes(file_bytes, ext)
+            except Exception as exc:
+                report("Could not decode the audio file", exc, show=False)
+                result["failures"] = [gate.failure("NO_AUDIO", error=f"{type(exc).__name__}: {exc}")]
+                return result
+        if not measured or measured.get("duration", 0) <= 0:
+            result["failures"] = [gate.failure("NO_AUDIO", error="zero-length audio")]
+            return result
+        result["measured"] = measured
+        duration = measured["duration"]
 
-        disagree: List[str] = []
+        client = self._client(gemini_api_key)
+        audio = self._audio_part(client, file_bytes, ext)
+        prompt_mode = CALL_A_MODE == "prompt"
+        config = CALL_A_PROMPT_CONFIG if prompt_mode else CALL_A_CONFIG
+        system = self.prompts.call_a_system(duration, include_shape=prompt_mode)
+        failures: List[Dict] = []
         for attempt in (1, 2):
             result["attempts"] = attempt
-            analysis = gate.parse_analysis(self._gemini_json(
-                client, [audio, self.prompts.analysis_prompt(mix, catalog)], gate.analysis_schema(), catalog))
-            verification = gate.parse_verification(self._gemini_json(
-                client, [audio, self.prompts.verification_prompt(gate.claims_for(analysis))],
-                gate.verification_schema(), catalog))
-            result["analysis"], result["verification"] = analysis, verification
-            disagree = gate.disagreements(verification, real)
-            if not disagree:
+            user = self.prompts.call_a_user(mix, duration, hint=gate.retry_hint(failures),
+                                            correction=result["correction"])
+            text = self._generate(client, [audio, user], config, system)
+            try:
+                analysis = gate.parse_analysis(text)
+            except gate.SchemaViolation as exc:
+                log.warning("Call A schema violation (attempt %s): %s", attempt, exc)
+                failures = [gate.failure("G4", error=str(exc)[:400])]
+                continue
+            _, duplicates = build_family_map(analysis.instrumentation)
+            if duplicates:
+                log.warning("Call A listed a family twice; kept the higher confidence: %s", ", ".join(duplicates))
+            result["duplicates"] = duplicates
+            result["analysis"] = analysis.model_dump(mode="json")
+            result["simple"] = simplify(analysis)
+            result["uncertain"] = gate.uncertain_families(analysis)
+            failures = gate.check_analysis(analysis, measured, mix)
+            if not failures:
                 break
-
-        analysis["keywords_raw"] = list(analysis["keywords"])
-        analysis["keywords"] = gate.split_keywords(self.process_keywords(analysis["keywords"], catalog, gemini_api_key))
-
-        physical = [f"verification failed twice — {d}" for d in disagree]
-        physical += [r for r in gate.analysis_reasons(analysis, real, catalog) if not r.startswith("keyword")]
-        result["analysis_reasons"] = physical
-        result["reasons"] = physical + gate.keyword_reasons(analysis["keywords"], catalog)
-        result["status"] = gate.status_for(result["reasons"])
+        result["failures"] = failures
+        result["status"] = gate.listen_status(failures, result["uncertain"])
         return result
+
+    # ── Call B + writers ───────────────────────────────────────────────────────
+    def write(self, track: Dict, catalog: str, gemini_api_key: str, claude_api_key: str,
+              lane: Optional[str] = None, mode: Optional[str] = None, is_redo: bool = False,
+              guidance: str = "", keywords_only: bool = False) -> Dict:
+        """Call B, then the configured writer. Raises SchemaViolation / ClaudeError / API errors."""
+        if not track.get("analysis"):
+            raise ValueError(f"'{track.get('Title')}' has no analysis to write from.")
+        text = self._generate(self._client(gemini_api_key),
+                              self.prompts.call_b_prompt(track, catalog, is_redo, guidance),
+                              CALL_B_CONFIG, rules.system_instruction(catalog))
+        writing = gate.parse_writing(text)
+        track["Keywords"] = self.process_keywords(writing.keywords, catalog, gemini_api_key)
+        track["PFD_Keyword_Warnings"] = list(self.keyword_warnings)
+        if lane:
+            gate.apply_lane(track, lane)
+        if keywords_only:
+            return track
+        track[capture.context_label(catalog)] = writing.trailer_or_campaign_voice
+        track["Editor Description"] = writing.editor_voice
+        track["Supervisor Description"] = writing.supervisor_voice
+        track["Tip"] = writing.tip
+        track["Gemini Description"] = writing.description
+        track["Track Description"] = self.finish_description(track, catalog, claude_api_key, lane, mode)
+        track.pop("PFD_Write_Error", None)
+        if lane:
+            gate.apply_lane(track, lane)
+        return track
+
+    def finish_description(self, track: Dict, catalog: str, claude_api_key: str,
+                           lane: Optional[str] = None, mode: Optional[str] = None,
+                           is_redo: bool = False, guidance: str = "") -> str:
+        mode = mode or rules.setting("track_writer")
+        if mode not in WRITER_MODES:
+            raise ValueError(f"track_writer '{mode}' is not one of {WRITER_MODES}")
+        system = rules.system_instruction(catalog)
+        if mode == "claude_synth":
+            return self.call_claude(system, self.prompts.track_synth_prompt(track, catalog, is_redo, guidance),
+                                    claude_api_key)
+        gemini_text = track.get("Gemini Description", "")
+        issues = gate.description_reasons(gemini_text, catalog, base_title(track.get("Title", "")), lane)
+        if mode == "claude_edit":
+            return self.call_claude(system, self.prompts.track_edit_prompt(track, catalog, gemini_text, issues,
+                                                                           is_redo, guidance), claude_api_key)
+        try:
+            return self.call_claude(system, self.prompts.track_gate_prompt(track, gemini_text, issues),
+                                    claude_api_key)
+        except ClaudeError as exc:
+            report(f"Claude could not gate the description for '{track.get('Title')}' — Gemini's text is kept", exc)
+            notes = track.setdefault("PFD_Notes", [])
+            if "Not checked by Claude." not in notes:
+                notes.append("Not checked by Claude.")
+            return gemini_text
+
+    def writer_variants(self, track: Dict, catalog: str, claude_api_key: str,
+                        lane: Optional[str] = None) -> Dict[str, str]:
+        """All three writer modes for one track, for "Compare writing styles". Failures are shown."""
+        out = {}
+        for mode in WRITER_MODES:
+            try:
+                out[mode] = self.finish_description(track, catalog, claude_api_key, lane, mode=mode)
+            except (ClaudeError, ValueError) as exc:
+                report(f"Compare writing styles: {mode} failed for '{track.get('Title')}'", exc)
+                out[mode] = ""
+        return out
+
+    # ── One track, end to end ──────────────────────────────────────────────────
+    def process_track(self, title: str, mix_type: str, data: bytes, ext: str, catalog: str,
+                      gemini_api_key: str, claude_api_key: str, lane: Optional[str] = None,
+                      source_path: str = "", parent_track: str = "", correction: str = "") -> Dict:
+        """Listen, gate, write. Quota errors raise so the run can stop; other write failures land on the row."""
+        result = self.listen(data, ext, mix_type, gemini_api_key, correction=correction)
+        track = self.track_record(title, mix_type, result, catalog, source_path, parent_track)
+        if track.get("analysis") and (track["PFD_Gate"]["status"] in gate.READY):
+            self.try_write(track, catalog, gemini_api_key, claude_api_key, lane)
+        self.refresh_status(track, catalog, lane)
+        return track
+
+    def try_write(self, track: Dict, catalog: str, gemini_api_key: str, claude_api_key: str,
+                  lane: Optional[str] = None, **kwargs) -> bool:
+        try:
+            self.write(track, catalog, gemini_api_key, claude_api_key, lane, **kwargs)
+            return True
+        except Exception as exc:
+            if _is_quota_error(exc):
+                raise
+            report(f"Writing failed — {track.get('Title')}", exc)
+            track["PFD_Write_Error"] = f"{type(exc).__name__}: {exc}"[:300]
+            return False
 
     # ── Track rows ─────────────────────────────────────────────────────────────
     def track_record(self, title: str, mix_type: str, result: Dict, catalog: str,
                      source_path: str = "", parent_track: str = "") -> Dict:
-        """Join the title to an analysis result. This is the only place the two meet."""
+        """Join the title to a listen result. This is the only place the two meet."""
         a = result.get("analysis") or {}
-        real = result.get("real_duration")
+        simple = result.get("simple") or {}
+        measured = result.get("measured") or {}
+        duration = measured.get("duration")
+        gate_state = {
+            "status": result.get("status", gate.BLOCKED),
+            "failures": list(result.get("failures") or []),
+            "attempts": result.get("attempts", 0),
+            "uncertain": list(result.get("uncertain") or []),
+            "override_note": "",
+        }
+        if result.get("correction") and a:
+            gate_state["override_note"] = f"Corrected by editor: {result['correction']}"
+            gate_state["status"] = gate.PASSED
         track = {
             "Title": title,
             "Mix Type": mix_type,
             "Parent Track": parent_track or base_title(title),
             "Source Path": source_path,
-            "Duration": gate.format_time(real) if real else "",
-            "Duration Seconds": real,
-            "Ending Type": a.get("ending_type", ""),
-            "Events": gate.format_events(a.get("events")),
-            "Overall Consensus": a.get("job", ""),
-            capture.context_label(catalog): a.get("trailer_or_campaign_voice", ""),
-            "Editor Description": a.get("editor_voice", ""),
-            "Supervisor Description": a.get("supervisor_voice", ""),
-            "Keywords": ", ".join(a.get("keywords", [])),
-            "Tip": a.get("tip", ""),
-            "Gemini Description": a.get("description", ""),
+            "Duration": gate.format_time(duration) if duration else "",
+            "Duration Seconds": duration,
+            "Ending Type": gate.ENDING_LABELS.get(simple.get("ending_type"), ""),
+            "Sections": gate.format_sections(a.get("sections")),
+            "Overall Consensus": a.get("the_job", ""),
+            capture.context_label(catalog): "",
+            "Editor Description": "",
+            "Supervisor Description": "",
+            "Keywords": "",
+            "Tip": "",
+            "Gemini Description": "",
             "Track Description": "",
             "analysis": a or None,
-            "PFD_Analysis_Reasons": list(result.get("analysis_reasons") or result.get("reasons") or []),
-            "PFD_Attempts": result.get("attempts", 0),
+            "simple": simple or None,
+            "measured": {k: v for k, v in measured.items() if k != "per_sec_db"} or None,
+            "PFD_Gate": gate_state,
+            "PFD_Notes": [],
+            "PFD_Added": [],
+            "PFD_Dismissed": [],
         }
         self.refresh_status(track, catalog)
         return track
 
-    def blocked_record(self, title: str, mix_type: str, reason: str, catalog: str,
+    def blocked_record(self, title: str, mix_type: str, fail: Dict, catalog: str,
                        source_path: str = "", parent_track: str = "") -> Dict:
-        """A row for a track whose analysis could not complete (schema violation, API error)."""
-        return self.track_record(title, mix_type, {"analysis_reasons": [reason], "attempts": 0},
+        """A row for a track whose listen could not complete (decode failure, API error)."""
+        return self.track_record(title, mix_type, {"failures": [fail], "status": gate.BLOCKED},
                                  catalog, source_path, parent_track)
 
     def refresh_status(self, track: Dict, catalog: str, lane: Optional[str] = None,
                        final: bool = False, parent: Optional[Dict] = None) -> Dict:
         """
-        Recompute PFD_Status / PFD_Block_Reasons from the analysis reasons plus the
-        current text. `final` (export) also requires a description to exist.
+        PFD_Status / PFD_Block_Reasons (plain sentences) from the listen and the
+        current text. `final` (export) also requires a description and keywords.
+        PFD_Reason_Kind is "listen" when the analysis itself is blocked, "text" otherwise.
         """
-        mix = (track.get("Mix Type") or "").lower()
-        if mix == "alt" or mix.startswith("cutdown"):
+        kind = ""
+        if track.get("PFD_Skipped"):
+            reasons, status = [], SKIPPED
+        elif is_alt_or_cutdown(track):
             # Template text from folder names, not a listen: status follows the parent full mix.
             if parent is None:
-                reasons = [f"parent track '{track.get('Parent Track', '')}' was not analysed"]
-            elif parent.get("PFD_Status") != gate.PASSED:
-                reasons = [f"parent track '{parent.get('Title', '')}' is BLOCKED"]
+                reasons = [f"Its full mix, '{track.get('Parent Track', '')}', was not analysed."]
+            elif parent.get("PFD_Status") not in gate.READY:
+                reasons = [f"Its full mix, '{parent.get('Title', '')}', is blocked."]
             else:
                 reasons = []
+            status = gate.BLOCKED if reasons else gate.PASSED
         else:
-            reasons = list(track.get("PFD_Analysis_Reasons") or [])
-            if track.get("analysis"):
-                reasons += gate.keyword_reasons(track.get("Keywords", ""), catalog, lane)
-            elif not reasons:
-                reasons.append("no analysis")
-            desc = track.get("Track Description", "")
-            if desc or final:
-                reasons += gate.description_reasons(desc, catalog, base_title(track.get("Title", "")), lane)
+            g = track.get("PFD_Gate") or {}
+            manual = bool(track.get("PFD_Manual"))
+            reasons = []
+            if not manual and g.get("status") == gate.BLOCKED:
+                kind = "listen"
+                reasons = [gate.plain_reason(f) for f in g.get("failures") or []] or ["It hasn't been listened to yet."]
+            else:
+                kind = "text"
+                if track.get("PFD_Write_Error") and not manual:
+                    reasons.append("The description couldn't be written. Run it again.")
+                if track.get("analysis") or manual:
+                    if track.get("Keywords") or final:
+                        reasons += [gate.sentence(r) for r in gate.keyword_reasons(track.get("Keywords", ""), catalog, lane)]
+                    desc = track.get("Track Description", "")
+                    if desc or final:
+                        reasons += [gate.sentence(r) for r in gate.description_reasons(
+                            desc, catalog, base_title(track.get("Title", "")), lane)]
+                else:
+                    kind = "listen"
+                    reasons.append("It hasn't been listened to yet.")
+            if reasons:
+                status = gate.BLOCKED
+            elif not manual and not g.get("override_note") and remaining_uncertain(track):
+                status = gate.PASSED_WITH_UNCERTAINTY
+            else:
+                status = gate.PASSED
         track["PFD_Block_Reasons"] = reasons
-        track["PFD_Status"] = gate.status_for(reasons)
+        track["PFD_Status"] = status
+        track["PFD_Reason_Kind"] = kind if status == gate.BLOCKED else ""
         return track
 
     def refresh_statuses(self, app_data: Dict, catalog: str, final: bool = False) -> int:
@@ -400,13 +567,67 @@ class IngestionEngine:
             if (t.get("Mix Type") or "").lower() in ("full", "full_mix"):
                 parents.setdefault(t.get("Parent Track") or base_title(t.get("Title", "")), t)
         for t in tracks:
-            if (t.get("Mix Type") or "").lower() in ("full", "full_mix", "sparse", "sound_design", "sde", "unknown"):
+            if not is_alt_or_cutdown(t):
                 self.refresh_status(t, catalog, lane, final)
         for t in tracks:
-            if t not in parents.values() and ((t.get("Mix Type") or "").lower() == "alt"
-                                               or (t.get("Mix Type") or "").lower().startswith("cutdown")):
+            if is_alt_or_cutdown(t):
                 self.refresh_status(t, catalog, lane, final, parents.get(t.get("Parent Track")))
-        return sum(1 for t in tracks if t.get("PFD_Status") != gate.PASSED)
+        return sum(1 for t in tracks if t.get("PFD_Status") == gate.BLOCKED)
+
+    @staticmethod
+    def status_counts(tracks: List[Dict]) -> Dict[str, int]:
+        c = {"ready": 0, "uncertain": 0, "blocked": 0, "skipped": 0}
+        for t in tracks:
+            s = t.get("PFD_Status")
+            c["ready" if s == gate.PASSED else "uncertain" if s == gate.PASSED_WITH_UNCERTAINTY
+              else "skipped" if s == SKIPPED else "blocked"] += 1
+        return c
+
+    # ── Fix actions (Review screen) ────────────────────────────────────────────
+    def add_family(self, track: Dict, family_path: str, catalog: str, gemini_api_key: str,
+                   claude_api_key: str, lane: Optional[str] = None) -> bool:
+        """The editor confirms an uncertain family is there. Call B only — no re-listen."""
+        obs = find_observation(track.get("analysis"), family_path)
+        if obs is None:
+            raise ValueError(f"No family '{family_path}' in the analysis.")
+        obs.update({"presence": Presence.present.value, "prominence": obs.get("prominence") or "supporting",
+                    "confidence": 1.0, "note": "Confirmed by an editor who listened."})
+        simple = track.get("simple") or {}
+        simple["do_not_claim"] = [p for p in simple.get("do_not_claim") or [] if p != family_path]
+        track.setdefault("PFD_Added", []).append(family_path)
+        ok = self.try_write(track, catalog, gemini_api_key, claude_api_key, lane)
+        self.refresh_status(track, catalog, lane)
+        return ok
+
+    def dismiss_family(self, track: Dict, family_path: str, catalog: str, lane: Optional[str] = None):
+        track.setdefault("PFD_Dismissed", []).append(family_path)
+        self.refresh_status(track, catalog, lane)
+
+    def manual_description(self, track: Dict, text: str, catalog: str, gemini_api_key: str,
+                           lane: Optional[str] = None, keywords: str = "") -> List[str]:
+        """
+        "I'll write it". Returns the rule problems in the text; nothing is saved
+        while there are any. Keywords come from Call B when there is an analysis;
+        otherwise the editor types them.
+        """
+        problems = [gate.sentence(r) for r in gate.description_reasons(text, catalog, base_title(track.get("Title", "")), lane)]
+        if problems:
+            return problems
+        track["Track Description"] = text.strip()
+        track["PFD_Manual"] = True
+        track.pop("PFD_Write_Error", None)
+        if track.get("analysis"):
+            self.write(track, catalog, gemini_api_key, "", lane, keywords_only=True)
+        else:
+            track["Keywords"] = keywords
+        if lane:
+            gate.apply_lane(track, lane)
+        self.refresh_status(track, catalog, lane)
+        return []
+
+    @staticmethod
+    def skip(track: Dict, skipped: bool = True):
+        track["PFD_Skipped"] = skipped
 
     # ── Claude ─────────────────────────────────────────────────────────────────
     def call_claude(self, system_instruction: str, prompt: str, claude_api_key: str,
@@ -429,46 +650,17 @@ class IngestionEngine:
             raise ClaudeError(f"Claude returned no text (stop_reason={getattr(message, 'stop_reason', '?')}).")
         return text.strip()
 
-    # ── Track descriptions ─────────────────────────────────────────────────────
-    def write_track_description(self, track: Dict, catalog: str, claude_api_key: str,
-                                mode: Optional[str] = None, is_redo: bool = False,
-                                user_guidance: str = "", lane: Optional[str] = None) -> str:
-        mode = mode or rules.setting("track_writer")
-        if mode not in WRITER_MODES:
-            raise ValueError(f"track_writer '{mode}' is not one of {WRITER_MODES}")
-        system = rules.system_instruction(catalog)
-        if mode == "claude_synth":
-            if not track.get("analysis"):
-                raise ValueError(f"'{track.get('Title')}' has no analysis to write from.")
-            return self.call_claude(system, self.prompts.track_synth_prompt(track, catalog, is_redo, user_guidance),
-                                    claude_api_key)
-
-        gemini_text = track.get("Gemini Description", "")
-        if not gemini_text:
-            raise ValueError(f"'{track.get('Title')}' has no Gemini description; re-run its analysis.")
-        issues = gate.description_reasons(gemini_text, catalog, base_title(track.get("Title", "")), lane)
-        if mode == "gemini" and not is_redo and not user_guidance:
-            prompt = self.prompts.track_gate_prompt(gemini_text, issues)
-        else:
-            prompt = self.prompts.track_edit_prompt(track, catalog, gemini_text, issues, is_redo, user_guidance)
-        return self.call_claude(system, prompt, claude_api_key)
-
-    def writer_variants(self, track: Dict, catalog: str, claude_api_key: str,
-                        lane: Optional[str] = None) -> Dict[str, str]:
-        """All three writer modes for one track, for the blind writer test. Failures are shown."""
-        out = {}
-        for mode in WRITER_MODES:
-            try:
-                out[mode] = self.write_track_description(track, catalog, claude_api_key, mode=mode, lane=lane)
-            except (ClaudeError, ValueError) as exc:
-                report(f"Writer test: {mode} failed for '{track.get('Title')}'", exc)
-                out[mode] = ""
-        return out
-
     # ── EPP lane ───────────────────────────────────────────────────────────────
     def propose_lane(self, tracks: List[Dict], claude_api_key: str) -> str:
-        summaries = [{k: (t.get("analysis") or {}).get(k) for k in ("job", "facts", "keywords", "ending_type")}
-                     for t in tracks if t.get("analysis")]
+        summaries = []
+        for t in tracks:
+            a, s = t.get("analysis"), t.get("simple") or {}
+            if not a:
+                continue
+            summaries.append({"job": a.get("the_job"), "genre_tags": a.get("genre_tags"),
+                              "energy_arc": s.get("energy_arc"), "tempo_band": s.get("tempo_band"),
+                              "lead_sources": [family_label(p) for p in s.get("lead_sources") or []],
+                              "keywords": gate.split_keywords(t.get("Keywords", ""))})
         if not summaries:
             raise ValueError("No analysed tracks to propose a lane from.")
         text = self.call_claude(rules.system_instruction("EPP"),
@@ -493,19 +685,11 @@ class IngestionEngine:
                 for e in recent_album_descriptions(catalog)]
 
     def generate_album_description(self, track_descriptions: List[str], catalog: str,
-                                   claude_api_key: str) -> str:
+                                   claude_api_key: str, previous: str = "", guidance: str = "") -> str:
         return self.call_claude(rules.system_instruction(catalog),
-                                self.prompts.album_description_prompt(catalog, track_descriptions, self._recent_texts(catalog)),
+                                self.prompts.album_description_prompt(catalog, track_descriptions,
+                                                                      self._recent_texts(catalog), previous, guidance),
                                 claude_api_key)
-
-    def generate_album_description_iteration(self, track_descriptions: List[str], catalog: str,
-                                             iteration_history: List[Dict], user_guidance: str,
-                                             claude_api_key: str) -> str:
-        return self.call_claude(
-            rules.system_instruction(catalog),
-            self.prompts.album_description_iteration_prompt(
-                catalog, track_descriptions, self._recent_texts(catalog), iteration_history, user_guidance),
-            claude_api_key)
 
     @staticmethod
     def _parse_names(text: str) -> List[Dict]:
@@ -558,32 +742,24 @@ class IngestionEngine:
                                 self.prompts.mailchimp_prompt(album_name, album_description, track_descriptions or []),
                                 claude_api_key)
 
-    def manual_refinement(self, content: str, content_type: str, catalog: str, claude_api_key: str) -> str:
-        return self.call_claude(rules.system_instruction(catalog),
-                                self.prompts.manual_refinement_prompt(content, content_type), claude_api_key)
-
     # ── Validator ──────────────────────────────────────────────────────────────
     def validate_data(self, data: Dict, catalog: str = "") -> Tuple[bool, List[str]]:
         """
-        Export check. Refreshes every track's status with final=True, then lists
-        everything that is not clean. BLOCKED tracks still export — with their
-        status and reasons — so nothing is written as if it passed.
+        Export check. Refreshes every track with final=True and lists what is not
+        clean. The Export button stays grey while any track is BLOCKED; album-level
+        issues are listed but do not stop the export.
         """
         errors = []
-        tracks = data.get("tracks", [])
+        tracks = [t for t in data.get("tracks", []) if not t.get("PFD_Skipped")]
         if not tracks:
-            errors.append("No track data found to export.")
+            errors.append("No tracks to export.")
         self.refresh_statuses(data, catalog, final=True)
         for t in tracks:
-            if t.get("PFD_Status") != gate.PASSED:
-                errors.append(f"BLOCKED — {t.get('Title', '?')}: {'; '.join(t.get('PFD_Block_Reasons') or [])}")
+            if t.get("PFD_Status") == gate.BLOCKED:
+                errors.append(f"{t.get('Title', '?')}: {' '.join(t.get('PFD_Block_Reasons') or [])}")
         errors += [f"Album description: {r}" for r in gate.album_description_reasons(data.get("album_description", ""), catalog)]
         name = data.get("album_name_selected", "")
         errors += [f"Album name: {r}" for r in gate.album_name_reasons(name, catalog)]
         if rules.catalog_code(catalog) == "EPP" and not data.get("lane"):
-            errors.append("EPP lane not confirmed (Tab 03).")
+            errors.append("EPP lane not confirmed.")
         return len(errors) == 0, errors
-
-    def compile_final_package(self, data: Dict, catalog: str, album_code: str,
-                              reference: Optional[List[str]] = None) -> Tuple[bytes, str]:
-        return capture.build_zip(data, catalog, album_code, reference)
