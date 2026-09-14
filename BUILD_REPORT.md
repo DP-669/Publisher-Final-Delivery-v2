@@ -5,7 +5,7 @@
 1. Open the app on iPad. Sidebar shows "Rules v0.1" and three green badges.
 2. Pick a catalog, paste one Dropbox folder link with one real MP3, run Tab 01.
 3. Confirm the row shows a duration, timestamped events, an ending type and PASSED or BLOCKED. That is the observation that makes this build DONE.
-4. To finish M-D locally: approve one Dropbox link (see BLOCKED.md → M-D) so a new refresh token can be minted. The local token is revoked or belongs to another app.
+4. If the live app's Dropbox features fail, paste the new `DROPBOX_REFRESH_TOKEN` from the local secrets file into Streamlit Cloud's secrets.
 
 Pull request: see "Where it lives" below.
 
@@ -34,11 +34,10 @@ Pull request: see "Where it lives" below.
   - 2026-09-13 re-run: file 30.02 s, model heard 29 s (within ±8%), PASSED on the first attempt in 28 s. Events: 0:00 eerie metallic drone and low bass swell · 0:10 mechanical pulse · 0:20 distorted synth blast and stuttering riser · 0:26 abrupt impact and hard cut.
   - Both runs: Hard Cut; no drums, no vocals, no choir; tempo Rubato. The second listen agreed on every claim (all TRUE). Wording differs between runs; the facts, ending and cut point at 0:26 do not.
   - No title leak in either run: zero "sunny", "ukulele" or "picnic" in the model output. It described dark sci-fi/horror sound design, not a picnic.
-- **M-D local half:** export ZIP built from the live track; validator clean; CSV status columns last.
+- **M-D DONE (live, 2026-09-13, after the refresh token was replaced):** `live_md.py` from the worktree signed in as the redCola Dropbox account, exported the M-B track and wrote `rC_TEST_PFD_Test_Album.zip` (one CSV + four .txt). `/PFD-App/albums/TEST/rC_TEST_PFD_Test_Album_DRAFT.csv` appeared in Dropbox (1,425 bytes, PFD_Status/PFD_Block_Reasons last, row PASSED). A hand-edited FINAL uploaded through `save_final_and_diff` wrote `_FINAL.csv` and `_DIFF.md` ("Words changed — track description: 12.5% · keywords: 0.0% · album description: 0.0%"; 7 of 56 words). The folder held only those three files; `/PFD-App/albums/TEST` was then deleted and confirmed gone. The Columns Reference was absent (expected; Vesna has not placed it), so the default column order was used.
 
 ## What is BLOCKED and why (details in BLOCKED.md)
 - **M-C live render:** the writer-test page renders correctly (Track 1, versions 1/2/3, pick buttons, no title). No `ANTHROPIC_API_KEY` is in the local secrets file and the shell's key is rejected (401), so the three versions showed visible errors instead of text. Works on the live app with its own secrets. Not re-run 2026-09-13: the secrets file still has no Claude key.
-- **M-D Dropbox half:** the new app key and secret are accepted (the error changed from `invalid_client` to `invalid_grant`). The refresh token is not: Dropbox says `refresh token is invalid or revoked`, and the app's own client fails with `AuthError invalid_access_token` before any write. Nothing was written, so there was nothing to clean up. Unblock: one Dropbox approval to mint a new token (BLOCKED.md → M-D).
 - **M-E deploy:** merge is one click by Damir (background-job rule). The live URL is login-protected, so an anonymous HTTP 200 cannot be observed; the iPad check above is the observation.
 
 ## Where it lives
