@@ -1,10 +1,11 @@
-# PFD v3 — Build Report (2026-09-12)
+# PFD v3 — Build Report (2026-09-12, live checks re-run 2026-09-13)
 
 ## Damir's only job afterwards
 0. Merge the pull request on GitHub (one green button). This build ran as a background job, which is not allowed to merge to `main` itself. Merging redeploys the app in about three minutes.
 1. Open the app on iPad. Sidebar shows "Rules v0.1" and three green badges.
 2. Pick a catalog, paste one Dropbox folder link with one real MP3, run Tab 01.
 3. Confirm the row shows a duration, timestamped events, an ending type and PASSED or BLOCKED. That is the observation that makes this build DONE.
+4. To finish M-D locally: approve one Dropbox link (see BLOCKED.md → M-D) so a new refresh token can be minted. The local token is revoked or belongs to another app.
 
 Pull request: see "Where it lives" below.
 
@@ -25,19 +26,19 @@ Pull request: see "Where it lives" below.
 - **Housekeeping.** SETUP.md rewritten (v3 table; refresh-token Dropbox flow checked against Dropbox's docs). Few-shot examples populated in PFD_RULES.md TUNABLE from July 2026 finals. DECISIONS.md lists every judgment call.
 
 ## What was observed
-- **Tests:** 98 pass, all mocked (`python -m unittest discover -s . -p "test_*.py"`), plus `py_compile app.py` and the full module import. New: test_rules, test_gate, test_lanes, test_capture, test_no_silent_except.
+- **Tests:** 98 pass, all mocked (`python -m unittest discover -s . -p "test_*.py"`), plus `py_compile app.py` and the full module import. Re-run 2026-09-13 with pytest: 98 passed in 11 s. New: test_rules, test_gate, test_lanes, test_capture, test_no_silent_except.
 - **App boots:** `streamlit run app.py --server.headless true` → `http://localhost:8501` HTTP 200, health `ok`.
 - **M-A DONE:** test_rules passes; `grep -c Antigravity *.py` → 0 in every file.
-- **M-B DONE (live, real keys):** a real 30-second redCola clip saved as `Sunny_Ukulele_Picnic_FULL.mp3`, run on `gemini-3.1-pro-preview`:
-  - Result: file 30.02 s, model heard 29 s (3.4%), PASSED on the first attempt in 27 s.
-  - Events: 0:00 metallic drone · 0:05 sub-bass rumble · 0:13 alarm pulse · 0:20 distorted riser · 0:26 hard cut.
-  - Ending and facts: Hard Cut; no drums, no vocals, no choir; tempo Rubato. The second listen agreed on every claim.
-  - No title leak: zero "sunny", "ukulele" or "picnic" in the model output. It described dark sound design, not a picnic.
-- **M-D local half:** export ZIP built from that live track; validator clean; CSV status columns last.
+- **M-B DONE (live, real keys, observed twice):** a real 30-second redCola clip saved as `Sunny_Ukulele_Picnic_FULL.mp3`, run on `gemini-3.1-pro-preview` (found live as the newest Pro).
+  - 2026-09-12 result: file 30.02 s, model heard 29 s (3.4%), PASSED on the first attempt in 27 s. Events: 0:00 metallic drone · 0:05 sub-bass rumble · 0:13 alarm pulse · 0:20 distorted riser · 0:26 hard cut.
+  - 2026-09-13 re-run: file 30.02 s, model heard 29 s (within ±8%), PASSED on the first attempt in 28 s. Events: 0:00 eerie metallic drone and low bass swell · 0:10 mechanical pulse · 0:20 distorted synth blast and stuttering riser · 0:26 abrupt impact and hard cut.
+  - Both runs: Hard Cut; no drums, no vocals, no choir; tempo Rubato. The second listen agreed on every claim (all TRUE). Wording differs between runs; the facts, ending and cut point at 0:26 do not.
+  - No title leak in either run: zero "sunny", "ukulele" or "picnic" in the model output. It described dark sci-fi/horror sound design, not a picnic.
+- **M-D local half:** export ZIP built from the live track; validator clean; CSV status columns last.
 
 ## What is BLOCKED and why (details in BLOCKED.md)
-- **M-C live render:** the writer-test page renders correctly (Track 1, versions 1/2/3, pick buttons, no title). The Claude key on this Mac is rejected (401), so the three versions showed visible errors instead of text. Works on the live app with its own secrets.
-- **M-D Dropbox half:** the Dropbox app key and secret in the local secrets file are 7 characters (real ones are 15). Dropbox says `invalid_client`, so nothing was written and there was nothing to clean up.
+- **M-C live render:** the writer-test page renders correctly (Track 1, versions 1/2/3, pick buttons, no title). No `ANTHROPIC_API_KEY` is in the local secrets file and the shell's key is rejected (401), so the three versions showed visible errors instead of text. Works on the live app with its own secrets. Not re-run 2026-09-13: the secrets file still has no Claude key.
+- **M-D Dropbox half:** the new app key and secret are accepted (the error changed from `invalid_client` to `invalid_grant`). The refresh token is not: Dropbox says `refresh token is invalid or revoked`, and the app's own client fails with `AuthError invalid_access_token` before any write. Nothing was written, so there was nothing to clean up. Unblock: one Dropbox approval to mint a new token (BLOCKED.md → M-D).
 - **M-E deploy:** merge is one click by Damir (background-job rule). The live URL is login-protected, so an anonymous HTTP 200 cannot be observed; the iPad check above is the observation.
 
 ## Where it lives
