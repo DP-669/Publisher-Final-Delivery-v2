@@ -90,5 +90,33 @@ class TestComparison(unittest.TestCase):
         self.assertIn("newest in its family", models.summarize(r, "Gemini"))
 
 
+class TestRuntimeResolution(unittest.TestCase):
+    def test_latest_gemini_pro(self):
+        available = ["gemini-3.1-pro-preview", "gemini-3.4-pro", "gemini-3.4-pro-preview",
+                     "gemini-3.6-flash", "gemini-3.5-pro-image", "gemini-3.5-pro-tts"]
+        self.assertEqual(models.latest_gemini_pro(available), "gemini-3.4-pro")
+
+    def test_latest_claude_opus(self):
+        available = ["claude-sonnet-5", "claude-opus-4-1-20250805", "claude-opus-5", "claude-haiku-4-5-20251001"]
+        self.assertEqual(models.latest_claude_opus(available), "claude-opus-5")
+
+    def test_explicit_secret_pin_wins(self):
+        r = models.resolve("claude", "key", "claude-sonnet-5", explicit=True)
+        self.assertEqual((r["id"], r["source"]), ("claude-sonnet-5", "secret"))
+
+    def test_failed_check_falls_back_to_pin(self):
+        orig = models.list_claude_models
+        models.list_claude_models = lambda key: (_ for _ in ()).throw(RuntimeError("network down"))
+        try:
+            r = models.resolve("claude", "key", "claude-sonnet-5", explicit=False)
+        finally:
+            models.list_claude_models = orig
+        self.assertEqual((r["id"], r["source"]), ("claude-sonnet-5", "fallback"))
+        self.assertIn("network down", r["error"])
+
+    def test_no_key_falls_back(self):
+        self.assertEqual(models.resolve("gemini", "", "gemini-3.1-pro-preview", False)["source"], "fallback")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

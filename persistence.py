@@ -5,7 +5,7 @@ Saves to: /rMG PFD Progress/{catalog}_{album}_progress.json
            /rMG PFD Progress/{catalog}_{album}_progress.csv
 
 Rules:
-- save_progress() never raises — failures are silent (logged only)
+- save_progress() never raises — failures are shown with st.error and logged
 - Files are overwritten on each save (one current file per session)
 - list_sessions() downloads JSON files to read metadata; fine for <=20 sessions
 """
@@ -13,6 +13,8 @@ import json
 import re
 import datetime
 import pandas as pd
+
+from pfd_errors import report
 
 PROGRESS_FOLDER = "/00 production operations/04 sa, hm, cwr, csv/PFD Progress"
 
@@ -47,27 +49,30 @@ def _album_name(app_data: dict, pipe_state: dict) -> str:
 def _dbx(token: str = None):
     """Return (client, module) for the Dropbox SDK. Prefers refresh token auth."""
     import dropbox as dbx_mod
+    from engine import IngestionEngine
+    return IngestionEngine.get_dropbox_client(None, token), dbx_mod
+
+
+def _is_not_found(exc) -> bool:
+    err = getattr(exc, "error", None)
     try:
-        import streamlit as st
-        app_key       = st.secrets.get("DROPBOX_APP_KEY")
-        app_secret    = st.secrets.get("DROPBOX_APP_SECRET")
-        refresh_token = st.secrets.get("DROPBOX_REFRESH_TOKEN")
-        if app_key and app_secret and refresh_token:
-            return dbx_mod.Dropbox(
-                oauth2_refresh_token=refresh_token,
-                app_key=app_key,
-                app_secret=app_secret,
-            ), dbx_mod
-    except Exception:
-        pass
-    return dbx_mod.Dropbox(token), dbx_mod
+        return bool(err and err.is_path() and err.get_path().is_not_found())
+    except AttributeError:
+        return False
 
 
 def _ensure_folder(client, dbx_mod):
     try:
         client.files_create_folder_v2(PROGRESS_FOLDER)
-    except dbx_mod.exceptions.ApiError:
-        pass  # Already exists — ignore
+    except dbx_mod.exceptions.ApiError as exc:
+        err = getattr(exc, "error", None)
+        is_conflict = False
+        try:
+            is_conflict = bool(err and err.is_path() and err.get_path().is_conflict())
+        except AttributeError:
+            is_conflict = False
+        if not is_conflict:  # "already exists" is the only expected error
+            raise
 
 
 # ── Stage detection ────────────────────────────────────────────────────────────
@@ -165,7 +170,7 @@ def save_progress(token: str, app_data: dict, pipe_state: dict, album_desc_itera
         return True
 
     except Exception as exc:
-        print(f"[PFD persistence] Silent save failure: {exc}")
+        report("Auto-save to Dropbox failed", exc)
         return False
 
 
@@ -176,11 +181,13 @@ def list_sessions(token: str, max_sessions: int = 8) -> list:
                    album_name, app_data.
     """
     try:
-        client, _ = _dbx(token)
+        client, dbx_mod = _dbx(token)
         try:
             result = client.files_list_folder(PROGRESS_FOLDER, recursive=False)
-        except Exception:
-            return []
+        except dbx_mod.exceptions.ApiError as exc:
+            if _is_not_found(exc):
+                return []
+            raise
 
         sessions = []
         for entry in result.entries:
@@ -213,25 +220,28 @@ def list_sessions(token: str, max_sessions: int = 8) -> list:
                     "pipeline_meta":data.get("pipeline_meta", {}),
                     "album_desc_iterations": data.get("album_desc_iterations", {}),
                 })
-            except Exception:
+            except Exception as exc:
+                report(f"Could not read saved session {entry.name}", exc)
                 continue
 
         sessions.sort(key=lambda x: x["save_time"], reverse=True)
         return sessions[:max_sessions]
 
     except Exception as exc:
-        print(f"[PFD persistence] list_sessions failed: {exc}")
+        report("Could not list saved sessions in Dropbox", exc)
         return []
 
 
 def delete_progress(token: str, catalog: str, album: str):
-    """Remove progress files after a completed export. Silent on failure."""
+    """Remove progress files after a completed export. Failures are shown."""
     try:
-        client, _ = _dbx(token)
-        for path in [_json_path(catalog, album), _csv_path(catalog, album)]:
-            try:
-                client.files_delete_v2(path)
-            except Exception:
-                pass
-    except Exception:
-        pass
+        client, dbx_mod = _dbx(token)
+    except Exception as exc:
+        report("Could not connect to Dropbox to clear saved progress", exc)
+        return
+    for path in [_json_path(catalog, album), _csv_path(catalog, album)]:
+        try:
+            client.files_delete_v2(path)
+        except dbx_mod.exceptions.ApiError as exc:
+            if not _is_not_found(exc):
+                report(f"Could not delete {path}", exc)

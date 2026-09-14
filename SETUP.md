@@ -1,148 +1,88 @@
-# Publisher Final Delivery v2 — Setup Guide
+# Publisher Final Delivery v3 — Setup Guide
 
-## What Changed from v1
+## What changed in v3
 
-| Component | v1 | v2 |
+| Component | v2 | v3 |
 |---|---|---|
-| Audio Analysis | Gemini | **Gemini 2.5 Pro** (latest) |
-| Track Descriptions | Gemini | **Claude Sonnet** |
-| Album Description | Gemini | **Claude Sonnet** |
-| Album Name | Gemini | **Claude Sonnet** |
-| Cover Art Prompts | Gemini | **Claude Sonnet** |
-| MailChimp Intro | Gemini | **Claude Sonnet** |
-| Fix Bad Copy | ✗ | **Tab 07: Manual Refinement** |
-| Cloud Storage | ✗ | **Dropbox integration** |
-| Copy Buttons | ✗ | **All outputs** |
+| Rules | Spread across prompts.py, GEMINI.md, Council_Personas.json, Drive/Dropbox skill files | **One file: `PFD_RULES.md`** (+ `EPP_LANES.md`), read at startup |
+| Audio analysis | Gemini, given the track title; free-form JSON | **Gemini, audio + mix type only; structured output; title joined afterwards in code** |
+| Proof it listened | None | **Real duration check, timestamped events, second independent listen, one re-run** |
+| Track status | — | **PASSED or BLOCKED**, shown in Tab 01 and exported (`PFD_Status`, `PFD_Block_Reasons`) |
+| Track descriptions | Claude synthesis | **`track_writer` setting: `gemini` / `claude_synth` / `claude_edit`**, plus a blind writer test |
+| Models | Pinned Sonnet / Gemini Pro | **Newest Opus and newest Pro, found live; pins are the fallback** |
+| EPP | No lanes | **Lane proposed in Tab 03; first keyword and first Fits tag; never in the title** |
+| Fits line | Free text | **2–3 tags from the catalog's placement list, validated** |
+| Export | CSV + text files | **One ZIP; DRAFT CSV saved to Dropbox automatically** |
+| Learning | Redo log | **Vesna uploads FINAL; the app writes a word-level DIFF** |
+| Failures | Often silent | **Always shown (page + sidebar error list)** |
+| Google Drive | Libraries installed | **Never written to** |
 
 ---
 
-## Step 1: Get Your Claude API Key
+## Step 1: API keys
 
-1. Go to **console.anthropic.com**
-2. Create an account (separate from claude.ai — this is the developer platform)
-3. Go to **Settings → API Keys → Create Key**
-4. Name it "Publisher Final Delivery"
-5. Copy and store it securely — it's only shown once
-6. Add billing at **Settings → Billing** (pay-as-you-go, cents per album)
+- **Claude:** console.anthropic.com → Settings → API Keys → Create Key. Add billing.
+- **Gemini:** aistudio.google.com → Get API key.
 
----
+## Step 2: Dropbox (refresh token — does not expire)
 
-## Step 2: Get Your Dropbox Access Token
+The app authenticates with a refresh token, which stays valid until revoked. Do not use a short-lived access token.
 
-1. Go to **dropbox.com/developers/apps**
-2. Create a new app → "Scoped access" → "Full Dropbox"
-3. Under Permissions, enable: `files.content.read`, `files.content.write`
-4. Go to Settings → Generate access token
-5. Copy the token
+1. dropbox.com/developers/apps → your app (Scoped access, Full Dropbox). Permissions tab: `account_info.read`, `files.metadata.read`, `files.content.read`, `files.content.write`, `sharing.read`. Adding a scope later does not upgrade an existing refresh token — repeat steps 3–4 after any permission change.
+2. Copy the **App key** and **App secret** from the app's Settings tab (15 characters each).
+3. In a browser, open (replace `APP_KEY`):
+   `https://www.dropbox.com/oauth2/authorize?client_id=APP_KEY&token_access_type=offline&response_type=code`
+   Approve, and copy the code shown.
+4. Exchange the code once, in a terminal:
+   ```bash
+   curl https://api.dropbox.com/oauth2/token \
+     -d code=THE_CODE \
+     -d grant_type=authorization_code \
+     -d client_id=APP_KEY \
+     -d client_secret=APP_SECRET
+   ```
+   The JSON response contains `refresh_token`. Keep it.
 
----
+## Step 3: Secrets
 
-## Step 3: Configure Streamlit Secrets
-
-Create a file at `.streamlit/secrets.toml` in the project root:
+Local runs: `.streamlit/secrets.toml` in the repo root (gitignored). Streamlit Cloud: app → Settings → Secrets.
 
 ```toml
-GEMINI_API_KEY = "your-gemini-key-here"
-ANTHROPIC_API_KEY = "your-claude-key-here"
-DROPBOX_TOKEN = "your-dropbox-token-here"
+GEMINI_API_KEY = "..."
+ANTHROPIC_API_KEY = "..."
+DROPBOX_APP_KEY = "..."
+DROPBOX_APP_SECRET = "..."
+DROPBOX_REFRESH_TOKEN = "..."
+
+# Optional: lock a model instead of using the newest one
+# GEMINI_AUDIO_MODEL = "gemini-3.1-pro-preview"
+# CLAUDE_WRITING_MODEL = "claude-opus-5"
 ```
 
-For deployed apps on Streamlit Cloud, add these in the app's **Secrets** settings panel.
+Environment variables with the same names also work locally.
 
----
-
-## Step 4: Install Dependencies
+## Step 4: Install and run locally
 
 ```bash
 pip install -r requirements.txt
-```
-
----
-
-## Step 5: Run Locally
-
-```bash
 streamlit run app.py
 ```
 
----
+`ffprobe` (from ffmpeg) is optional; it is the fallback when an MP3 header cannot be read.
 
-## Step 6: Deploy to Streamlit Cloud (for Budapest / Malta teams)
+## Step 5: Streamlit Community Cloud
 
-1. Push this repo to GitHub (private)
-2. Go to **share.streamlit.io**
-3. Connect your GitHub repo
-4. Set the main file path to `app.py` (it is at the repo root)
-
-**The existing deployment is different.** It was created when the app lived in a
-subfolder, so its Main file path points at `Publisher-Final-Delivery-v2/app.py`.
-Community Cloud cannot edit that setting after deployment — changing it means
-deleting and redeploying the app, re-entering every secret and reclaiming the
-subdomain. Instead, `Publisher-Final-Delivery-v2/app.py` is a forwarder to the
-real entrypoint at the repo root. **Do not delete it — the live app launches
-through it.** Only a from-scratch redeploy makes it removable.
-5. Add your API keys under **Settings → Secrets**
-6. Share the app URL with your team — no installation required, browser only
-
----
-
-## Dropbox Folder Structure (Recommended)
-
-```
-/Publisher Final Delivery/
-├── /01 Inbox/          ← Drop audio files here
-│   ├── Track01.wav
-│   └── Track02.mp3
-└── /02 Output/         ← App writes ZIP files here
-    └── EPP_Touched_Final_Delivery.zip
-```
+The existing deployment's "Main file path" is `Publisher-Final-Delivery-v2/app.py`, from when the app lived in a subfolder. Community Cloud cannot change that after deployment, so that file forwards to the real `app.py` at the repo root. **Do not delete it — the live app launches through it.** Pushing to `main` redeploys.
 
 ---
 
 ## Models
 
-| Slot | Default pin | Set by |
-|---|---|---|
-| Audio analysis (Tab 01) | `gemini-3.1-pro-preview` | `GEMINI_AUDIO_MODEL` |
-| All writing (Tabs 02–07) | `claude-sonnet-5` | `CLAUDE_WRITING_MODEL` |
+At session start the app asks both providers which models exist and uses the newest **Opus** (writing) and the newest **Pro** (audio analysis and verification). The sidebar shows three badges: green = newest model in use, orange = fallback pin (the check failed), red = no key. The pins used when the check fails live in `engine.py` (`DEFAULT_GEMINI_AUDIO_MODEL`, `DEFAULT_CLAUDE_WRITING_MODEL`). Setting `GEMINI_AUDIO_MODEL` or `CLAUDE_WRITING_MODEL` in secrets locks that slot to a specific model. Sidebar → 🤖 Model check → "Re-check models now" refreshes the list.
 
-The defaults live in `engine.py` as `DEFAULT_GEMINI_AUDIO_MODEL` and
-`DEFAULT_CLAUDE_WRITING_MODEL`. You do not have to edit code to change them —
-add either key to Streamlit secrets and it wins over the default:
+## Rules
 
-```toml
-GEMINI_AUDIO_MODEL = "gemini-3.4-pro"
-CLAUDE_WRITING_MODEL = "claude-sonnet-6"
-```
-
-An environment variable of the same name works too, for local runs.
-
-### Checking for newer models
-
-A pinned model plus a hand-maintained doc goes stale silently. Both providers
-publish a live list-models endpoint, so the app asks them instead of trusting
-this file.
-
-In the sidebar, under **🤖 Model Pins**, press **Check for newer models**. The
-app lists every model your API keys can currently reach and reports:
-
-- a newer version in the same family (a newer Pro supersedes the pinned Pro;
-  a newer Flash does not — different family, different tradeoffs)
-- the stable build of a preview you are pinned to
-- a pin that has disappeared from the provider's list, meaning it is being
-  retired and needs attention
-
-**Nothing switches automatically, by design.** A newer ID is not automatically
-better: it may be a preview, it may price differently, and on the Gemini side it
-may not accept audio input at all. The check tells you what exists; you decide.
-
-To adopt one: set the secret, reboot the app, run a **single** album through it,
-and read the output before running a batch.
-
-The logic lives in `models.py`; `test_models.py` covers the version-comparison
-rules offline (no API key needed).
-
----
+`PFD_RULES.md` is the only rule source. `rules.py` parses it; every model call gets the LOCKED section plus the active catalog's block as its system prompt, and task prompts quote the TUNABLE specs. Change a rule: edit the file, bump the version line, push to `main`.
 
 ## Tests
 
@@ -150,22 +90,11 @@ rules offline (no API key needed).
 python -m unittest discover -s . -p "test_*.py" -v
 ```
 
-32 tests, no API keys and no network — every provider call is mocked. They
-cover keyword formatting and the banned-word filter (`test_keyword_engine.py`),
-Gemini response parsing and key normalisation (`test_audio_logic.py`), and the
-model-version comparison rules (`test_models.py`).
+No API keys and no network — every provider and Dropbox call is mocked. `test_rules.py` (rule parsing), `test_gate.py` (hallucination gate and validator), `test_lanes.py` (EPP lanes and names), `test_capture.py` (export, DRAFT, DIFF, no Drive), `test_no_silent_except.py`, plus keyword, request and model-version tests. GitHub Actions runs them on every push to `main` and every pull request.
 
-GitHub Actions runs them on every push to `main` and every pull request
-(`.github/workflows/tests.yml`).
+## Dropbox locations
 
----
-
-## Tab 07: Fix Existing Copy
-
-Use this tab to fix:
-- Intern-written descriptions that are over-hyped
-- MailChimp intros that sound like press releases
-- Album descriptions with banned words
-- Any copy that doesn't match the catalog DNA
-
-Paste → select content type → Run Council Filter → copy or apply to session.
+- `/PFD-App/albums/<ALBUMCODE>/` — DRAFT (app output), FINAL (Vesna's upload), DIFF. Not a release folder; do not clean it.
+- `/PFD-App/tests/` — writer-test results.
+- `/PFD-App/reference/sourceaudio_columns.txt` — optional column order for the CSV (one column per line).
+- `/00 production operations/04 sa, hm, cwr, csv/PFD Progress/` — auto-saved sessions.

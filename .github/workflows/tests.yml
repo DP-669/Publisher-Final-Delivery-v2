@@ -28,7 +28,7 @@ jobs:
         run: python -m unittest discover -s . -p "test_*.py" -v
 
       - name: Check every module imports
-        run: python -c "import engine, prompts, models, feedback, persistence, dropbox_pipeline"
+        run: python -c "import engine, prompts, models, feedback, persistence, dropbox_pipeline, rules, gate, capture, pfd_errors"
 
       - name: Check the Streamlit entrypoint compiles
         run: python -m py_compile app.py

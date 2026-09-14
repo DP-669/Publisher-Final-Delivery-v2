@@ -129,6 +129,24 @@ Other legal values: `claude_synth`, `claude_edit`. Set by the blind test (M3). D
 
 ### Few-shot examples
 (Claude Code populates from Damir's locked finals: Air Hunger, Vessel, Flexing and Finessing. Three track descriptions and three album descriptions per catalog. No examples from any file older than 2026-06-01.)
+Populated 2026-09-12 from the per-album SourceAudio exports saved with the CWR registrations. These show register and specificity, not format: they predate the Fits line, so format always follows "Track description" above. Examples containing a hard-banned word were left out. Only the active catalog's examples are sent.
+
+#### rC
+Track: Visceral, rhythmic breathing and low-end drones claw out of claustrophobic silence, then tighten into stuttering risers and synthetic hits until the panic goes full sci-fi. Built as a strict three-act suffocation — isolated panting up front, dread in the middle, terror at the back. Cut it into the moment the air turns against the characters.
+Track: Metallic atmosphere establishes isolation and impending dread. This uneasy calm fractures into a rhythmic pursuit, culminating in absolute, crushing panic.
+Album: Cinematic trailer cues built on voice and breath for sci-fi and thriller campaigns: contagion, deep space, quarantine, the gasp for air.
+Album: High-octane, conceptual, sound design based cues for theatrical marketing in science fiction, thriller, action and suspense genres.
+(Sources: rC056_Metadata.csv 2026-07-22, rC055_Metadata Vessel.csv 2026-07-06. A third rC track example was excluded for a banned word.)
+
+#### SSC
+(None yet. No locked SSC final dated 2026-06-01 or later exists; the SSC master sheet is dated 2026-03-15.)
+
+#### EPP
+Track: Sub-bass-driven trap beat with metallic hits and tight hi-hats. Confident, attitude-forward energy - sports promos, streetwear, esports.
+Track: Dark trap instrumental driven by deep sub-bass, rapid hi-hats, and sharp brass stabs. Generates escalating tension and undeniable swagger. Attitude with momentum - streetwear, esports, competitive sports.
+Track: Pulsing hip-hop groove with distorted sub-bass and urgent synth textures. Forward-driving - automotive, lifestyle promos, athletic brand spots.
+Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV, and streetwear spots.
+(Source: EPP064_Metadata.csv 2026-07-06.)
 
 ---
 

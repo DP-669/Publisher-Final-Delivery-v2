@@ -12,18 +12,20 @@ AUDIO_EXTENSIONS = {".wav", ".aif", ".aiff", ".mp3", ".flac"}
 BATCH_SIZE = 3
 
 
-def send_ntfy(title: str, body: str, priority: str = "default"):
-    """Fire-and-forget ntfy notification."""
+def send_ntfy(title: str, body: str, priority: str = "default") -> bool:
+    """ntfy notification. Never breaks a run; a failure is logged and returns False."""
     try:
         import requests
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
             data=body.encode("utf-8"),
-            headers={"Title": title, "Priority": priority},
+            headers={"Title": title.encode("utf-8"), "Priority": priority},
             timeout=10,
-        )
-    except Exception:
-        pass
+        ).raise_for_status()
+        return True
+    except Exception as exc:
+        print(f"[PFD] ntfy send failed ({title}): {type(exc).__name__}: {exc}")
+        return False
 
 
 def detect_catalog_from_path(path: str) -> str:
@@ -152,7 +154,8 @@ def _list_folder(dbx, path: str) -> list:
             r = dbx.files_list_folder_continue(r.cursor)
             items.extend(r.entries)
         return items
-    except Exception:
+    except Exception as exc:
+        print(f"[PFD] Could not list Dropbox folder {path}: {type(exc).__name__}: {exc}")
         return []
 
 
@@ -167,7 +170,8 @@ def _find_primary_audio(dbx, folder_path: str):
             return None
         masters = [f for f in audio if "master" in f.name.lower()]
         return max(masters, key=lambda f: f.size) if masters else max(audio, key=lambda f: f.size)
-    except Exception:
+    except Exception as exc:
+        print(f"[PFD] Could not scan {folder_path} for audio: {type(exc).__name__}: {exc}")
         return None
 
 
