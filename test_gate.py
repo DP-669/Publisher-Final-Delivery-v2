@@ -1,199 +1,253 @@
 """
-Tests for the hallucination gate: engine.analyze_track + gate.py.
-
-Gemini is mocked at engine.genai; the real duration is patched, except in the
-read_duration tests, which build a WAV with the standard library. No keys, no network.
+Tests for the v4 gate (gate.py): G1–G16 against a fixture analysis and a
+matching measured waveform, the plain-language reasons, retry hints, and the
+text rules. Pure code — no models, no network.
 """
-import io
 import json
-import struct
+import re
 import unittest
-import wave
-from unittest.mock import MagicMock, patch
 
 import gate
-import rules
-from engine import ClaudeError, IngestionEngine
-
-REAL = 30.0
-TITLE = "Sunny Ukulele Picnic"
-FILENAME = "Sunny_Ukulele_Picnic_FULL.mp3"
+from analysis_schema import Analysis, simplify
+from pfd_fixtures import MEASURED, absent, analysis, analysis_dict, present, uncertain, with_family
 
 
-def analysis(**over):
-    a = {
-        "mix_type": "FULL", "duration_seconds": 30.4, "ending_type": "Button",
-        "events": [{"t": 0.0, "what": "low drone"}, {"t": 12.5, "what": "drums enter"},
-                   {"t": 28.0, "what": "button hit"}],
-        "facts": {"drums": True, "vocals": False, "choir": False, "tempo_band": "Mid", "energy_arc": "low to high"},
-        "job": "Rising pressure for a reveal.", "narrative_map": "drone 0:00 → drums 0:12 → button 0:28",
-        "trailer_or_campaign_voice": "Act two build.", "editor_voice": "Clean cut at 0:12.",
-        "supervisor_voice": "Thriller campaigns.", "tip": "Tag the button ending.",
-        "keywords": [f"Tone {w}" for w in "Alpha Bravo Delta Echo Golf Hotel India Kilo Lima Mike Oscar Papa Romeo Sierra".split()],
-        "description": "Low drone builds under tight drums. It ends on a clean button. Fits: Trailer, Film",
-    }
-    a.update(over)
-    return a
+def check(a_dict, measured=None, mix="FULL"):
+    return gate.check_analysis(Analysis.model_validate(a_dict), dict(measured or MEASURED), mix)
 
 
-def verification(false=(), duration=30.0):
-    v = {c: ("FALSE" if c in false else "TRUE") for c in gate.VERIFIED_CLAIMS}
-    v["duration_seconds"] = duration
-    return v
+def rules_of(failures):
+    return [f["rule"] for f in failures]
 
 
-class GateCase(unittest.TestCase):
-    def setUp(self):
-        self.engine = IngestionEngine()
-        p = patch("gate.read_duration", return_value=REAL)
-        self.read_duration = p.start()
-        self.addCleanup(p.stop)
+class TestCleanListen(unittest.TestCase):
+    def test_fixture_passes_every_rule(self):
+        self.assertEqual(check(analysis_dict()), [])
 
-    def run_track(self, mock_genai, replies, catalog="rC", data=b"\xff\xfbfake-mp3"):
-        client = mock_genai.Client.return_value
-        client.models.generate_content.side_effect = [
-            MagicMock(text=r if isinstance(r, str) else json.dumps(r)) for r in replies
-        ]
-        return self.engine.analyze_track(data, ".mp3", "full", catalog, "fake_key"), client
+    def test_uncertainty_never_blocks(self):
+        a = with_family(analysis_dict(), "keys_and_synths.synth_pad", uncertain())
+        self.assertEqual(check(a), [])
+        parsed = Analysis.model_validate(a)
+        unsure = gate.uncertain_families(parsed)
+        self.assertEqual(unsure, ["keys_and_synths.synth_pad"])
+        self.assertEqual(gate.listen_status([], unsure), gate.PASSED_WITH_UNCERTAINTY)
+        self.assertEqual(simplify(parsed)["do_not_claim"], ["keys_and_synths.synth_pad"])
+
+    def test_status_values(self):
+        self.assertEqual(gate.listen_status([], []), gate.PASSED)
+        self.assertEqual(gate.listen_status([gate.failure("G5")], ["x.y"]), gate.BLOCKED)
 
 
-class TestAnalysisGate(GateCase):
-    @patch("engine.genai")
-    def test_clean_analysis_passes(self, mock_genai):
-        result, client = self.run_track(mock_genai, [analysis(), verification()])
-        self.assertEqual(result["status"], gate.PASSED, result["reasons"])
-        self.assertEqual(client.models.generate_content.call_count, 2)
+class TestStructure(unittest.TestCase):
+    def test_g1_timestamp_past_the_end(self):
+        secs = analysis_dict()["sections"]
+        secs[-1]["t_end"] = 70.0
+        self.assertIn("G1", rules_of(check(analysis_dict(sections=secs))))
 
-    @patch("engine.genai")
-    def test_duration_mismatch_blocks(self, mock_genai):
-        result, _ = self.run_track(mock_genai, [analysis(duration_seconds=45.0), verification()])
-        self.assertEqual(result["status"], gate.BLOCKED)
-        self.assertTrue(any("duration mismatch" in r for r in result["reasons"]), result["reasons"])
+    def test_g1_allows_half_a_second_of_slack(self):
+        secs = analysis_dict()["sections"]
+        secs[-1]["t_end"] = 60.4
+        self.assertNotIn("G1", rules_of(check(analysis_dict(sections=secs))))
 
-    @patch("engine.genai")
-    def test_event_past_duration_blocks(self, mock_genai):
-        events = [{"t": 1, "what": "a"}, {"t": 10, "what": "b"}, {"t": 95, "what": "invented climax"}]
-        result, _ = self.run_track(mock_genai, [analysis(events=events), verification()])
-        self.assertEqual(result["status"], gate.BLOCKED)
-        self.assertTrue(any("past the end" in r for r in result["reasons"]), result["reasons"])
+    def test_g1_backwards_evidence(self):
+        a = with_family(analysis_dict(), "percussion.drum_kit", present("lead", 30.0, 20.0, "kit groove"))
+        self.assertIn("G1", rules_of(check(a)))
 
-    @patch("engine.genai")
-    def test_verification_false_twice_blocks(self, mock_genai):
-        result, client = self.run_track(mock_genai, [
-            analysis(), verification(false=("drums",)),
-            analysis(), verification(false=("drums", "choir")),
-        ])
-        self.assertEqual(result["status"], gate.BLOCKED)
-        self.assertEqual(result["attempts"], 2)
-        self.assertEqual(client.models.generate_content.call_count, 4)
-        joined = " ".join(result["reasons"])
-        self.assertIn("drums", joined)
-        self.assertIn("choir", joined)
+    def test_g2_overlap(self):
+        secs = analysis_dict()["sections"]
+        secs[1]["t_start"] = 15.0
+        self.assertIn("G2", rules_of(check(analysis_dict(sections=secs))))
 
-    @patch("engine.genai")
-    def test_verification_false_once_then_true_passes(self, mock_genai):
-        result, client = self.run_track(mock_genai, [
-            analysis(), verification(false=("tempo_band",)),
-            analysis(), verification(),
-        ])
-        self.assertEqual(result["status"], gate.PASSED, result["reasons"])
-        self.assertEqual(result["attempts"], 2)
-        self.assertEqual(client.models.generate_content.call_count, 4)
+    def test_g2_unordered(self):
+        secs = analysis_dict()["sections"]
+        secs[0], secs[1] = secs[1], secs[0]
+        self.assertIn("G2", rules_of(check(analysis_dict(sections=secs))))
 
-    @patch("engine.genai")
-    def test_verification_duration_miss_triggers_rerun(self, mock_genai):
-        result, client = self.run_track(mock_genai, [
-            analysis(), verification(duration=60.0), analysis(), verification(duration=31.0),
-        ])
-        self.assertEqual(client.models.generate_content.call_count, 4)
-        self.assertEqual(result["status"], gate.PASSED)
+    def test_g2_coverage_under_90_percent(self):
+        secs = analysis_dict()["sections"][:2]
+        secs[1]["t_end"] = 30.0
+        failures = check(analysis_dict(sections=secs))
+        self.assertIn("G2", rules_of(failures))
+        self.assertEqual(next(f for f in failures if f["rule"] == "G2")["problem"], "coverage")
 
-    @patch("engine.genai")
-    def test_schema_violation_is_a_hard_error(self, mock_genai):
-        bad = analysis()
-        del bad["events"]
+    def test_g3_present_without_evidence(self):
+        fam = present("lead")
+        fam["evidence"] = []
+        self.assertIn("G3", rules_of(check(with_family(analysis_dict(), "percussion.drum_kit", fam))))
+
+    def test_g3_present_with_low_confidence(self):
+        fam = present("lead", confidence=0.5)
+        self.assertIn("G3", rules_of(check(with_family(analysis_dict(), "percussion.drum_kit", fam))))
+
+    def test_g3_present_without_prominence(self):
+        fam = present("lead")
+        fam["prominence"] = None
+        self.assertIn("G3", rules_of(check(with_family(analysis_dict(), "percussion.drum_kit", fam))))
+
+    def test_g4_schema_violation(self):
         with self.assertRaises(gate.SchemaViolation):
-            self.run_track(mock_genai, [bad, verification()])
-
-    @patch("engine.genai")
-    def test_non_json_is_a_hard_error(self, mock_genai):
+            gate.parse_analysis("I'm sorry, I can't analyse that file.")
+        bad = analysis_dict()
+        del bad["grounding"]
         with self.assertRaises(gate.SchemaViolation):
-            self.run_track(mock_genai, ["I'm sorry, I can't analyse that file."])
-
-    @patch("engine.genai")
-    def test_title_never_reaches_the_model(self, mock_genai):
-        result, client = self.run_track(mock_genai, [analysis(), verification()])
-        track = self.engine.track_record(TITLE, "full", result, "rC", source_path=f"/album/{FILENAME}")
-        self.assertEqual(track["Title"], TITLE)  # joined afterwards, in code
-        for call in client.models.generate_content.call_args_list:
-            sent = repr(call.kwargs.get("contents")) + repr(call.kwargs.get("config"))
-            for leak in (TITLE, FILENAME, "Sunny", "Ukulele"):
-                self.assertNotIn(leak, sent)
-
-    @patch("engine.genai")
-    def test_forbidden_placement_word_blocks(self, mock_genai):
-        kws = analysis()["keywords"][:-1] + ["Advertising Spot"]
-        result, _ = self.run_track(mock_genai, [analysis(keywords=kws), verification()], catalog="rC")
-        self.assertEqual(result["status"], gate.BLOCKED)
-        self.assertTrue(any("forbidden placement" in r for r in result["reasons"]), result["reasons"])
-        reasons = gate.description_reasons(
-            "Glossy pulse for a commercial cut. It ends on a button. Fits: Trailer, Film", "rC")
-        self.assertTrue(any("commercial" in r for r in reasons), reasons)
-
-    @patch("engine.genai")
-    def test_no_duration_blocks_without_calling_the_model(self, mock_genai):
-        self.read_duration.return_value = None
-        result = self.engine.analyze_track(b"garbage", ".mp3", "full", "rC", "k")
-        self.assertEqual(result["status"], gate.BLOCKED)
-        self.assertEqual(result["reasons"], ["no_duration"])
-        mock_genai.Client.return_value.models.generate_content.assert_not_called()
-
-    @patch("engine.genai")
-    def test_call_config_is_structured_and_rule_bound(self, mock_genai):
-        _, client = self.run_track(mock_genai, [analysis(), verification()], catalog="SSC")
-        config = client.models.generate_content.call_args_list[0].kwargs["config"]
-        self.assertEqual(config.response_mime_type, "application/json")
-        self.assertEqual(config.temperature, gate.ANALYSIS_TEMPERATURE)
-        self.assertEqual(config.system_instruction, rules.system_instruction("SSC"))
-        self.assertIsNotNone(config.response_schema)
-
-    @patch("engine.genai")
-    def test_large_file_uses_the_files_api(self, mock_genai):
-        client = mock_genai.Client.return_value
-        client.files.upload.return_value.state.name = "ACTIVE"
-        big = b"\x00" * (gate.INLINE_LIMIT_BYTES + 1)
-        self.run_track(mock_genai, [analysis(), verification()], data=big)
-        client.files.upload.assert_called_once()
-        self.assertEqual(client.files.upload.call_args.kwargs["config"].display_name, "pfd-audio")
-        sent_audio = client.models.generate_content.call_args_list[0].kwargs["contents"][0]
-        self.assertIs(sent_audio, client.files.upload.return_value)
+            gate.parse_analysis(json.dumps(bad))
+        self.assertIsInstance(gate.parse_analysis(json.dumps(analysis_dict())), Analysis)
 
 
-class TestValidator(unittest.TestCase):
-    def _track(self, description):
-        engine = IngestionEngine()
-        result = {"status": gate.PASSED, "reasons": [], "analysis_reasons": [], "real_duration": REAL,
-                  "analysis": dict(analysis(), keywords=analysis()["keywords"]), "attempts": 1}
-        track = engine.track_record("Glass Hours", "full", result, "rC")
-        track["Track Description"] = description
-        return engine, track
+class TestWaveform(unittest.TestCase):
+    def test_g5_first_sound(self):
+        g = dict(analysis_dict()["grounding"], first_sound_t=3.0)
+        self.assertIn("G5", rules_of(check(analysis_dict(grounding=g))))
+        g = dict(analysis_dict()["grounding"], first_sound_t=1.9)
+        self.assertNotIn("G5", rules_of(check(analysis_dict(grounding=g))))
 
-    def test_fits_tag_outside_list_fails_validator(self):
-        engine, track = self._track("Low drone builds under tight drums. It ends on a clean button. Fits: Trailer, Advertising")
-        data = {"tracks": [track], "album_description": "Breath and tape for slow thriller reveals.",
-                "album_name_selected": "Glass Hours"}
-        ok, errors = engine.validate_data(data, "rC")
-        self.assertFalse(ok)
-        self.assertTrue(any("not in the rC placement list" in e for e in errors), errors)
-        self.assertEqual(track["PFD_Status"], gate.BLOCKED)
+    def test_g6_loudest_moment(self):
+        g = dict(analysis_dict()["grounding"], loudest_moment_t=30.0)
+        self.assertIn("G6", rules_of(check(analysis_dict(grounding=g))))
 
-    def test_clean_track_passes_validator(self):
-        engine, track = self._track("Low drone builds under tight drums. It ends on a clean button. Fits: Trailer, Film")
-        data = {"tracks": [track], "album_description": "Breath and tape for slow thriller reveals.",
-                "album_name_selected": "Tin Weather"}
-        ok, errors = engine.validate_data(data, "rC")
-        self.assertTrue(ok, errors)
-        self.assertEqual(track["PFD_Status"], gate.PASSED)
+    def test_g6_near_any_top_three_peak_passes(self):
+        g = dict(analysis_dict()["grounding"], loudest_moment_t=52.0)
+        measured = dict(MEASURED, loudest_t=10.0, peaks_t=[10.0, 50.0, 55.0])
+        self.assertNotIn("G6", rules_of(check(analysis_dict(grounding=g), measured)))
+
+    def test_g7_tail_silence(self):
+        g = dict(analysis_dict()["grounding"], ends_with_silence_seconds=4.0)
+        self.assertIn("G7", rules_of(check(analysis_dict(grounding=g))))
+
+    def test_g8_hard_cut_that_rings_out(self):
+        ending = {"type": "hard_cut", "final_accent_t": 58.0, "tail_seconds": 0.0}
+        failures = check(analysis_dict(ending=ending))
+        self.assertIn("G8", rules_of(failures))
+        f = next(x for x in failures if x["rule"] == "G8")
+        self.assertEqual(gate.plain_reason(f),
+                         "It said the track ends with a hard cut, but the file rings out for 2.5 seconds.")
+
+    def test_g8_ring_out_that_stops(self):
+        self.assertIn("G8", rules_of(check(analysis_dict(), dict(MEASURED, decay_seconds=0.2))))
+        fade = {"type": "fade_out", "final_accent_t": 50.0, "tail_seconds": 8.0}
+        self.assertIn("G8", rules_of(check(analysis_dict(ending=fade), dict(MEASURED, decay_seconds=0.2))))
+
+    def test_g8_button_is_never_judged_on_decay(self):
+        button = {"type": "button", "final_accent_t": 58.0, "tail_seconds": 0.3}
+        for decay in (0.1, 3.0):
+            self.assertNotIn("G8", rules_of(check(analysis_dict(ending=button), dict(MEASURED, decay_seconds=decay))))
+
+    def test_g9_energy_shape_against_loudness(self):
+        secs = analysis_dict()["sections"]
+        for s, e in zip(secs, (5, 3, 1)):
+            s["energy"] = e
+        self.assertIn("G9", rules_of(check(analysis_dict(sections=secs))))
+
+    def test_g9_needs_three_sections(self):
+        secs = analysis_dict()["sections"][:2]
+        secs[0]["energy"], secs[1]["energy"] = 5, 1
+        secs[1]["t_end"] = 59.0
+        self.assertNotIn("G9", rules_of(check(analysis_dict(sections=secs))))
+
+    def test_g10_bpm_against_measured_tempo(self):
+        tempo = {"band": "mid", "bpm_estimate": 97, "pulse_confidence": 0.8}
+        self.assertIn("G10", rules_of(check(analysis_dict(tempo=tempo))))
+        for half_or_double in (60, 240):
+            tempo = dict(tempo, bpm_estimate=half_or_double)
+            self.assertNotIn("G10", rules_of(check(analysis_dict(tempo=tempo))))
+
+    def test_g10_only_with_a_groove(self):
+        a = with_family(analysis_dict(tempo={"band": "mid", "bpm_estimate": 97, "pulse_confidence": 0.8}),
+                        "percussion.drum_kit", absent())
+        self.assertNotIn("G10", rules_of(check(a)))
+
+
+class TestConsistency(unittest.TestCase):
+    def test_g11_groove_is_not_rubato(self):
+        tempo = {"band": "rubato", "bpm_estimate": None, "pulse_confidence": 0.2}
+        self.assertIn("G11", rules_of(check(analysis_dict(tempo=tempo))))
+
+    def test_g12_words_need_a_voice(self):
+        lyrics = {"has_intelligible_words": True, "language": "English", "sample_phrase": "hold on"}
+        self.assertIn("G12", rules_of(check(analysis_dict(lyrics=lyrics))))
+        a = with_family(analysis_dict(lyrics=lyrics), "voice.solo_voice_lyrics", present("lead", 20, 40, "lead vocal"))
+        self.assertNotIn("G12", rules_of(check(a)))
+
+    def test_g13_choir_evidence_mentions_voices(self):
+        a = with_family(analysis_dict(), "voice.choir", present("supporting", 40, 59, "high shimmering strings"))
+        self.assertIn("G13", rules_of(check(a)))
+        a = with_family(analysis_dict(), "voice.choir", present("supporting", 40, 59, "wordless choir swells"))
+        self.assertNotIn("G13", rules_of(check(a)))
+
+    def test_g14_dialogue_friendly_has_no_lyrics(self):
+        lyrics = {"has_intelligible_words": True, "language": "English", "sample_phrase": "hold on"}
+        a = with_family(analysis_dict(lyrics=lyrics, dialogue_friendly=True),
+                        "voice.solo_voice_lyrics", present("lead", 20, 40, "lead vocal"))
+        self.assertIn("G14", rules_of(check(a)))
+
+    def test_g15_sound_design_element_is_not_a_band(self):
+        self.assertNotIn("G15", rules_of(check(analysis_dict(mix_type="SDE"), mix="SDE")))
+        a = with_family(analysis_dict(mix_type="SDE"), "keys_and_synths.piano", present("supporting", 0, 30, "piano"))
+        self.assertIn("G15", rules_of(check(a, mix="SDE")))
+        self.assertNotIn("G15", rules_of(check(a, mix="FULL")))
+
+    def test_g15_ignores_sound_design_and_impacts(self):
+        a = analysis_dict(mix_type="SDE")
+        for path in ("sound_design.textures_and_atmos", "sound_design.processed_or_reversed",
+                     "percussion.trailer_impacts"):
+            a = with_family(a, path, present("lead", 0, 30, "processed hit"))
+        self.assertNotIn("G15", rules_of(check(a, mix="SDE")))
+
+    def test_g16_named_artist_or_film(self):
+        failures = check(analysis_dict(sounds_like_no_names="Like a Hans Zimmer Interstellar organ cue."))
+        f = next(x for x in failures if x["rule"] == "G16")
+        self.assertIn("Hans Zimmer", f["names"])
+        self.assertIn("Interstellar", f["names"])
+        self.assertNotIn("G16", rules_of(check(analysis_dict(sounds_like_no_names="Organ drone with a slow arrival."))))
+
+
+class TestReasonsAndHints(unittest.TestCase):
+    ALL = [gate.failure("G1", what="the 'peak' section", t=70.0, duration=60.0),
+           gate.failure("G2", problem="coverage", pct=50.0), gate.failure("G3", family="voice.choir", problem="no_evidence"),
+           gate.failure("G4", error="x"), gate.failure("G5", model=3.0, measured=0.5),
+           gate.failure("G6", model=30.0, measured=40.0), gate.failure("G7", model=4.0, measured=1.0),
+           gate.failure("G8", model="ring_out", measured=0.2), gate.failure("G9", rho=-1.0),
+           gate.failure("G10", model=97, measured=120.0), gate.failure("G11"), gate.failure("G12"),
+           gate.failure("G13"), gate.failure("G14"), gate.failure("G15", count=3),
+           gate.failure("G16", names=["Hans Zimmer"]), gate.failure("NO_AUDIO"), gate.failure("API")]
+
+    def test_every_rule_has_a_plain_sentence_without_its_id(self):
+        for f in self.ALL:
+            text = gate.plain_reason(f)
+            self.assertTrue(text and text[0].isupper() and text.endswith("."), text)
+            self.assertIsNone(re.search(r"\bG\d+\b", text), text)
+
+    def test_hints_name_the_rule_but_never_the_measured_answer(self):
+        hint = gate.retry_hint([gate.failure("G5", model=3.0, measured=0.5)])
+        self.assertIn("first_sound_t", hint)
+        self.assertNotIn("0.5", hint)
+        self.assertEqual(gate.retry_hint([gate.failure("G1", what="x", t=1, duration=1), gate.failure("G4")]), "")
+
+    def test_spearman(self):
+        self.assertAlmostEqual(gate.spearman([1, 2, 3], [10, 20, 30]), 1.0)
+        self.assertAlmostEqual(gate.spearman([1, 2, 3], [30, 20, 10]), -1.0)
+        self.assertIsNone(gate.spearman([2, 2, 2], [1, 2, 3]))
+
+
+class TestSimplify(unittest.TestCase):
+    def test_timpani_in_rubato_is_not_drums(self):
+        a = with_family(with_family(analysis_dict(tempo={"band": "rubato", "bpm_estimate": None, "pulse_confidence": 0.1}),
+                                    "percussion.drum_kit", absent()),
+                        "percussion.orchestral_percussion", present("lead", 40, 59, "timpani rolls"))
+        self.assertFalse(simplify(Analysis.model_validate(a))["drums"])
+
+    def test_kit_is_drums_and_leads_are_listed(self):
+        s = simplify(analysis())
+        self.assertTrue(s["drums"])
+        self.assertEqual(s["lead_sources"], ["percussion.drum_kit"])
+        self.assertEqual(s["ending_type"], "ring_out")
+
+
+class TestTextRules(unittest.TestCase):
+    def test_fits_tags_are_case_insensitive(self):
+        self.assertEqual(gate.fits_reasons(["documentary", "TRAILER"], "rC"), [])
+        self.assertTrue(gate.fits_reasons(["Documentary", "Advertising"], "rC"))
+        self.assertEqual(gate.split_fits("A. B. Fits: documentary, Film")[1], ["documentary", "Film"])
 
     def test_description_rules(self):
         r = gate.description_reasons("Cinematic swell. Ends hard. Fits: Trailer, Film", "rC")
@@ -205,34 +259,18 @@ class TestValidator(unittest.TestCase):
         r = gate.description_reasons("Low drone. It ends. No fits line here.", "rC")
         self.assertIn("description does not end with a 'Fits:' line", r)
 
+    def test_forbidden_placement_word(self):
+        reasons = gate.description_reasons("Glossy pulse for a commercial cut. It ends on a button. Fits: Trailer, Film", "rC")
+        self.assertTrue(any("commercial" in r for r in reasons), reasons)
+
     def test_ssc_trailer_only_forbidden_as_lead(self):
         body = "Strings hold a long line. Works under a trailer's quiet middle. Fits: Film, Drama"
         self.assertFalse(any("forbidden" in r for r in gate.description_reasons(body, "SSC")))
         lead = "Trailer-ready strings rise. They end softly. Fits: Film, Drama"
         self.assertTrue(any("forbidden" in r for r in gate.description_reasons(lead, "SSC")))
 
-
-class TestReadDuration(unittest.TestCase):
-    def test_reads_a_real_header(self):
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(8000)
-            w.writeframes(struct.pack("<h", 0) * 8000 * 3)
-        self.assertAlmostEqual(gate.read_duration(buf.getvalue(), ".wav"), 3.0, places=2)
-
-    @patch("gate.shutil.which", return_value=None)
-    def test_unreadable_header_without_ffprobe_is_none(self, _):
-        self.assertIsNone(gate.read_duration(b"not audio at all", ".mp3"))
-
-
-class TestClaudeFailuresAreNotCopy(unittest.TestCase):
-    @patch("engine.anthropic")
-    def test_api_error_raises(self, mock_anthropic):
-        mock_anthropic.Anthropic.return_value.messages.create.side_effect = RuntimeError("overloaded")
-        with self.assertRaises(ClaudeError):
-            IngestionEngine().call_claude("sys", "prompt", "key")
+    def test_sentence_helper(self):
+        self.assertEqual(gate.sentence("keyword count 3 (must be 12–18)"), "Keyword count 3 (must be 12–18).")
 
 
 if __name__ == "__main__":

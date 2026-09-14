@@ -50,3 +50,43 @@ One line each: what · why · how to reverse. PFD_RULES.md was the tiebreaker th
 ## Process
 - Merge to `main` is left to Damir as one click on the pull request · this build ran as a background job, and background jobs may not merge or push to main · merge the PR.
 - Proposed Cowork tasks (deletes/overwrites outside the repo): none were needed. The only Dropbox write/delete planned is `/PFD-App/albums/TEST/`, created and removed by this build.
+
+---
+
+# DECISIONS — PFD v4 rebuild (2026-09-14)
+
+v3 entries above that mention tabs, the second listen or the writer test are superseded by these. One line each: what · why · how to reverse.
+
+## Branches
+- `v3-final` tags `5352af9` (v3-build head), not the `gate-calibration` commit · gate-calibration was the rejected direction · `git tag -f v3-final <sha>`.
+- `gate-calibration` branch left in place, local and on GitHub · not asked to delete it · `git push origin --delete gate-calibration`.
+
+## Gate
+- measure_waveform decay rewritten · the spec formula returned 0.0 on every file (tested) and would block every ring-out/fade-out via G8 · restore the spec lines in `waveform.measure_waveform`.
+- Audible threshold capped at −50 dBFS · `floor + 12` treats a quiet intro as silence on files without digital silence, so G5 false-blocks · drop `AUDIBLE_CAP_DB`.
+- quietest_t search ends at the end of sound · trailing silence was reported as the quietest stretch · search `db[start:]` again.
+- peaks_t and tempo_bpm added to the measurement · G6 and G10 need them · none.
+- G2 allows 0.5 s overlap between touching sections; G1 also flags evidence that ends before it starts · model rounding · `gate.SECTION_SLACK_S = 0`.
+- G9 skipped when either side is constant; G10 skipped when librosa finds no tempo · Spearman undefined / nothing to compare · `gate.check_waveform`.
+- G15 uses the mix type from the folder, not the model's echo · the folder is ground truth · pass `a.mix_type.value`.
+- Retry hints name the failed field, never the measured value · a model told the answer would copy it · `gate._HINTS`.
+- G16 names in `reference/known_names.txt`; ordinary-word titles (Dune, Arrival, Joker, Succession, Tron, Drake) left out · they false-match plain descriptions · add them back to the file.
+- Call A gets the analyst brief only, not `rules.system_instruction` · spec: no catalog in Call A context · pass the system instruction in `engine.listen`.
+- Call B `Writing` schema defined here (voices, description, 12–18 keywords, tip) · the spec named `Writing` without fields · `analysis_schema.Writing`.
+- `gemini` writer: if the Claude gate fails, Gemini's text is kept with a "Not checked by Claude." note · a missing Claude key should not block every track; the text still has to pass the code checks · raise in `engine.finish_description`.
+- "Tell it what's true" → PASSED with note even if waveform rules still fail; stays BLOCKED only when no analysis returns · spec: "marks PASSED with note" · `engine.track_record`.
+- "I'll write it" saves only text that passes the description rules; keywords are typed when there is no analysis for Call B · LOCKED rules still apply to hand-written copy; Call B needs an analysis · `engine.manual_description`.
+- PFD_RULES.md LOCKED: only the second-listen bullet was replaced (as instructed). The bullets saying the analysis "receives audio and mix type only" (it now also gets the duration) and "must return duration_seconds, ending_type, 3–6 timestamped events" (now grounding, sections, ending, families) are stale and left for Damir · LOCKED is Damir-only · edit the file.
+
+## UI
+- Step bar is three buttons, not segmented_control/radio · neither can disable a single option · swap to `st.segmented_control` without disabling.
+- Table rows open via an "Open" checkbox column · `st.data_editor` has no row selection · use `st.dataframe(on_select=...)` and lose inline editing.
+- Needs a look = red + amber; Ready = green only · the counts don't overlap · `render_review` filter.
+- Export is also disabled while an EPP lane is unconfirmed or tracks are pending · lane-first keywords and Fits can't be checked without the lane; pending tracks would be missing from the CSV · `render_export`.
+- Skipped tracks are not exported · "Skip this track" means leave it out · `capture.track_rows`.
+- Time estimate uses 45 s per track · the spec example implied ~11 s, well below v3's measured ~28 s listen · `engine.SECONDS_PER_TRACK`.
+- persistence.py and feedback.py deleted · replaced by state.json; the redo log had no v4 screen · `git show v3-final:persistence.py`.
+- Album details are written on demand with buttons, not automatically · they use Claude and need the track descriptions first · call them at the end of `render_progress`.
+
+## Open
+- BLOCKER: Gemini rejects the Call A `Analysis` schema (schema-size limit between ~100 and ~140 properties; the spec has 320). Options A/B/C in GATE_FIX.md. Waiting on Damir.

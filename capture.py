@@ -86,20 +86,34 @@ def parse_columns_reference(text: str) -> List[str]:
 
 
 def _block_reasons(track: Dict) -> str:
-    if (track.get("PFD_Status") or gate.BLOCKED) != gate.BLOCKED:
-        return ""
-    reasons = list(track.get("PFD_Block_Reasons") or []) or ["no status recorded"]
-    if track.get("PFD_Human_Note"):
-        reasons.append(f"human note: {track['PFD_Human_Note']}")
-    return "; ".join(reasons)
+    """BLOCKED: the plain reasons. Ready rows: the notes an editor should see (uncertainty, corrections, manual)."""
+    status = track.get("PFD_Status") or gate.BLOCKED
+    if status == gate.BLOCKED:
+        return " ".join(track.get("PFD_Block_Reasons") or []) or "No status recorded."
+    notes = []
+    g = track.get("PFD_Gate") or {}
+    if g.get("override_note"):
+        notes.append(g["override_note"])
+    if track.get("PFD_Manual"):
+        notes.append("Description written by hand.")
+    if status == gate.PASSED_WITH_UNCERTAINTY:
+        done = set(track.get("PFD_Added") or []) | set(track.get("PFD_Dismissed") or [])
+        unsure = [p.split(".")[-1].replace("_", " ") for p in g.get("uncertain") or [] if p not in done]
+        if unsure:
+            notes.append(f"Not sure about (not mentioned): {', '.join(unsure)}.")
+    notes += list(track.get("PFD_Notes") or [])
+    return " ".join(notes)
 
 
 def track_rows(app_data: Dict, catalog: str) -> pd.DataFrame:
+    """One row per track. Skipped tracks are not exported."""
     ctx = context_label(catalog)
     album = app_data.get("album_name_selected") or ""
     album_desc = app_data.get("album_description", "")
     rows = []
     for t in app_data.get("tracks", []):
+        if t.get("PFD_Skipped"):
+            continue
         rows.append({
             "Title": t.get("Title", ""),
             "Mix Type": t.get("Mix Type", ""),
@@ -322,6 +336,63 @@ def save_final_and_diff(dbx, album_code: str, final_bytes: bytes) -> Dict[str, s
     dbx.files_upload(final_bytes, final_path, mode=_overwrite(), mute=True)
     dbx.files_upload(render_diff_md(diff, base).encode("utf-8"), diff_path, mode=_overwrite(), mute=True)
     return {"final": final_path, "diff": diff_path, "summary": summary_line(diff)}
+
+
+STATE_NAME = "state.json"
+
+
+def state_path(album_code: str) -> str:
+    return f"{album_folder(album_code)}/{STATE_NAME}"
+
+
+def save_state(dbx, album_code: str, state: Dict) -> str:
+    """Overwrite /PFD-App/albums/<CODE>/state.json. Called after every analysed track and every edit."""
+    import json
+    path = state_path(album_code)
+    dbx.files_upload(json.dumps(state, ensure_ascii=False, default=str).encode("utf-8"), path,
+                     mode=_overwrite(), mute=True)
+    return path
+
+
+def load_state(dbx, album_code: str) -> Dict:
+    import json
+    _, resp = dbx.files_download(state_path(album_code))
+    return json.loads(resp.content.decode("utf-8"))
+
+
+def list_recent_albums(dbx, limit: int = 10) -> List[Dict]:
+    """
+    Recent albums from /PFD-App/albums/*/state.json, newest first:
+    {code, name, catalog, date, status, exported}. An empty list when the folder does not exist yet.
+    """
+    import json
+    import dropbox
+    try:
+        result = dbx.files_list_folder(f"{PFD_ROOT}/albums", recursive=True)
+    except dropbox.exceptions.ApiError as exc:
+        err = getattr(exc, "error", None)
+        if err is not None and err.is_path() and err.get_path().is_not_found():
+            return []
+        raise
+    entries = list(result.entries)
+    while result.has_more:
+        result = dbx.files_list_folder_continue(result.cursor)
+        entries.extend(result.entries)
+    states = [e for e in entries if getattr(e, "name", "") == STATE_NAME]
+    states.sort(key=lambda e: getattr(e, "server_modified", None) or 0, reverse=True)
+    out = []
+    for e in states[:limit]:
+        _, resp = dbx.files_download(e.path_display)
+        data = json.loads(resp.content.decode("utf-8"))
+        out.append({
+            "code": data.get("album_code", ""),
+            "name": data.get("album_name_selected") or data.get("album_folder_name", ""),
+            "catalog": data.get("catalog", ""),
+            "date": str(getattr(e, "server_modified", "") or data.get("updated", ""))[:10],
+            "status": data.get("run_status", ""),
+            "exported": bool(data.get("exported_at")),
+        })
+    return out
 
 
 def write_writer_test(dbx, markdown: str, day: Optional[str] = None) -> str:

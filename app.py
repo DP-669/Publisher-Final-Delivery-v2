@@ -1,250 +1,79 @@
 """
-Publisher Final Delivery — v3.
+Publisher Final Delivery — v4.
 
-- Tab 01: Gemini analysis behind the hallucination gate. Every track is PASSED or BLOCKED.
-- Tabs 02–07: Claude writes under PFD_RULES.md (track descriptions per `track_writer`).
-- Tab 08: one ZIP; the untouched DRAFT CSV is written to Dropbox on export.
-- Sidebar: rules version, model badges, Dropbox status, BLOCKED count, writer test, FINAL upload.
+Three steps: Start → Review → Export.
+- Start: pick the catalog, paste the Dropbox folder link, analyze. Every track is
+  listened to (Call A), checked against its own waveform (gate.py) and written
+  (Call B). Progress is saved to /PFD-App/albums/<CODE>/state.json after every track.
+- Review: one table. Green = ready, amber = ready with a note, red = blocked with
+  a plain-language reason and a fix panel.
+- Export: one ZIP for SourceAudio; the untouched DRAFT CSV is saved to Dropbox.
+Sidebar: system health only.
 """
+import dataclasses
 import datetime
 import os
 import random
 import re
-import time
 
 import pandas as pd
 import streamlit as st
 
 import capture
-import feedback
 import gate
 import models as model_registry
 import rules
+from analysis_schema import family_label
 from dropbox_pipeline import (
-    crawl_album_folder, detect_catalog_from_path, generate_alt_description,
-    generate_cutdown_description, is_quality_checked, is_quota_error, make_batches,
+    crawl_album_folder, generate_alt_description, generate_cutdown_description, is_quota_error,
     resolve_shared_link, send_ntfy,
 )
 from engine import (
-    CLAUDE_PIN_EXPLICIT, CLAUDE_WRITING_MODEL, GEMINI_AUDIO_MODEL, GEMINI_PIN_EXPLICIT,
-    WRITER_MODES, ClaudeError, IngestionEngine, _secret_value, base_title,
+    CLAUDE_PIN_EXPLICIT, CLAUDE_WRITING_MODEL, GEMINI_AUDIO_MODEL, GEMINI_PIN_EXPLICIT, SECONDS_PER_TRACK,
+    SKIPPED, WRITER_MODES, ClaudeError, IngestionEngine, _secret_value, is_alt_or_cutdown, remaining_uncertain,
 )
-from persistence import list_sessions, save_progress
 from pfd_errors import report
 
-st.set_page_config(
-    page_title="Publisher Final Delivery",
-    page_icon="🎵",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="Publisher Final Delivery", page_icon="🎵", layout="wide",
+                   initial_sidebar_state="expanded")
 
-# ── Styling ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    html, body, [class*="css"] { font-size: 16px !important; }
-    .stMarkdown, .stText, p, li, div { font-size: 16px !important; }
-    [data-testid="collapsedControl"] { display: block !important; }
-    .block-container { max-width: 900px; padding: 2rem 2rem; }
-    @media (max-width: 768px) { .block-container { max-width: 100%; padding: 1rem 0.75rem; } }
-    .stSidebar .block-container { max-width: 100%; }
-    .stTextArea textarea { width: 100% !important; }
-    @media (max-width: 640px) { [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; } }
-    .mailchimp-output { white-space: pre-wrap; font-family: Georgia, serif; line-height: 1.8; padding: 1.5rem;
-        border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; margin-bottom: 1rem; }
-    .pfd-warn { background:#fff3cd;border:1px solid #ffc107;border-left:4px solid #ff6b35;border-radius:4px;
-        padding:0.4rem 0.8rem;font-size:0.85rem;margin:0.3rem 0 0.5rem 0; }
+    .block-container { max-width: 1100px; padding-top: 1.5rem; }
+    div[data-testid="stButton"] button[kind] p { font-size: 1rem; }
+    .pfd-catalog button { min-height: 4.5rem; }
+    .pfd-catalog button p { font-size: 1.15rem !important; font-weight: 600; }
     .pfd-badge { display:inline-block;border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin:2px 0; }
-    .next-button-container { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid #e0e0e0; }
-    .source-field { background:#f8f9fa;border-left:3px solid #dee2e6;padding:0.5rem 0.75rem;margin-bottom:0.4rem;
-        font-size:0.85rem;border-radius:0 4px 4px 0; }
-    .source-label { font-size:0.7rem;font-weight:700;color:#6c757d;text-transform:uppercase;letter-spacing:0.05em; }
-    .pipeline-log { font-family:monospace;font-size:0.78rem;background:#f8f8f8;padding:0.75rem;border-radius:4px;
-        max-height:220px;overflow-y:auto;white-space:pre-wrap; }
+    .pfd-reason { background:#fff4f4;color:#4a1010;border-left:4px solid #c62828;padding:0.6rem 0.9rem;border-radius:0 6px 6px 0;margin:0.4rem 0; }
+    .pfd-note { background:#fff8e6;color:#4a3300;border-left:4px solid #e0a100;padding:0.6rem 0.9rem;border-radius:0 6px 6px 0;margin:0.4rem 0; }
 </style>
 """, unsafe_allow_html=True)
 
-TABS = [
-    "00 · Home",
-    "01 · Ingest Audio",
-    "02 · Track Descriptions",
-    "03 · Lane & Album Description",
-    "04 · Album Name",
-    "05 · Cover Art Prompts",
-    "06 · MailChimp Intro",
-    "07 · Fix Existing Copy",
-    "08 · Export",
-]
-CATALOGS = ["EPP", "redCola", "SSC"]
+CATALOGS = [("rC", "redCola"), ("SSC", "Short Story Collective"), ("EPP", "Ekonomic Propaganda")]
+CATALOG_NAMES = dict(CATALOGS)
+LOGOS = {"rC": ("redCola", "redCola logo 200x2001934x751.jpg"), "SSC": ("SSC", "SSC 200x200 8.27.08#U202fPM.jpg"),
+         "EPP": ("EPP", "EPP 200x200.jpg")}
+DOT = {gate.PASSED: "🟢", gate.PASSED_WITH_UNCERTAINTY: "🟠", gate.BLOCKED: "🔴", SKIPPED: "⚪"}
+LABEL = {gate.PASSED: "Ready", gate.PASSED_WITH_UNCERTAINTY: "Ready with note", gate.BLOCKED: "Blocked",
+         SKIPPED: "Skipped"}
+AUDIO_FORMATS = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".aif": "audio/aiff", ".aiff": "audio/aiff",
+                 ".flac": "audio/flac"}
 
 # ── Session state ──────────────────────────────────────────────────────────────
-if "engine" not in st.session_state:
-    st.session_state.engine = IngestionEngine()
-eng: IngestionEngine = st.session_state.engine
+ss = st.session_state
+if "engine" not in ss:
+    ss.engine = IngestionEngine()
+eng: IngestionEngine = ss.engine
+for _k, _v in {"step": "start", "album": None, "running": False, "dirty": False, "confirm_reset": False,
+               "catalog_choice": None, "selected": None, "editor_nonce": 0, "folder_checks": {},
+               "fix_mode": "", "export_result": None, "field_ver": 0, "audio_cache": {}}.items():
+    if _k not in ss:
+        ss[_k] = _v
 
-_defaults = {
-    "app_data": {"tracks": [], "album_description": "", "album_name": "", "album_name_selected": "",
-                 "album_name_candidates": [], "cover_art": "", "mailchimp_intro": "", "catalog": "EPP"},
-    "active_tab_index": 0,
-    "track_history": {},
-    "album_desc_iterations": {},
-    "last_auto_save": 0.0,
-    "_auto_restored": False,
-    "writer_test_state": {},
-    "pfd_errors": [],
-}
-for _k, _v in _defaults.items():
-    if _k not in st.session_state:
-        st.session_state[_k] = _v
-
-_PIPE_DEFAULT = {
-    "status": "idle",        # idle | crawling | processing | synthesizing | done | error
-    "shared_link": "", "album_path": "", "album_name": "", "catalog": "",
-    "crawl_log": [], "queue": [], "processed_count": 0, "total_to_analyze": 0,
-    "current_file": "", "log": [], "error": "", "heartbeat_count": 0,
-}
-if "pipeline" not in st.session_state:
-    st.session_state.pipeline = dict(_PIPE_DEFAULT)
-
-app_data = st.session_state.app_data
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-def go_to_tab(index: int):
-    st.session_state.active_tab_index = index
-    st.rerun()
-
-
-def next_button(label_override: str = None):
-    current = st.session_state.active_tab_index
-    if current < len(TABS) - 1:
-        label = label_override or f"Next → {TABS[current + 1]}"
-        st.markdown('<div class="next-button-container">', unsafe_allow_html=True)
-        if st.button(label, type="primary", key=f"next_btn_{current}"):
-            go_to_tab(current + 1)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-
-def detect_mix_type(title: str) -> str:
-    t = title.lower()
-    if any(x in t for x in ["sparse", "sparce", "sprs", "sp_"]):
-        return "sparse"
-    if any(x in t for x in ["sound design", "sde", "element"]):
-        return "sound_design"
-    return "full"
-
-
-def status_badge(status: str) -> str:
-    if status == gate.PASSED:
-        return '<span class="pfd-badge" style="background:#e8f5e9;color:#1b5e20;">PASSED</span>'
-    return '<span class="pfd-badge" style="background:#ffebee;color:#b71c1c;">BLOCKED</span>'
-
-
-def save_to_history(title: str, desc: str):
-    if desc and desc.strip():
-        history = st.session_state.track_history.setdefault(title, [])
-        if not history or history[-1] != desc:
-            history.append(desc)
-            del history[:-5]
-
-
-def copy_button(text: str, key: str, label: str = "Copy to Clipboard"):
-    escaped = text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-    st.markdown(f"""
-    <button onclick="navigator.clipboard.writeText(`{escaped}`).then(()=>{{
-        document.getElementById('cb_{key}').style.display='inline';
-        setTimeout(()=>document.getElementById('cb_{key}').style.display='none', 2000);
-    }})" style="cursor:pointer;padding:4px 12px;font-size:0.8rem;margin-bottom:8px;">{label}</button>
-    <span id="cb_{key}" style="display:none;color:green;font-size:0.8rem;margin-left:8px;">Copied ✓</span>
-    """, unsafe_allow_html=True)
-
-
-def analysis_block(track: dict, catalog: str):
-    ctx = capture.context_label(catalog)
-    fields = [
-        ("Duration (file)", track.get("Duration", "")),
-        ("Ending", track.get("Ending Type", "")),
-        ("Events", track.get("Events", "")),
-        ("Job", track.get("Overall Consensus", "")),
-        (ctx, track.get(ctx, "")),
-        ("Editor", track.get("Editor Description", "")),
-        ("Supervisor", track.get("Supervisor Description", "")),
-        ("Keywords", track.get("Keywords", "")),
-        ("Tip", track.get("Tip", "")),
-        ("Gemini description", track.get("Gemini Description", "")),
-    ]
-    facts = (track.get("analysis") or {}).get("facts")
-    if facts:
-        fields.insert(3, ("Facts", ", ".join(f"{k}: {v}" for k, v in facts.items())))
-    for label, val in fields:
-        if val:
-            st.markdown(f'<div class="source-field"><div class="source-label">{label}</div>{val}</div>',
-                        unsafe_allow_html=True)
-
-
-def add_or_replace_track(track: dict):
-    tracks = app_data["tracks"]
-    for i, t in enumerate(tracks):
-        if t.get("Title") == track["Title"]:
-            tracks[i] = track
-            return
-    tracks.append(track)
-
-
-def attach_parent_fits(tracks: list):
-    """Alt mixes and cutdowns reuse their full mix's Fits line."""
-    fits_by_parent = {}
-    for t in tracks:
-        if (t.get("Mix Type") or "") == "full":
-            _, tags = gate.split_fits(t.get("Track Description", ""))
-            if tags:
-                fits_by_parent.setdefault(t.get("Parent Track"), tags)
-    for t in tracks:
-        mix = t.get("Mix Type") or ""
-        if mix == "alt" or mix.startswith("cutdown"):
-            body, tags = gate.split_fits(t.get("Track Description", ""))
-            parent_tags = fits_by_parent.get(t.get("Parent Track"))
-            if tags is None and parent_tags:
-                t["Track Description"] = gate.join_fits(body, parent_tags)
-
-
-def write_description(track: dict, catalog: str, **kwargs) -> bool:
-    """Write one track description with the configured writer. Failures are shown, never saved as copy."""
-    try:
-        track["Track Description"] = eng.write_track_description(
-            track, catalog, claude_api_key, lane=app_data.get("lane"), **kwargs)
-        return True
-    except (ClaudeError, ValueError) as exc:
-        report(f"Track description failed — {track.get('Title')}", exc)
-        return False
-
-
-def analyse_bytes(title: str, mix_type: str, data: bytes, ext: str, catalog: str,
-                  source_path: str = "", parent_track: str = "") -> dict:
-    """Run the gated analysis and return the track row. A failure becomes a BLOCKED row, shown."""
-    try:
-        result = eng.analyze_track(data, ext, mix_type, catalog, gemini_api_key)
-        track = eng.track_record(title, mix_type, result, catalog, source_path, parent_track)
-    except gate.SchemaViolation as exc:
-        report(f"Schema violation — {title}", exc)
-        track = eng.blocked_record(title, mix_type, f"schema violation: {exc}", catalog, source_path, parent_track)
-    if eng.keyword_warnings:
-        st.session_state.setdefault("keyword_review", []).extend(dict(w, track=title) for w in eng.keyword_warnings)
-    return track
-
-
-def _reset_pipeline():
-    st.session_state.pipeline = dict(_PIPE_DEFAULT)
-
-
-# ── Secrets and models ─────────────────────────────────────────────────────────
-def _secret(key, input_key=None):
-    return _secret_value(key) or (st.session_state.get(input_key) if input_key else None)
-
-
-gemini_api_key = _secret("GEMINI_API_KEY", "gemini_key_input")
-claude_api_key = _secret("ANTHROPIC_API_KEY", "claude_key_input")
-dropbox_token = _secret("DROPBOX_TOKEN", "dropbox_key_input")
+# ── Secrets, models, Dropbox ───────────────────────────────────────────────────
+gemini_api_key = _secret_value("GEMINI_API_KEY")
+claude_api_key = _secret_value("ANTHROPIC_API_KEY")
+dropbox_token = _secret_value("DROPBOX_TOKEN")
 dropbox_configured = bool(
     (_secret_value("DROPBOX_APP_KEY") and _secret_value("DROPBOX_APP_SECRET") and _secret_value("DROPBOX_REFRESH_TOKEN"))
     or dropbox_token
@@ -288,948 +117,825 @@ def model_badge(label: str, info: dict, has_key: bool) -> str:
             f'<div style="font-size:0.7rem;color:#777;margin:-2px 0 4px 4px;">{note}</div>')
 
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
-catalog = app_data.get("catalog", "EPP")
-blocked_count = eng.refresh_statuses(app_data, catalog)
-
-with st.sidebar:
-    st.markdown("### PUBLISHER FINAL DELIVERY")
-    logo_map = {"redCola": "redCola logo 200x2001934x751.jpg", "SSC": "SSC 200x200 8.27.08#U202fPM.jpg",
-                "EPP": "EPP 200x200.jpg"}
-    logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "01_VISUAL_REFERENCES",
-                             catalog, logo_map.get(catalog, ""))
-    if os.path.isfile(logo_path):
-        st.image(logo_path, width=160)
-    st.caption(f"Catalog: **{catalog}** · Rules v{rules.version()} · writer `{rules.setting('track_writer')}`")
-
-    st.markdown(model_badge("Analysis", gemini_model, bool(gemini_api_key))
-                + model_badge("Verification", gemini_model, bool(gemini_api_key))
-                + model_badge("Writing", claude_model, bool(claude_api_key)), unsafe_allow_html=True)
-    _dbx_state = dropbox_status(dropbox_configured, dropbox_token or "")
-    st.caption(("🟢 Dropbox: " if _dbx_state["ok"] else "🔴 Dropbox: ") + _dbx_state["detail"])
-
-    if app_data.get("tracks"):
-        if blocked_count:
-            st.error(f"BLOCKED tracks in this run: {blocked_count} of {len(app_data['tracks'])}")
-        else:
-            st.success(f"BLOCKED tracks in this run: 0 of {len(app_data['tracks'])}")
-
-    if st.session_state.pfd_errors:
-        with st.expander(f"⚠️ Errors this session ({len(st.session_state.pfd_errors)})"):
-            for _msg in reversed(st.session_state.pfd_errors):
-                st.caption(_msg)
-            if st.button("Clear errors", key="clear_errors"):
-                st.session_state.pfd_errors = []
-                st.rerun()
-
-    pipe = st.session_state.pipeline
-    if pipe["status"] == "processing":
-        _total = pipe.get("total_to_analyze") or 1
-        st.caption(f"🔄 Pipeline: {pipe.get('processed_count', 0)}/{_total}")
-    elif pipe["status"] in ("synthesizing", "crawling"):
-        st.caption(f"🔄 Pipeline: {pipe['status']}...")
-    elif pipe["status"] == "error":
-        st.caption("❌ Pipeline: error")
-
-    st.divider()
-    active_tab = st.radio("Navigate", TABS, index=st.session_state.active_tab_index, label_visibility="collapsed")
-    if TABS.index(active_tab) != st.session_state.active_tab_index:
-        st.session_state.active_tab_index = TABS.index(active_tab)
-        st.rerun()
-
-    st.divider()
-    st.toggle("🧪 Writer test mode", key="writer_test",
-              help="Tab 02 shows three anonymised versions per track. Tap the best; results go to Dropbox /PFD-App/tests/.")
-
-    # ── FINAL upload (Vesna) ─────────────────────────────────────────────────
-    st.markdown("**📥 Upload FINAL CSV**")
-    _final_code = st.text_input("Album code", value=app_data.get("album_code", ""), key="final_album_code",
-                                placeholder="e.g. EPP065")
-    _final_file = st.file_uploader("FINAL CSV", type=["csv"], key="final_csv", label_visibility="collapsed")
-    if st.button("Save FINAL + compare", disabled=not (_final_file and _final_code), use_container_width=True):
-        try:
-            _out = capture.save_final_and_diff(dbx_client(), _final_code.strip(), _final_file.getvalue())
-            st.success(f"Saved {_out['final']}\n\n{_out['summary']}")
-        except Exception as exc:
-            report("FINAL upload failed", exc)
-
-    # ── Keywords needing review ──────────────────────────────────────────────
-    _kw_review = st.session_state.get("keyword_review", [])
-    if _kw_review:
-        st.markdown("---")
-        st.warning(f"📝 {len(_kw_review)} keyword(s) delivered unshortened")
-        with st.expander("Show them"):
-            for _w in _kw_review:
-                st.caption(f"**{_w.get('track', '?')}** — {_w['keyword']} ↳ {_w['reason']}")
-        if st.button("Mark reviewed", key="clear_kw_review", use_container_width=True):
-            st.session_state.keyword_review = []
-            st.rerun()
-
-    # ── Learning system ──────────────────────────────────────────────────────
-    if dropbox_configured:
-        with st.expander("🧠 Learning system"):
-            _logged = feedback.count_logged_albums(dropbox_token)
-            st.caption(f"{_logged} album(s) in the redo log")
-            if _logged >= feedback.LOG_THRESHOLD and st.button("Run revision pass", key="revision_pass"):
-                try:
-                    _rev_log = feedback.load_edit_log(dropbox_token)
-                    with st.spinner("Analysing feedback patterns..."):
-                        _rev = eng.call_claude(rules.system_instruction(catalog),
-                                               feedback.build_revision_prompt(_rev_log, catalog),
-                                               claude_api_key, max_tokens=4096)
-                    st.text_area("Revision pass", _rev, height=300, key="revision_results")
-                    _ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M")
-                    eng.upload_bytes_to_dropbox(dropbox_token, _rev.encode("utf-8"), f"/PFD-App/revision-pass-{_ts}.txt")
-                    st.caption("✓ Saved to Dropbox /PFD-App/")
-                except Exception as exc:
-                    report("Revision pass failed", exc)
-
-    # ── Model pins ───────────────────────────────────────────────────────────
-    with st.expander("🤖 Model check"):
-        if st.button("Re-check models now", key="model_check", use_container_width=True):
-            resolve_model.clear()
-            st.session_state.model_reports = {
-                "gemini": model_registry.check_gemini(eng.gemini_model, gemini_api_key),
-                "claude": model_registry.check_claude(eng.claude_model, claude_api_key),
-            }
-            st.rerun()
-        for _label, _key in (("Gemini", "gemini"), ("Claude", "claude")):
-            _rep = (st.session_state.get("model_reports") or {}).get(_key)
-            if _rep:
-                st.caption(model_registry.summarize(_rep, _label))
-        st.caption("The app runs the newest Opus and newest Pro. A GEMINI_AUDIO_MODEL or "
-                   "CLAUDE_WRITING_MODEL secret locks a model instead.")
-
-    # ── Persistence ──────────────────────────────────────────────────────────
-    if dropbox_configured:
-        st.divider()
-        _ls = st.session_state.get("last_auto_save", 0.0)
-        if _ls:
-            _el = int(time.time() - _ls)
-            st.caption(f"💾 Last saved: {'just now' if _el < 60 else f'{_el // 60} min ago'}")
-        _c1, _c2 = st.columns(2)
-        with _c1:
-            if st.button("💾 Save", disabled=not app_data.get("tracks"), use_container_width=True):
-                if save_progress(dropbox_token, app_data, st.session_state.pipeline,
-                                 album_desc_iterations=st.session_state.album_desc_iterations):
-                    st.toast("✓ Saved to Dropbox")
-        with _c2:
-            if st.button("📂 Restore", use_container_width=True):
-                st.session_state["_saved_sessions"] = list_sessions(dropbox_token)
-        for _i, _s in enumerate(st.session_state.get("_saved_sessions") or []):
-            st.markdown(f"**{_s['display']}**")
-            st.caption(f"{_s['stage_summary']} · {(_s.get('save_time') or '')[:16].replace('T', ' ')}")
-            if st.button("Restore this session", key=f"restore_{_i}"):
-                if _s.get("app_data"):
-                    st.session_state.app_data = _s["app_data"]
-                st.session_state.album_desc_iterations = _s.get("album_desc_iterations") or {}
-                _meta = _s.get("pipeline_meta", {})
-                st.session_state.pipeline.update({
-                    "album_name": _s.get("album_name", ""), "catalog": _s.get("catalog", ""),
-                    "status": "done" if _s.get("stages", {}).get("ingest") else "idle",
-                    "processed_count": _meta.get("processed_count", 0),
-                    "total_to_analyze": _meta.get("total_to_analyze", 0),
-                    "album_path": _meta.get("album_path", ""),
-                })
-                st.session_state.active_tab_index = _s.get("furthest_tab", 1)
-                st.session_state.pop("_saved_sessions", None)
-                st.rerun()
-
-    st.divider()
-    if st.button("🔄 Reset Session (clears everything)", use_container_width=True, key="reset_session_btn"):
-        for _k in [k for k in st.session_state if k != "engine"]:
-            del st.session_state[_k]
-        st.rerun()
-
-    with st.expander("⚙️ Configuration"):
-        if not _secret_value("GEMINI_API_KEY"):
-            st.text_input("Gemini API Key", type="password", key="gemini_key_input")
-        if not _secret_value("ANTHROPIC_API_KEY"):
-            st.text_input("Claude API Key", type="password", key="claude_key_input")
-        if not dropbox_configured:
-            st.text_input("Dropbox access token (temporary)", type="password", key="dropbox_key_input")
-        st.caption("Keys set in Streamlit secrets are used automatically.")
-
-active_tab_index = st.session_state.active_tab_index
+# ── Album helpers ──────────────────────────────────────────────────────────────
+def album_catalog() -> str:
+    return (ss.album or {}).get("catalog") or ss.catalog_choice or "rC"
 
 
-def _auto_save(label: str = ""):
-    if dropbox_configured and app_data.get("tracks"):
-        save_progress(dropbox_token, app_data, st.session_state.pipeline,
-                      album_desc_iterations=st.session_state.album_desc_iterations)
-        st.session_state.last_auto_save = time.time()
+def album_lane():
+    album = ss.album or {}
+    return album.get("lane") if album.get("catalog") == "EPP" else None
 
 
-# ── Auto-restore once, auto-save every 3 minutes ───────────────────────────────
-if dropbox_configured and not st.session_state._auto_restored and not app_data.get("tracks"):
-    st.session_state._auto_restored = True
+def find_track(title: str):
+    return next((t for t in (ss.album or {}).get("tracks", []) if t.get("Title") == title), None)
+
+
+def put_track(track: dict):
+    tracks = ss.album["tracks"]
+    for i, t in enumerate(tracks):
+        if t.get("Title") == track["Title"]:
+            tracks[i] = track
+            return
+    tracks.append(track)
+
+
+def save_album(mark_dirty: bool = True):
+    """state.json in Dropbox. A failed save is shown; the session keeps the work."""
+    album = ss.album
+    if not album:
+        return
+    album["updated"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    if mark_dirty:
+        ss.dirty = True
+    if not (dropbox_configured and album.get("album_code")):
+        return
     try:
-        _recent = list_sessions(dropbox_token, max_sessions=1)
-        if _recent and _recent[0].get("app_data"):
-            _rs = _recent[0]
-            st.session_state.app_data = _rs["app_data"]
-            st.session_state.album_desc_iterations = _rs.get("album_desc_iterations") or {}
-            _meta = _rs.get("pipeline_meta", {})
-            st.session_state.pipeline.update({
-                "album_name": _rs.get("album_name", ""), "catalog": _rs.get("catalog", ""),
-                "status": "done" if _rs.get("stages", {}).get("ingest") else "idle",
-                "processed_count": _meta.get("processed_count", 0),
-                "total_to_analyze": _meta.get("total_to_analyze", 0),
-                "album_path": _meta.get("album_path", ""),
-            })
-            st.session_state.active_tab_index = _rs.get("furthest_tab", 1)
-            st.toast("✅ Session restored")
-            st.rerun()
+        capture.save_state(dbx_client(), album["album_code"], album)
+        recent_albums.clear()
     except Exception as exc:
-        report("Auto-restore of the last session failed", exc)
+        report("Progress was not saved to Dropbox", exc)
 
-if dropbox_configured and app_data.get("tracks") and time.time() - st.session_state.last_auto_save > 180:
-    _auto_save("3-min auto-save")
+
+def reset_album():
+    for key in ("album", "selected", "export_result"):
+        ss[key] = None
+    ss.update(step="start", running=False, dirty=False, confirm_reset=False, fix_mode="", folder_checks={},
+              catalog_choice=None)
+    ss.pop("link_input", None)
+    ss.pop("code_input", None)
+
+
+def track_audio(track: dict):
+    path = track.get("Source Path", "")
+    if not path:
+        return None
+    if path not in ss.audio_cache:
+        ss.audio_cache = {path: eng.download_bytes_from_dropbox(dropbox_token, path)}  # keep one file in memory
+    return ss.audio_cache[path]
+
+
+def mix_for(entry: dict) -> str:
+    return "sound_design" if entry.get("category") == "sound_design" else entry.get("mix_type", "full")
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def recent_albums(configured: bool) -> list:
+    if not configured:
+        return []
+    return capture.list_recent_albums(dbx_client())
+
+
+def folder_check(link: str, catalog: str) -> dict:
+    """Resolve the link and count audio, once per link."""
+    if link in ss.folder_checks:
+        return ss.folder_checks[link]
+    out = {"ok": False, "error": ""}
+    try:
+        dbx = dbx_client()
+        album_path = resolve_shared_link(dbx, link)
+        if os.path.splitext(album_path)[1].lower() in AUDIO_FORMATS:
+            raise ValueError("This link points to a single file, not an album folder.")
+        crawl = crawl_album_folder(dbx, album_path, catalog)
+        out.update(ok=True, album_path=album_path, folder_name=crawl.album_name,
+                   code=capture.detect_album_code(crawl.album_name, album_path),
+                   analyzable=[dataclasses.asdict(e) for e in crawl.analyzable],
+                   auto=[dataclasses.asdict(e) for e in crawl.auto_described])
+    except Exception as exc:
+        report("Could not read that Dropbox folder", exc, show=False)
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    ss.folder_checks[link] = out
+    return out
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PIPELINE AUTO-ADVANCE — one batch per rerun, regardless of the active tab
+# SIDEBAR — system health only
 # ══════════════════════════════════════════════════════════════════════════════
-if gemini_api_key and dropbox_configured:
-    pipe = st.session_state.pipeline
+with st.sidebar:
+    st.markdown("### Publisher Final Delivery")
+    st.caption(f"Rules v{rules.version()}")
+    st.markdown(model_badge("Listening", gemini_model, bool(gemini_api_key))
+                + model_badge("Writing", gemini_model, bool(gemini_api_key))
+                + model_badge("Checking", claude_model, bool(claude_api_key)), unsafe_allow_html=True)
+    _dbx = dropbox_status(dropbox_configured, dropbox_token or "")
+    st.caption(("🟢 Dropbox: " if _dbx["ok"] else "🔴 Dropbox: ") + _dbx["detail"])
+    with st.expander("Settings"):
+        st.toggle("Compare writing styles", key="compare_styles",
+                  help="In Review, write three versions of a track's description and pick the best.")
 
-    if pipe["status"] == "processing" and not pipe["queue"]:
-        pipe["status"] = "synthesizing"
-        st.rerun()
 
-    if pipe["status"] == "processing" and pipe["queue"]:
-        batch = pipe["queue"][0]
-        pipeline_catalog = pipe["catalog"]
-        for entry in batch:
-            pipe["current_file"] = entry.display_name
-            mix = "sound_design" if entry.category == "sound_design" else entry.mix_type
-            try:
-                data = eng.download_bytes_from_dropbox(dropbox_token, entry.dropbox_path)
-                track = analyse_bytes(entry.display_name, mix, data, os.path.splitext(entry.dropbox_path)[1],
-                                      pipeline_catalog, entry.dropbox_path, entry.parent_track)
-                add_or_replace_track(track)
-                pipe["log"].append(f"{'✓' if track['PFD_Status'] == gate.PASSED else '⛔'} {entry.display_name} "
-                                   f"[{mix}] {track['PFD_Status']} {track.get('Duration', '')}")
-            except Exception as exc:
-                report(f"Analysis failed — {entry.display_name}", exc)
-                add_or_replace_track(eng.blocked_record(entry.display_name, mix,
-                                                        f"analysis failed: {type(exc).__name__}: {exc}",
-                                                        pipeline_catalog, entry.dropbox_path, entry.parent_track))
-                pipe["log"].append(f"⛔ {entry.display_name}: {str(exc)[:100]}")
-                if is_quota_error(exc):
-                    pipe["status"] = "error"
-                    pipe["error"] = (f"Gemini quota/billing error on '{entry.display_name}': {exc}\n"
-                                     "Top up Gemini API credits and restart the pipeline.")
-                    send_ntfy("⚠️ PFD — Gemini quota exhausted",
-                              f"Pipeline stopped at '{entry.display_name}'. "
-                              f"{pipe['processed_count']}/{pipe['total_to_analyze']} files done.", priority="urgent")
-                    break
+# ══════════════════════════════════════════════════════════════════════════════
+# HEADER — step bar and New album
+# ══════════════════════════════════════════════════════════════════════════════
+album = ss.album
+has_tracks = bool(album and album.get("tracks"))
+step_enabled = {"start": True, "review": has_tracks and not ss.running, "export": has_tracks and not ss.running}
+if not step_enabled.get(ss.step):
+    ss.step = "start"
 
-        if pipe["status"] != "error":
-            pipe["queue"].pop(0)
-            pipe["processed_count"] += len(batch)
-            pipe["heartbeat_count"] += 1
-            if not pipe["queue"]:
-                pipe["status"] = "synthesizing"
-            if dropbox_configured:
-                save_progress(dropbox_token, app_data, pipe)
+head, new_col = st.columns([5, 1], vertical_alignment="center")
+with head:
+    steps = st.columns(3)
+    for col, (key, label) in zip(steps, (("start", "1 · Start"), ("review", "2 · Review"), ("export", "3 · Export"))):
+        if col.button(label, key=f"step_{key}", use_container_width=True, disabled=not step_enabled[key],
+                      type="primary" if ss.step == key else "secondary"):
+            ss.step = key
+            ss.selected = None
             st.rerun()
-
-    elif pipe["status"] == "synthesizing":
-        pipeline_catalog = pipe["catalog"]
-        if claude_api_key and not st.session_state.get("writer_test"):
-            for track in app_data["tracks"]:
-                if track.get("analysis") and not track.get("Track Description"):
-                    write_description(track, pipeline_catalog)
-        attach_parent_fits(app_data["tracks"])
-        blocked = eng.refresh_statuses(app_data, pipeline_catalog)
-        pipe["status"] = "done"
-        if dropbox_configured:
-            save_progress(dropbox_token, app_data, pipe)
-        send_ntfy("✅ PFD Pipeline — complete",
-                  f"{pipe.get('album_name', 'Album')} ({pipe.get('catalog', '')}): "
-                  f"{pipe['processed_count']} files analysed, {len(app_data['tracks'])} rows, "
-                  f"{blocked} BLOCKED. Open the app to review.", priority="high")
-        st.rerun()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 00 · HOME
-# ══════════════════════════════════════════════════════════════════════════════
-if active_tab_index == 0:
-    st.markdown("<h1 style='color:#cc0000;font-size:2.2rem;font-weight:800;'>PUBLISHER FINAL DELIVERY</h1>",
-                unsafe_allow_html=True)
-    st.caption(f"v3 · Rules v{rules.version()}")
-    st.divider()
-    for num, name, desc in [
-        ("01", "Ingest Audio", "Paste a Dropbox folder link. Every track gets a real duration, timestamped events, an ending type and a second listen. PASSED or BLOCKED."),
-        ("02", "Track Descriptions", "Written under PFD_RULES.md. Fix only what is wrong."),
-        ("03", "Lane & Album Description", "EPP: confirm the lane. Then the one-sentence album description."),
-        ("04", "Album Name", "Five candidates that pass the name rules."),
-        ("05", "Cover Art Prompts", "Four MidJourney prompts. No hands, faces or figures."),
-        ("06", "MailChimp Intro", "40–70 words, company voice."),
-        ("07", "Fix Existing Copy", "Paste any copy; Claude rewrites it under the rules."),
-        ("08", "Export", "One ZIP. The DRAFT is saved to Dropbox automatically."),
-    ]:
-        st.markdown(f"`{num}` **{name}** — {desc}")
-    next_button("Start → 01 · Ingest Audio")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 01 · INGEST AUDIO
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 1:
-    st.title("01 · INGEST AUDIO")
-    catalog_choice = st.selectbox("Active Catalog", CATALOGS,
-                                  index=CATALOGS.index(app_data.get("catalog", "EPP")))
-    if catalog_choice != app_data.get("catalog"):
-        app_data["catalog"] = catalog_choice
-        st.rerun()
-    catalog = app_data["catalog"]
-    st.divider()
-
-    mode = st.radio("Input mode", ["🔗 Dropbox folder link", "📁 Upload files"], horizontal=True)
-
-    if mode == "🔗 Dropbox folder link":
-        if not dropbox_configured:
-            st.error("Dropbox is not configured. Add DROPBOX_APP_KEY, DROPBOX_APP_SECRET and DROPBOX_REFRESH_TOKEN to secrets.")
-        elif not gemini_api_key:
-            st.error("Gemini API key required. Add GEMINI_API_KEY to secrets.")
+with new_col:
+    if st.button("New album", key="new_album", use_container_width=True):
+        if album and ss.dirty:
+            ss.confirm_reset = True
         else:
-            pipe = st.session_state.pipeline
+            reset_album()
+        st.rerun()
 
-            if pipe["status"] == "idle":
-                shared_link = st.text_input("Dropbox shared link", placeholder="https://www.dropbox.com/scl/fo/...",
-                                            key="pipeline_link_input")
-                if shared_link.strip():
-                    pipe["shared_link"] = shared_link.strip()
-                    pipe["status"] = "crawling"
-                    st.rerun()
+if ss.confirm_reset:
+    c_msg, c_yes, c_no = st.columns([4, 1, 1], vertical_alignment="center")
+    c_msg.warning("This album has changes that haven't been exported. Start a new album anyway?")
+    if c_yes.button("Yes, start over", key="confirm_reset_yes"):
+        reset_album()
+        st.rerun()
+    if c_no.button("No", key="confirm_reset_no"):
+        ss.confirm_reset = False
+        st.rerun()
 
-            elif pipe["status"] == "crawling":
-                with st.spinner("Resolving link and scanning the folder..."):
+
+# ══════════════════════════════════════════════════════════════════════════════
+# START
+# ══════════════════════════════════════════════════════════════════════════════
+def render_progress():
+    album = ss.album
+    catalog = album["catalog"]
+    total = album.get("total") or len(album["pending"])
+    header = st.empty()
+    bar = st.progress(0.0)
+    if st.button("Stop", key="stop_run"):
+        ss.running = False
+        album["run_status"] = "paused"
+        save_album()
+        st.rerun()
+    rows = st.container()
+    with rows:
+        for t in album["tracks"]:
+            if not is_alt_or_cutdown(t):
+                st.markdown(f"{DOT.get(t.get('PFD_Status'), '⚪')} **{t['Title']}** · {t.get('Duration', '')} · "
+                            f"{LABEL.get(t.get('PFD_Status'), '')}")
+
+    while album["pending"]:
+        entry = album["pending"][0]
+        done = total - len(album["pending"])
+        header.markdown(f"#### Track {done + 1} of {total} — listening…\n{entry['display_name']}")
+        bar.progress(done / total if total else 0.0)
+        mix = mix_for(entry)
+        ext = os.path.splitext(entry["dropbox_path"])[1]
+        try:
+            data = eng.download_bytes_from_dropbox(dropbox_token, entry["dropbox_path"])
+            track = eng.process_track(entry["display_name"], mix, data, ext, catalog, gemini_api_key, claude_api_key,
+                                      album_lane(), entry["dropbox_path"], entry["parent_track"])
+        except Exception as exc:
+            report(f"Analysis failed — {entry['display_name']}", exc)
+            if is_quota_error(exc):
+                ss.running = False
+                album["run_status"] = "paused"
+                save_album()
+                send_ntfy("⚠️ PFD — Gemini quota exhausted",
+                          f"{album['album_code']}: stopped at track {done + 1} of {total} "
+                          f"('{entry['display_name']}'). Top up Gemini credits, then Resume.", priority="urgent")
+                st.rerun()
+            track = eng.blocked_record(entry["display_name"], mix, gate.failure("API", error=str(exc)[:300]),
+                                       catalog, entry["dropbox_path"], entry["parent_track"])
+        put_track(track)
+        album["pending"].pop(0)
+        eng.refresh_statuses(album, catalog)
+        save_album()
+        with rows:
+            st.markdown(f"{DOT.get(track.get('PFD_Status'), '⚪')} **{track['Title']}** · {track.get('Duration', '')} · "
+                        f"{LABEL.get(track.get('PFD_Status'), '')}")
+
+    counts = eng.status_counts(album["tracks"])
+    album["run_status"] = "review"
+    ss.running = False
+    save_album()
+    send_ntfy("✅ PFD — album analysed",
+              f"{album['album_code']} ({CATALOG_NAMES.get(catalog, catalog)}): {total} files listened to. "
+              f"{counts['ready']} ready, {counts['uncertain']} ready with a note, {counts['blocked']} blocked. "
+              "Open the app to review.", priority="high")
+    ss.step = "review"
+    st.rerun()
+
+
+def start_album(catalog: str, link: str, check: dict, code: str):
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    ss.album = {
+        "album_code": code, "catalog": catalog, "shared_link": link, "album_path": check["album_path"],
+        "album_folder_name": check["folder_name"], "created": now, "updated": now, "run_status": "analyzing",
+        "pending": list(check["analyzable"]), "total": len(check["analyzable"]), "tracks": [],
+        "lane": None, "lane_proposed": None, "album_description": "", "album_name_candidates": [],
+        "album_name_rationales": {}, "album_name_selected": "", "mailchimp_intro": "", "cover_art": "",
+        "writer_test": {}, "exported_at": None,
+    }
+    for e in check["auto"]:
+        desc = (generate_alt_description(e["parent_track"], e["notes"]) if e["category"] == "alt_mix"
+                else generate_cutdown_description(e["parent_track"], e["notes"]))
+        ss.album["tracks"].append({"Title": e["display_name"], "Mix Type": e["mix_type"],
+                                   "Parent Track": e["parent_track"], "Source Path": e["dropbox_path"],
+                                   "Track Description": desc, "Keywords": ""})
+    ss.running = True
+    ss.export_result = None
+    save_album()
+
+
+def open_album(code: str):
+    try:
+        state = capture.load_state(dbx_client(), code)
+    except Exception as exc:
+        report(f"Could not open {code}", exc)
+        return
+    state.setdefault("tracks", [])
+    state.setdefault("pending", [])
+    state.setdefault("writer_test", {})
+    ss.album = state
+    ss.update(dirty=False, selected=None, export_result=None, catalog_choice=state.get("catalog"))
+    ss.step = "review" if state["tracks"] and not state["pending"] else "start"
+    st.rerun()
+
+
+def render_recent():
+    st.markdown("#### Recent albums")
+    if not dropbox_configured:
+        st.caption("Dropbox is not configured.")
+        return
+    try:
+        rows = recent_albums(dropbox_configured)
+    except Exception as exc:
+        report("Could not list recent albums", exc)
+        return
+    if not rows:
+        st.caption("No albums yet.")
+        return
+    for r in rows:
+        c = st.columns([1.2, 3, 1.3, 1.3, 1, 2], vertical_alignment="center")
+        c[0].markdown(f"**{r['code']}**")
+        c[1].write(r["name"] or "—")
+        c[2].write(r["date"])
+        c[3].write("Exported" if r["exported"] else (r["status"] or "").capitalize())
+        if c[4].button("Open", key=f"open_{r['code']}"):
+            open_album(r["code"])
+        if r["exported"]:
+            with c[5].popover("Upload Vesna's final"):
+                final = st.file_uploader("Vesna's FINAL CSV", type=["csv"], key=f"final_{r['code']}")
+                if st.button("Save and compare", key=f"final_save_{r['code']}", disabled=not final):
                     try:
-                        dbx = dbx_client()
-                        album_path = resolve_shared_link(dbx, pipe["shared_link"])
-                        if os.path.splitext(album_path)[1].lower() in (".mp3", ".wav", ".aif", ".aiff", ".flac"):
-                            raise ValueError(f"This link points to a single file ({os.path.basename(album_path)}), "
-                                             "not a folder. Use 📁 Upload files for a single file.")
-                        pipe["album_path"] = album_path
-                        detected = detect_catalog_from_path(album_path)
-                        pipe["catalog"] = detected if detected != "unknown" else catalog
-                        app_data["catalog"] = pipe["catalog"]
-                        if not is_quality_checked(album_path):
-                            pipe["log"].append("⚠️ Link is not inside a Quality Checked folder.")
-
-                        crawl = crawl_album_folder(dbx, album_path, pipe["catalog"])
-                        pipe["crawl_log"] = crawl.log
-                        pipe["album_name"] = crawl.album_name
-                        app_data.setdefault("album_code", capture.detect_album_code(album_path, crawl.album_name))
-
-                        for entry in crawl.auto_described:
-                            desc = (generate_alt_description(entry.parent_track, entry.notes)
-                                    if entry.category == "alt_mix"
-                                    else generate_cutdown_description(entry.parent_track, entry.notes))
-                            add_or_replace_track({
-                                "Title": entry.display_name, "Mix Type": entry.mix_type,
-                                "Parent Track": entry.parent_track, "Source Path": entry.dropbox_path,
-                                "Track Description": desc, "Keywords": "",
-                            })
-
-                        # A folder with loose audio and no track subfolders is analysed file by file.
-                        analyzable = crawl.analyzable
-                        pipe["queue"] = make_batches(analyzable)
-                        pipe["total_to_analyze"] = len(analyzable)
-                        pipe["processed_count"] = 0
-                        pipe["log"] += [f"Catalog: {pipe['catalog']}", f"Album: {crawl.album_name}",
-                                        crawl.summary() or "no analysable audio found", "─" * 40]
-                        pipe["status"] = "processing"
+                        out = capture.save_final_and_diff(dbx_client(), r["code"], final.getvalue())
+                        st.success(f"Saved. {out['summary']}")
                     except Exception as exc:
-                        report("Dropbox folder scan failed", exc)
-                        pipe["status"] = "error"
-                        pipe["error"] = f"{type(exc).__name__}: {exc}"
-                st.rerun()
-
-            elif pipe["status"] in ("processing", "synthesizing"):
-                total, done = pipe["total_to_analyze"], pipe["processed_count"]
-                st.markdown(f"**{pipe.get('album_name', 'Album')}** · {pipe.get('catalog', '')} · {done}/{total} files")
-                st.progress(done / total if total else 0.0)
-                if pipe["status"] == "processing" and pipe.get("current_file"):
-                    st.caption(f"Listening: {pipe['current_file']}")
-                elif pipe["status"] == "synthesizing":
-                    st.info("Analysis complete — writing track descriptions...")
-                st.markdown(f'<div class="pipeline-log">{chr(10).join(pipe["log"][-30:])}</div>', unsafe_allow_html=True)
-
-            elif pipe["status"] == "done":
-                st.success(f"✅ Pipeline complete — {pipe['processed_count']} files analysed.")
-                c1, c2 = st.columns(2)
-                if c1.button("→ Track Descriptions (Tab 02)", type="primary"):
-                    go_to_tab(2)
-                if c2.button("Run new album"):
-                    _reset_pipeline()
-                    st.rerun()
-                with st.expander("Processing log"):
-                    st.markdown(f'<div class="pipeline-log">{chr(10).join(pipe["log"])}</div>', unsafe_allow_html=True)
-
-            elif pipe["status"] == "error":
-                st.error(f"❌ Pipeline error:\n\n{pipe.get('error', 'Unknown error')}")
-                if st.button("Reset pipeline"):
-                    _reset_pipeline()
-                    st.rerun()
-
-    else:
-        if not gemini_api_key:
-            st.error("Gemini API key required. Add GEMINI_API_KEY to secrets.")
-        else:
-            uploaded_files = st.file_uploader("Audio files", type=["mp3", "wav", "aif", "aiff", "flac"],
-                                              accept_multiple_files=True)
-            if st.button("Analyse", type="primary", disabled=not uploaded_files):
-                progress = st.progress(0.0)
-                for idx, up in enumerate(uploaded_files):
-                    title, ext = os.path.splitext(up.name)
-                    mix = detect_mix_type(title)
-                    with st.spinner(f"Listening to file {idx + 1} of {len(uploaded_files)}..."):
-                        try:
-                            add_or_replace_track(analyse_bytes(title, mix, up.getvalue(), ext, catalog,
-                                                               parent_track=base_title(title)))
-                        except Exception as exc:
-                            report(f"Analysis failed — {title}", exc)
-                            add_or_replace_track(eng.blocked_record(title, mix, f"analysis failed: {type(exc).__name__}: {exc}",
-                                                                    catalog, parent_track=base_title(title)))
-                    progress.progress((idx + 1) / len(uploaded_files))
-                eng.refresh_statuses(app_data, catalog)
-                _auto_save("manual analysis")
-                st.rerun()
-
-    # ── Track status table ─────────────────────────────────────────────────────
-    st.divider()
-    st.subheader("Tracks")
-    tracks = app_data["tracks"]
-    if tracks:
-        eng.refresh_statuses(app_data, catalog)
-        status_filter = st.radio("Show", ["All", gate.PASSED, gate.BLOCKED], horizontal=True, key="status_filter")
-        rows = [{
-            "Status": t.get("PFD_Status", gate.BLOCKED),
-            "Title": t.get("Title", ""),
-            "Mix": t.get("Mix Type", ""),
-            "Duration": t.get("Duration", ""),
-            "Ending": t.get("Ending Type", ""),
-            "Events": t.get("Events", ""),
-            "Block reasons": "; ".join(t.get("PFD_Block_Reasons") or []),
-        } for t in tracks]
-        df = pd.DataFrame(rows)
-        if status_filter != "All":
-            df = df[df["Status"] == status_filter]
-        passed_n = sum(1 for r in rows if r["Status"] == gate.PASSED)
-        st.caption(f"{len(rows)} tracks · {passed_n} PASSED · {len(rows) - passed_n} BLOCKED")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-        blocked_tracks = [t for t in tracks if t.get("PFD_Status") != gate.PASSED]
-        if blocked_tracks:
-            st.markdown("**BLOCKED — listen, then re-run or add a note**")
-        for i, t in enumerate(blocked_tracks):
-            with st.expander(f"⛔ {t['Title']}"):
-                for r in t.get("PFD_Block_Reasons") or []:
-                    st.markdown(f"- {r}")
-                if t.get("analysis"):
-                    analysis_block(t, catalog)
-                note = st.text_input("One-line human note (exported with the track; status stays BLOCKED)",
-                                     value=t.get("PFD_Human_Note", ""), key=f"note_{i}_{t['Title']}")
-                if note != t.get("PFD_Human_Note", ""):
-                    t["PFD_Human_Note"] = note
-                source = t.get("Source Path", "")
-                if source and dropbox_configured and gemini_api_key and st.button("Re-run analysis", key=f"rerun_{i}"):
-                    with st.spinner("Listening again..."):
-                        try:
-                            data = eng.download_bytes_from_dropbox(dropbox_token, source)
-                            new = analyse_bytes(t["Title"], t.get("Mix Type", "full"), data,
-                                                os.path.splitext(source)[1], catalog, source, t.get("Parent Track", ""))
-                            add_or_replace_track(new)
-                        except Exception as exc:
-                            report(f"Re-run failed — {t['Title']}", exc)
-                    st.rerun()
-    else:
-        st.info("No tracks ingested yet.")
-    next_button()
+                        report("Vesna's final was not saved", exc)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 02 · TRACK DESCRIPTIONS
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 2:
-    st.title("02 · TRACK DESCRIPTIONS")
-    tracks = app_data["tracks"]
-    lane = app_data.get("lane")
-    if not tracks:
-        st.warning("Ingest tracks in Tab 01 first.")
-        next_button()
-        st.stop()
-    if not claude_api_key:
-        st.error("Claude API key required. Add ANTHROPIC_API_KEY to secrets.")
-        next_button()
-        st.stop()
+def render_start():
+    if ss.running and ss.album:
+        render_progress()
+        return
 
-    writable = [t for t in tracks if t.get("analysis")]
-
-    if st.session_state.get("writer_test"):
-        # ── Blind writer test ────────────────────────────────────────────────
-        st.info("🧪 Writer test: three anonymised versions per track. Tap the one you would ship.")
-        wt = st.session_state.writer_test_state
-        missing = [t for t in writable if t["Title"] not in wt]
-        if missing:
-            with st.spinner(f"Writing three versions for {len(missing)} track(s)..."):
-                for t in missing:
-                    order = list(WRITER_MODES)
-                    random.shuffle(order)
-                    wt[t["Title"]] = {"variants": eng.writer_variants(t, catalog, claude_api_key, lane),
-                                      "order": order, "pick": None}
+    album = ss.album
+    if album and album.get("pending"):
+        total = album.get("total") or 0
+        done = total - len(album["pending"])
+        st.info(f"{album['album_code']} is paused at track {done} of {total}.")
+        c1, c2, _ = st.columns([1, 1, 3])
+        if c1.button("Resume", type="primary", key="resume_run", disabled=not gemini_api_key):
+            ss.running = True
+            album["run_status"] = "analyzing"
             st.rerun()
+        if c2.button("Review what's done", key="review_partial", disabled=not album.get("tracks")):
+            ss.step = "review"
+            st.rerun()
+        st.divider()
 
-        for n, t in enumerate(writable, 1):
-            entry = wt[t["Title"]]
-            st.markdown(f"#### Track {n}")
-            for label, mode_name in enumerate(entry["order"], 1):
-                st.markdown(f"**{label}.** {entry['variants'].get(mode_name) or '_(this version failed — see errors)_'}")
-            choice = st.radio(f"Best version for track {n}", ["1", "2", "3"], horizontal=True,
-                              index=None if entry["pick"] is None else entry["order"].index(entry["pick"]),
-                              key=f"wt_pick_{n}")
-            if choice:
-                entry["pick"] = entry["order"][int(choice) - 1]
+    st.markdown("#### Catalog")
+    st.markdown('<div class="pfd-catalog">', unsafe_allow_html=True)
+    cols = st.columns(3)
+    root = os.path.dirname(os.path.abspath(__file__))
+    for col, (code, name) in zip(cols, CATALOGS):
+        with col:
+            folder, filename = LOGOS[code]
+            logo = os.path.join(root, "01_VISUAL_REFERENCES", folder, filename)
+            if os.path.isfile(logo):
+                st.image(logo, width=90)
+            if st.button(name, key=f"catalog_{code}", use_container_width=True,
+                         type="primary" if ss.catalog_choice == code else "secondary"):
+                ss.catalog_choice = code
+                st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    c_link, c_code = st.columns([5, 1])
+    link = c_link.text_input("Paste the Dropbox folder link", key="link_input",
+                             placeholder="https://www.dropbox.com/scl/fo/…").strip()
+    check, code, problem = {}, "", ""
+    if link:
+        if not dropbox_configured:
+            problem = "Dropbox is not configured, so the folder can't be read."
+        else:
+            with st.spinner("Checking the folder…"):
+                check = folder_check(link, ss.catalog_choice or "")
+            if not check.get("ok"):
+                problem = f"That link couldn't be opened. {check.get('error', '')}"
+    if check.get("ok"):
+        if check["code"]:
+            code = check["code"]
+            c_code.text_input("Album code", value=code, disabled=True, key=f"code_shown_{code}")
+        else:
+            code = c_code.text_input("Album code", key="code_input", placeholder="SSC042").strip().upper()
+        n = len(check["analyzable"])
+        prefix = re.match(r"(EPP|RC|SSC)", code or "", flags=re.IGNORECASE)
+        detected = rules.catalog_code(prefix.group(1)) if prefix else None
+        if not n:
+            problem = "No audio files were found in that folder."
+        elif not code:
+            problem = "The album code couldn't be read from the folder name. Type it in."
+        elif ss.catalog_choice and detected and detected != ss.catalog_choice:
+            problem = (f"This folder is {code}, which is {CATALOG_NAMES[detected]} — "
+                       f"not {CATALOG_NAMES[ss.catalog_choice]}.")
+        else:
+            minutes = max(1, round(n * SECONDS_PER_TRACK / 60))
+            st.success(f"{code} · {n} audio files found · about {minutes} minutes")
+            if check["auto"]:
+                st.caption(f"Plus {len(check['auto'])} alt mixes and cutdowns, described from their folder names.")
+            if any(r["code"] == code for r in (recent_albums(dropbox_configured) if dropbox_configured else [])):
+                st.caption(f"{code} has been analyzed before. Analyzing again replaces its saved progress.")
+    if problem:
+        st.error(problem)
+    if not gemini_api_key:
+        st.caption("The Gemini API key is missing from the app's secrets.")
+
+    ready = bool(ss.catalog_choice and link and check.get("ok") and code and not problem and gemini_api_key)
+    if st.button("Analyze album", type="primary", disabled=not ready, key="analyze_album"):
+        start_album(ss.catalog_choice, link, check, code)
+        st.rerun()
+
+    st.divider()
+    render_recent()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REVIEW
+# ══════════════════════════════════════════════════════════════════════════════
+def apply_table_edits(editor_key: str, titles: list):
+    edits = (ss.get(editor_key) or {}).get("edited_rows", {})
+    album = ss.album
+    changed = False
+    for idx, change in edits.items():
+        track = find_track(titles[int(idx)])
+        if track is None:
+            continue
+        if change.get("Open"):
+            ss.selected = track["Title"]
+            ss.fix_mode = ""
+        if track.get("PFD_Status") == gate.BLOCKED:
+            continue  # blocked rows show a reason, not copy; they are fixed in the panel
+        if "Description" in change and change["Description"] != track.get("Track Description", ""):
+            track["Track Description"] = change["Description"]
+            changed = True
+        if ("Keywords" in change and not is_alt_or_cutdown(track)
+                and change["Keywords"] != track.get("Keywords", "")):
+            track["Keywords"] = change["Keywords"]
+            changed = True
+    if changed:
+        eng.refresh_statuses(album, album["catalog"])
+        save_album()
+    ss.editor_nonce += 1
+
+
+def status_label(track: dict) -> str:
+    label = f"{DOT.get(track.get('PFD_Status'), '⚪')} {LABEL.get(track.get('PFD_Status'), '')}"
+    return label + (" · Manual" if track.get("PFD_Manual") else "")
+
+
+def render_album_details(album: dict):
+    catalog = album["catalog"]
+    descs = [t.get("Track Description", "") for t in album["tracks"]
+             if t.get("Track Description") and not is_alt_or_cutdown(t) and t.get("PFD_Status") != gate.BLOCKED]
+    ver = ss.field_ver
+    with st.expander("Album details", expanded=False):
+        if not claude_api_key:
+            st.caption("The Claude API key is missing, so album details can't be written here.")
+
+        if catalog == "EPP":
+            st.markdown("**Lane**")
+            names = rules.lane_names()
+            labels = {l["name"]: f"{l['name']} ({l['status']})" for l in rules.lanes()}
+            c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+            current = album.get("lane") or album.get("lane_proposed") or names[0]
+            chosen = c1.selectbox("Lane", names, index=names.index(current), format_func=lambda n: labels[n],
+                                  key=f"lane_{ver}")
+            if c2.button("Suggest", key="lane_suggest", disabled=not claude_api_key):
+                try:
+                    album["lane_proposed"] = eng.propose_lane(album["tracks"], claude_api_key)
+                    ss.field_ver += 1
+                    save_album()
+                except (ClaudeError, ValueError) as exc:
+                    report("Lane suggestion failed — pick one by hand", exc)
+                st.rerun()
+            if album.get("lane"):
+                st.caption(f"Confirmed: {album['lane']} — the first keyword and first Fits tag on every track.")
+            if chosen != album.get("lane") and st.button("Confirm lane", key="lane_confirm"):
+                eng.apply_lane(album, chosen)
+                eng.refresh_statuses(album, catalog)
+                save_album()
+                st.rerun()
             st.divider()
 
-        picks = [wt[t["Title"]]["pick"] for t in writable if wt[t["Title"]]["pick"]]
-        st.caption(f"{len(picks)} of {len(writable)} tracks picked")
-        if st.button("Finish test → save to Dropbox", type="primary", disabled=not picks):
-            tally = {m: picks.count(m) for m in WRITER_MODES}
-            lines = [f"# Writer test — {datetime.date.today().isoformat()}", "",
-                     f"Catalog: {catalog} · Album: {st.session_state.pipeline.get('album_name') or app_data.get('album_name_selected') or 'session'}"
-                     f" · Rules v{rules.version()} · Claude {eng.claude_model} · Gemini {eng.gemini_model}", "",
-                     "## Tally", ""] + [f"- {m}: {c}" for m, c in tally.items()] + ["", "## Picks", ""]
-            for n, t in enumerate(writable, 1):
-                e = wt[t["Title"]]
-                lines += [f"### Track {n} — {t['Title']}", f"Picked: {e['pick'] or '(no pick)'}", ""]
-                for label, m in enumerate(e["order"], 1):
-                    lines.append(f"{label}. [{m}] {e['variants'].get(m, '')}")
-                lines.append("")
+        st.markdown("**Album description**")
+        text = st.text_area("Album description", value=album.get("album_description", ""), height=80,
+                            label_visibility="collapsed", key=f"album_desc_{ver}")
+        if text != album.get("album_description", ""):
+            album["album_description"] = text
+            save_album()
+        for r in gate.album_description_reasons(text, catalog) if text else []:
+            st.caption(f"⚠️ {gate.sentence(r)}")
+        c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+        direction = c1.text_input("Direction (optional)", key="album_desc_direction",
+                                  placeholder="e.g. lead with the breath sounds")
+        if c2.button("Write it" if not text else "Write again", key="album_desc_write",
+                     disabled=not (claude_api_key and descs)):
             try:
-                path = capture.write_writer_test(dbx_client(), "\n".join(lines))
-                st.success(f"Saved {path} · tally {tally}")
-                for t in writable:
-                    e = wt[t["Title"]]
-                    if e["pick"] and e["variants"].get(e["pick"]):
-                        t["Track Description"] = e["variants"][e["pick"]]
-                eng.refresh_statuses(app_data, catalog)
-                _auto_save("writer test")
-            except Exception as exc:
-                report("Could not save the writer test to Dropbox", exc)
-        next_button()
-        st.stop()
-
-    # ── Normal mode ───────────────────────────────────────────────────────────
-    attempted = st.session_state.setdefault("_tab02_attempted", set())
-    needs = [t for t in writable if not t.get("Track Description") and t["Title"] not in attempted]
-    if needs:
-        with st.spinner(f"Writing {len(needs)} description(s)..."):
-            prog = st.progress(0.0)
-            for i, t in enumerate(needs):
-                attempted.add(t["Title"])
-                write_description(t, catalog)
-                prog.progress((i + 1) / len(needs))
-        attach_parent_fits(tracks)
-        eng.refresh_statuses(app_data, catalog)
-        _auto_save("Tab 02 writing")
-        st.rerun()
-
-    st.caption(f"{len(tracks)} rows · writer `{rules.setting('track_writer')}` · "
-               f"{sum(1 for t in tracks if t.get('Track Description'))} described · "
-               f"{sum(1 for t in tracks if t.get('PFD_Status') != gate.PASSED)} BLOCKED")
-    st.divider()
-
-    groups = {}
-    for t in tracks:
-        groups.setdefault(t.get("Parent Track") or base_title(t["Title"]), []).append(t)
-    order = {"full": 0, "sparse": 1, "sound_design": 2, "alt": 3}
-
-    for idx_g, (song, song_tracks) in enumerate(groups.items()):
-        st.markdown(f"**{song}**")
-        for t in sorted(song_tracks, key=lambda x: order.get(x.get("Mix Type", ""), 9)):
-            title, mix_type, desc = t["Title"], t.get("Mix Type", ""), t.get("Track Description", "")
-            st.markdown(f"{status_badge(t.get('PFD_Status'))} `{mix_type.upper()}` {title}", unsafe_allow_html=True)
-            for r in t.get("PFD_Block_Reasons") or []:
-                st.markdown(f"<div class='pfd-warn'>⚠️ {r}</div>", unsafe_allow_html=True)
-            new_desc = st.text_area(f"desc_{title}", value=desc, height=100, label_visibility="collapsed",
-                                    key=f"desc_edit_{title}")
-            if new_desc != desc:
-                t["Track Description"] = new_desc
-                eng.refresh_status(t, catalog, lane)
-            if t.get("analysis"):
-                c_guid, c_redo, c_save = st.columns([6, 1, 1])
-                c_guid.text_input("Guidance", placeholder="Guide a redo: e.g. lead with the choir...",
-                                  label_visibility="collapsed", key=f"guidance_{title}")
-                if c_redo.button("↺", key=f"redo_{title}", help="Write again"):
-                    guidance = st.session_state.get(f"guidance_{title}", "")
-                    save_to_history(title, desc)
-                    with st.spinner("Writing..."):
-                        ok = write_description(t, catalog, is_redo=True, user_guidance=guidance)
-                    if ok:
-                        feedback.log_interaction(catalog, st.session_state.pipeline.get("album_name") or "session",
-                                                 "track_description", title,
-                                                 [{"draft": desc, "guidance": guidance, "accepted": False},
-                                                  {"draft": t["Track Description"], "guidance": guidance, "accepted": True}],
-                                                 t["Track Description"], dropbox_token) if dropbox_configured else None
-                        del st.session_state[f"guidance_{title}"]
-                        _auto_save(f"redo {title}")
-                        st.rerun()
-                if c_save.button("💾", key=f"save_{title}", help="Log this edit"):
-                    if dropbox_configured:
-                        feedback.log_interaction(catalog, st.session_state.pipeline.get("album_name") or "session",
-                                                 "track_description", title,
-                                                 [{"draft": desc, "guidance": "manual edit", "accepted": True}],
-                                                 t["Track Description"], dropbox_token)
-                    _auto_save(f"manual save {title}")
-                    st.toast("Saved")
-                with st.expander(f"Analysis · {title}"):
-                    analysis_block(t, catalog)
-                history = st.session_state.track_history.get(title, [])
-                if history:
-                    with st.expander(f"History ({len(history)}) · {title}"):
-                        for i, old in enumerate(reversed(history)):
-                            st.text(old)
-                            if st.button("Restore", key=f"restore_{title}_{i}"):
-                                save_to_history(title, t.get("Track Description", ""))
-                                t["Track Description"] = old
-                                st.rerun()
-        st.markdown("<hr style='margin:0.75rem 0;border:none;border-top:1px solid #e8e8e8;'>", unsafe_allow_html=True)
-    next_button()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 03 · LANE & ALBUM DESCRIPTION
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 3:
-    st.title("03 · LANE & ALBUM DESCRIPTION")
-    if not claude_api_key:
-        st.error("Claude API key required.")
-        st.stop()
-    tracks = app_data["tracks"]
-
-    if rules.catalog_code(catalog) == "EPP":
-        st.subheader("Lane")
-        lane_list = rules.lanes()
-        names = [l["name"] for l in lane_list]
-        if not app_data.get("lane_proposed") and any(t.get("analysis") for t in tracks) \
-                and not st.session_state.get("_lane_attempted"):
-            st.session_state["_lane_attempted"] = True
-            with st.spinner("Proposing a lane from the album analysis..."):
-                try:
-                    app_data["lane_proposed"] = eng.propose_lane(tracks, claude_api_key)
-                except (ClaudeError, ValueError) as exc:
-                    report("Lane proposal failed — pick one by hand", exc)
-        current = app_data.get("lane") or app_data.get("lane_proposed") or names[0]
-        labels = {l["name"]: f"{l['name']} ({l['status']})" for l in lane_list}
-        chosen = st.selectbox("Lane (active lanes first)", names, index=names.index(current),
-                              format_func=lambda n: labels[n])
-        if app_data.get("lane_proposed"):
-            st.caption(f"Proposed from the analysis: **{app_data['lane_proposed']}**")
-        brief = next((l["brief"] for l in lane_list if l["name"] == chosen), "")
-        if brief:
-            st.caption(brief)
-        if st.button("Confirm lane", type="primary"):
-            eng.apply_lane(app_data, chosen)
-            eng.refresh_statuses(app_data, catalog)
-            _auto_save("lane confirmed")
-            st.rerun()
-        if app_data.get("lane"):
-            st.success(f"Lane confirmed: **{app_data['lane']}** — first keyword and first Fits tag on every track.")
-        else:
-            st.warning("Lane not confirmed yet. Export lists it as an open issue.")
-        st.divider()
-
-    st.subheader("Album description")
-    _iter_key = f"album_desc_iters__{st.session_state.pipeline.get('album_name') or 'session'}"
-    iterations = st.session_state.album_desc_iterations.setdefault(_iter_key, [])
-    descs = [t.get("Track Description", "") for t in tracks if t.get("Track Description")]
-    st.caption(f"From {len(descs)} track description(s) and the catalog's last ten album descriptions.")
-    if st.button("Generate album description", type="primary", disabled=not descs):
-        with st.spinner("Writing..."):
-            try:
-                result = eng.generate_album_description(descs, catalog, claude_api_key)
-                app_data["album_description"] = result
-                iterations.append({"guidance": "", "description": result, "timestamp": time.strftime("%H:%M:%S")})
-                _auto_save("album description")
+                with st.spinner("Writing…"):
+                    album["album_description"] = eng.generate_album_description(
+                        descs, catalog, claude_api_key, previous=text, guidance=direction)
+                ss.field_ver += 1
+                save_album()
             except ClaudeError as exc:
                 report("Album description failed", exc)
-        st.rerun()
-
-    edited = st.text_area("Album Description", value=app_data.get("album_description", ""), height=110,
-                          label_visibility="collapsed")
-    app_data["album_description"] = edited
-    if edited:
-        for r in gate.album_description_reasons(edited, catalog):
-            st.markdown(f"<div class='pfd-warn'>⚠️ {r}</div>", unsafe_allow_html=True)
-        copy_button(edited, "album_desc")
-
-    with st.expander("✏️ Refine with direction"):
-        for i, item in enumerate(iterations):
-            c1, c2 = st.columns([7, 2])
-            c1.caption(f"🕐 {item['timestamp']} · {item.get('guidance') or 'initial'}")
-            if c2.button("Use this", key=f"use_iter_{i}"):
-                app_data["album_description"] = item["description"]
-                if dropbox_configured:
-                    feedback.log_interaction(catalog, st.session_state.pipeline.get("album_name") or "session",
-                                             "album_description", "",
-                                             [{"draft": it["description"], "guidance": it.get("guidance", ""),
-                                               "accepted": j == i} for j, it in enumerate(iterations)],
-                                             item["description"], dropbox_token)
-                st.rerun()
-            st.text(item["description"])
-        guidance = st.text_input("Your direction", key=f"album_desc_guidance_{_iter_key}")
-        if st.button("Generate with direction", disabled=not descs):
-            with st.spinner("Refining..."):
-                try:
-                    result = eng.generate_album_description_iteration(descs, catalog, iterations, guidance, claude_api_key)
-                    iterations.append({"guidance": guidance, "description": result, "timestamp": time.strftime("%H:%M:%S")})
-                    app_data["album_description"] = result
-                    _auto_save("album description iteration")
-                except ClaudeError as exc:
-                    report("Album description refinement failed", exc)
             st.rerun()
-    next_button()
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 04 · ALBUM NAME
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 4:
-    st.title("04 · ALBUM NAME")
-    if not claude_api_key:
-        st.error("Claude API key required.")
-        st.stop()
-    descs = [t.get("Track Description", "") for t in app_data["tracks"] if t.get("Track Description")]
-    if st.button("Generate five names", type="primary", disabled=not app_data.get("album_description")):
-        with st.spinner("Generating..."):
+        st.divider()
+        st.markdown("**Album name**")
+        options = album.get("album_name_candidates") or []
+        if options:
+            current = album.get("album_name_selected") or options[0]
+            pick = st.radio("Pick the name", options, index=options.index(current) if current in options else 0,
+                            key=f"album_name_{ver}", label_visibility="collapsed",
+                            captions=[(album.get("album_name_rationales") or {}).get(o, "") for o in options])
+            if pick != album.get("album_name_selected"):
+                album["album_name_selected"] = pick
+                save_album()
+        if st.button("Suggest five names", key="album_names_write",
+                     disabled=not (claude_api_key and album.get("album_description"))):
             try:
-                out = eng.generate_album_names(app_data["album_description"], catalog, claude_api_key, descs)
-                app_data["album_name_candidates"] = [n["name"] for n in out["names"]]
-                app_data["album_name_rationales"] = {n["name"]: n["rationale"] for n in out["names"]}
-                app_data["album_names_rejected"] = out["rejected"]
-                app_data["album_name"] = "\n".join(app_data["album_name_candidates"])
-                _auto_save("album names")
+                with st.spinner("Thinking of names…"):
+                    out = eng.generate_album_names(album["album_description"], catalog, claude_api_key, descs)
+                album["album_name_candidates"] = [n["name"] for n in out["names"]]
+                album["album_name_rationales"] = {n["name"]: n["rationale"] for n in out["names"]}
+                album["album_name_selected"] = album["album_name_candidates"][0] if out["names"] else ""
+                ss.field_ver += 1
+                save_album()
             except ClaudeError as exc:
                 report("Album names failed", exc)
-        st.rerun()
-    if not app_data.get("album_description"):
-        st.caption("Write the album description in Tab 03 first.")
+            st.rerun()
 
-    options = app_data.get("album_name_candidates") or []
-    if options:
-        current = app_data.get("album_name_selected", "")
-        selected = st.radio("Choose the title", options, index=options.index(current) if current in options else 0)
-        if selected != current:
-            app_data["album_name_selected"] = selected
-            if dropbox_configured:
-                feedback.log_interaction(catalog, st.session_state.pipeline.get("album_name") or "session", "album_name",
-                                         "", [{"draft": app_data["album_name"], "guidance": "", "accepted": True}],
-                                         selected, dropbox_token)
-            _auto_save("album name selected")
-        st.caption((app_data.get("album_name_rationales") or {}).get(selected, ""))
-        if len(options) < 5:
-            st.warning(f"Only {len(options)} candidates passed the name rules. Generate again for more.")
-        copy_button(selected, "album_name")
-    rejected = app_data.get("album_names_rejected") or []
-    if rejected:
-        with st.expander(f"Rejected before display ({len(rejected)})"):
-            for r in rejected:
-                st.caption(f"{r['name']} — {'; '.join(r['reasons'])}")
-    next_button()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 05 · COVER ART PROMPTS
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 5:
-    st.title("05 · COVER ART PROMPTS")
-    if not claude_api_key:
-        st.error("Claude API key required.")
-        st.stop()
-    album_name = app_data.get("album_name_selected", "")
-    if not album_name:
-        st.warning("No album name selected. Complete Tab 04 first.")
-    st.caption("MidJourney stays manual. Four narrative prompts; no hands, faces or figures. Replace `[URL]` with the --sref image.")
-    if st.button("Generate prompts", type="primary", disabled=not album_name):
-        with st.spinner("Writing prompts..."):
+        st.divider()
+        st.markdown("**MailChimp intro**")
+        intro = st.text_area("MailChimp intro", value=album.get("mailchimp_intro", ""), height=120,
+                             label_visibility="collapsed", key=f"mailchimp_{ver}")
+        if intro != album.get("mailchimp_intro", ""):
+            album["mailchimp_intro"] = intro
+            save_album()
+        if intro:
+            words = len(intro.split())
+            if not 40 <= words <= 70:
+                st.caption(f"⚠️ {words} words (the spec is 40–70).")
+            if "!" in intro or re.search(r"\bexcited\b", intro, re.IGNORECASE):
+                st.caption("⚠️ No exclamation marks and no \"excited\".")
+        if st.button("Write intro", key="mailchimp_write",
+                     disabled=not (claude_api_key and album.get("album_name_selected"))):
             try:
-                keywords = ", ".join(t.get("Keywords", "") for t in app_data["tracks"] if t.get("Keywords"))
-                app_data["cover_art"] = eng.generate_cover_art_prompts(
-                    album_name, app_data.get("album_description", ""), catalog, [], claude_api_key,
-                    track_descriptions=[t.get("Track Description", "") for t in app_data["tracks"]],
-                    keywords=keywords)
-                if dropbox_configured:
-                    feedback.log_interaction(catalog, st.session_state.pipeline.get("album_name") or "session", "cover_art",
-                                             "", [{"draft": app_data["cover_art"], "guidance": "", "accepted": True}],
-                                             app_data["cover_art"], dropbox_token)
-                _auto_save("cover art")
-            except ClaudeError as exc:
-                report("Cover-art prompts failed", exc)
-        st.rerun()
-
-    edited = st.text_area("MidJourney prompts", value=app_data.get("cover_art", ""), height=380,
-                          label_visibility="collapsed")
-    app_data["cover_art"] = edited
-    if edited:
-        anatomy = re.findall(r"(?<![A-Za-z])(hands?|faces?|fingers?|portrait|person|people|crowds?|man|woman|"
-                             r"figures?|silhouettes? of a (?:man|woman|person)|body|bodies)(?![A-Za-z])",
-                             edited, flags=re.IGNORECASE)
-        if anatomy:
-            st.markdown(f"<div class='pfd-warn'>⚠️ Anatomy rule: prompts mention {', '.join(sorted(set(a.lower() for a in anatomy)))}</div>",
-                        unsafe_allow_html=True)
-        for i, p in enumerate([p.strip() for p in edited.split("\n\n") if p.strip()]):
-            copy_button(p, f"prompt_{i}", f"Copy block {i + 1}")
-    next_button()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 06 · MAILCHIMP INTRO
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 6:
-    st.title("06 · MAILCHIMP INTRO")
-    if not claude_api_key:
-        st.error("Claude API key required.")
-        st.stop()
-    album_name = app_data.get("album_name_selected", "")
-    if st.button("Write MailChimp intro", type="primary", disabled=not album_name):
-        with st.spinner("Writing..."):
-            try:
-                app_data["mailchimp_intro"] = eng.generate_mailchimp_intro(
-                    album_name, app_data.get("album_description", ""), catalog, claude_api_key,
-                    track_descriptions=[t.get("Track Description", "") for t in app_data["tracks"]])
-                if dropbox_configured:
-                    feedback.log_interaction(catalog, st.session_state.pipeline.get("album_name") or "session", "mailchimp",
-                                             "", [{"draft": app_data["mailchimp_intro"], "guidance": "", "accepted": True}],
-                                             app_data["mailchimp_intro"], dropbox_token)
-                _auto_save("mailchimp")
+                with st.spinner("Writing…"):
+                    album["mailchimp_intro"] = eng.generate_mailchimp_intro(
+                        album["album_name_selected"], album.get("album_description", ""), catalog, claude_api_key, descs)
+                ss.field_ver += 1
+                save_album()
             except ClaudeError as exc:
                 report("MailChimp intro failed", exc)
-        st.rerun()
-    if not album_name:
-        st.caption("Select an album name in Tab 04 first.")
-    intro = app_data.get("mailchimp_intro", "")
-    edited = st.text_area("Intro", value=intro, height=200)
-    app_data["mailchimp_intro"] = edited
-    if edited:
-        words = len(edited.split())
-        if not 40 <= words <= 70:
-            st.markdown(f"<div class='pfd-warn'>⚠️ {words} words (spec: 40–70)</div>", unsafe_allow_html=True)
-        if "!" in edited or re.search(r"\bexcited\b", edited, re.IGNORECASE):
-            st.markdown("<div class='pfd-warn'>⚠️ No exclamation marks, no \"excited\"</div>", unsafe_allow_html=True)
-        copy_button(edited, "mailchimp")
-    next_button()
+            st.rerun()
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 07 · FIX EXISTING COPY
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 7:
-    st.title("07 · FIX EXISTING COPY")
-    if not claude_api_key:
-        st.error("Claude API key required.")
-        st.stop()
-    content_type = st.selectbox("Content type", ["Track Description", "Album Description", "MailChimp Intro", "Album Name", "Other"])
-    bad_copy = st.text_area("Paste the copy here", height=200)
-    if st.button("Rewrite under the rules", type="primary", disabled=not bad_copy):
-        with st.spinner("Rewriting..."):
+        st.divider()
+        st.markdown("**Cover prompts**")
+        blocks = [b.strip() for b in (album.get("cover_art") or "").split("\n\n") if b.strip()]
+        for i, block in enumerate(blocks):
+            st.code(block, language=None, wrap_lines=True)
+        if st.button("Write cover prompts", key="cover_write",
+                     disabled=not (claude_api_key and album.get("album_name_selected"))):
             try:
-                st.session_state["refined_copy"] = eng.manual_refinement(bad_copy, content_type, catalog, claude_api_key)
+                with st.spinner("Writing…"):
+                    keywords = ", ".join(t.get("Keywords", "") for t in album["tracks"] if t.get("Keywords"))
+                    album["cover_art"] = eng.generate_cover_art_prompts(
+                        album["album_name_selected"], album.get("album_description", ""), catalog, [],
+                        claude_api_key, track_descriptions=descs, keywords=keywords)
+                save_album()
             except ClaudeError as exc:
-                report("Rewrite failed", exc)
-    result = st.session_state.get("refined_copy", "")
-    if result:
-        st.text_area("Rewritten", value=result, height=200)
-        copy_button(result, "manual_refine")
-
-        def _log_fix(target: str):
-            if dropbox_configured:
-                feedback.log_interaction(catalog, st.session_state.pipeline.get("album_name") or "session",
-                                         "fix_existing_copy", target,
-                                         [{"draft": bad_copy, "guidance": content_type, "accepted": True}], result, dropbox_token)
-
-        c1, c2 = st.columns(2)
-        if c1.button("→ Album Description"):
-            app_data["album_description"] = result
-            _log_fix("album_description")
-            st.success("Applied.")
-        if c1.button("→ MailChimp Intro"):
-            app_data["mailchimp_intro"] = result
-            _log_fix("mailchimp")
-            st.success("Applied.")
-        if c2.button("→ Album Name"):
-            app_data["album_name_selected"] = result
-            _log_fix("album_name")
-            st.success("Applied.")
-        if content_type == "Track Description" and app_data["tracks"]:
-            target = c2.selectbox("Apply to track", [t["Title"] for t in app_data["tracks"]])
-            if c2.button("→ Apply to track"):
-                for t in app_data["tracks"]:
-                    if t["Title"] == target:
-                        save_to_history(target, t.get("Track Description", ""))
-                        t["Track Description"] = result
-                eng.refresh_statuses(app_data, catalog)
-                _log_fix(target)
-                st.success(f"Applied to '{target}'.")
-    next_button()
+                report("Cover prompts failed", exc)
+            st.rerun()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 08 · EXPORT
-# ══════════════════════════════════════════════════════════════════════════════
-elif active_tab_index == 8:
-    st.title("08 · EXPORT")
-    tracks = app_data.get("tracks", [])
-    passed, errors = eng.validate_data(app_data, catalog)
-    blocked_n = sum(1 for t in tracks if t.get("PFD_Status") != gate.PASSED)
+def rerun_listen(track: dict, correction: str = ""):
+    album = ss.album
+    ext = os.path.splitext(track.get("Source Path", ""))[1]
+    with st.spinner("Listening again…"):
+        try:
+            data = eng.download_bytes_from_dropbox(dropbox_token, track["Source Path"])
+            new = eng.process_track(track["Title"], track.get("Mix Type", "full"), data, ext, album["catalog"],
+                                    gemini_api_key, claude_api_key, album_lane(), track["Source Path"],
+                                    track.get("Parent Track", ""), correction=correction)
+            put_track(new)
+        except Exception as exc:
+            report(f"Couldn't listen again to {track['Title']}", exc)
+            return
+    eng.refresh_statuses(album, album["catalog"])
+    save_album()
+    ss.fix_mode = ""
+    st.rerun()
 
-    c = st.columns(3)
-    c[0].metric("Rows", len(tracks))
-    c[1].metric("PASSED", len(tracks) - blocked_n)
-    c[2].metric("BLOCKED", blocked_n)
 
-    if passed:
-        st.success("All checks clear.")
+def render_compare(track: dict):
+    album = ss.album
+    entry = album.setdefault("writer_test", {}).get(track["Title"])
+    if st.button("Write three versions", key=f"compare_{track['Title']}", disabled=not track.get("analysis")):
+        with st.spinner("Writing three versions…"):
+            variants = eng.writer_variants(track, album["catalog"], claude_api_key, album_lane())
+        order = list(WRITER_MODES)
+        random.shuffle(order)
+        album["writer_test"][track["Title"]] = {"variants": variants, "order": order, "pick": None}
+        save_album()
+        st.rerun()
+    if entry:
+        labels = [f"Version {i}" for i in range(1, len(entry["order"]) + 1)]
+        for label, mode in zip(labels, entry["order"]):
+            st.markdown(f"**{label}.** {entry['variants'].get(mode) or '_(this version failed)_'}")
+        choice = st.radio("The one you'd ship", labels, horizontal=True, key=f"compare_pick_{track['Title']}",
+                          index=None if entry["pick"] is None else entry["order"].index(entry["pick"]))
+        if choice:
+            mode = entry["order"][labels.index(choice)]
+            if entry["pick"] != mode and entry["variants"].get(mode):
+                entry["pick"] = mode
+                track["Track Description"] = entry["variants"][mode]
+                eng.refresh_statuses(album, album["catalog"])
+                save_album()
+                st.rerun()
+
+
+def render_fix_panel(track: dict):
+    album = ss.album
+    catalog = album["catalog"]
+    status = track.get("PFD_Status")
+    st.divider()
+    head, close = st.columns([6, 1], vertical_alignment="center")
+    head.markdown(f"### {DOT.get(status, '⚪')} {track['Title']}")
+    if close.button("Close", key="fix_close"):
+        ss.selected = None
+        ss.fix_mode = ""
+        st.rerun()
+
+    if track.get("Source Path") and dropbox_configured and not is_alt_or_cutdown(track):
+        try:
+            st.audio(track_audio(track), format=AUDIO_FORMATS.get(os.path.splitext(track["Source Path"])[1], "audio/mpeg"))
+        except Exception as exc:
+            report("Couldn't load the audio", exc)
+
+    if status == gate.BLOCKED:
+        for reason in track.get("PFD_Block_Reasons") or []:
+            st.markdown(f'<div class="pfd-reason">{reason}</div>', unsafe_allow_html=True)
+        if is_alt_or_cutdown(track):
+            st.caption("This version follows its full mix. Fix the full mix, or skip this one.")
+        elif track.get("PFD_Reason_Kind") == "text" and track.get("Track Description"):
+            st.caption("What it says now:")
+            st.write(track["Track Description"])
+
+        c = st.columns(4)
+        can_listen = bool(track.get("Source Path") and gemini_api_key and dropbox_configured) and not is_alt_or_cutdown(track)
+        if c[0].button("Run again", key="fix_run", type="primary", disabled=not can_listen):
+            if track.get("PFD_Reason_Kind") == "text" and track.get("analysis"):
+                with st.spinner("Writing again…"):
+                    eng.try_write(track, catalog, gemini_api_key, claude_api_key, album_lane(), is_redo=True)
+                eng.refresh_statuses(album, catalog)
+                save_album()
+                st.rerun()
+            rerun_listen(track)
+        if c[1].button("Tell it what's true", key="fix_correct", disabled=not can_listen):
+            ss.fix_mode = "correct"
+        if c[2].button("I'll write it", key="fix_manual", disabled=is_alt_or_cutdown(track)):
+            ss.fix_mode = "manual"
+        if c[3].button("Skip this track", key="fix_skip", type="tertiary"):
+            eng.skip(track)
+            eng.refresh_statuses(album, catalog)
+            save_album()
+            ss.selected = None
+            st.rerun()
+
+        if ss.fix_mode == "correct":
+            correction = st.text_input("What's true about this track?", key=f"correction_{track['Title']}",
+                                       placeholder="e.g. There are no drums — the hits are timpani. It fades out.")
+            if st.button("Listen again with this", key="fix_correct_go", disabled=not correction.strip()):
+                rerun_listen(track, correction=correction)
+        elif ss.fix_mode == "manual":
+            text = st.text_area("Description", key=f"manual_{track['Title']}", height=110,
+                                placeholder="Two or three sentences, then the Fits line. Fits: …")
+            keywords = ""
+            if not track.get("analysis"):
+                keywords = st.text_input("Keywords (12–18, comma-separated)", key=f"manual_kw_{track['Title']}")
+            if st.button("Save", key="fix_manual_save", type="primary", disabled=not text.strip()):
+                try:
+                    with st.spinner("Saving and writing keywords…"):
+                        problems = eng.manual_description(track, text, catalog, gemini_api_key, album_lane(), keywords)
+                except Exception as exc:
+                    report("Keywords couldn't be written for the manual description", exc)
+                    problems = []
+                if problems:
+                    for p in problems:
+                        st.markdown(f'<div class="pfd-reason">{p}</div>', unsafe_allow_html=True)
+                else:
+                    eng.refresh_statuses(album, catalog)
+                    save_album()
+                    ss.fix_mode = ""
+                    st.rerun()
+        return
+
+    if status == SKIPPED:
+        st.caption("Skipped — this track is left out of the export.")
+        if st.button("Include it again", key="fix_unskip"):
+            eng.skip(track, False)
+            eng.refresh_statuses(album, catalog)
+            save_album()
+            st.rerun()
+        return
+
+    unsure = remaining_uncertain(track)
+    if unsure:
+        st.markdown('<div class="pfd-note">It wasn\'t sure about these, so the description doesn\'t mention them. '
+                    'If you can hear one, add it and the description is rewritten (no new listen).</div>',
+                    unsafe_allow_html=True)
+        for path in unsure:
+            c = st.columns([3, 1, 1], vertical_alignment="center")
+            reason = ((((track.get("analysis") or {}).get("instrumentation") or {})
+                       .get(path.split(".")[0], {}).get(path.split(".")[1], {})).get("uncertain_reason") or "")
+            c[0].markdown(f"**{family_label(path).capitalize()}**" + (f" — {reason}" if reason else ""))
+            if c[1].button("Add it", key=f"add_{path}", disabled=not gemini_api_key):
+                with st.spinner("Rewriting…"):
+                    eng.add_family(track, path, catalog, gemini_api_key, claude_api_key, album_lane())
+                eng.refresh_statuses(album, catalog)
+                save_album()
+                st.rerun()
+            if c[2].button("Leave it out", key=f"dismiss_{path}"):
+                eng.dismiss_family(track, path, catalog, album_lane())
+                eng.refresh_statuses(album, catalog)
+                save_album()
+                st.rerun()
+
+    note = (track.get("PFD_Gate") or {}).get("override_note")
+    if note:
+        st.caption(note)
+    if track.get("Track Description"):
+        st.write(track["Track Description"])
+    if track.get("Sections"):
+        st.caption(f"Sections: {track['Sections']}")
+    if ss.get("compare_styles") and track.get("analysis"):
+        st.markdown("**Compare writing styles**")
+        render_compare(track)
+    if not is_alt_or_cutdown(track) and st.button("Skip this track", key="ready_skip", type="tertiary"):
+        eng.skip(track)
+        eng.refresh_statuses(album, catalog)
+        save_album()
+        ss.selected = None
+        st.rerun()
+
+
+def render_review():
+    album = ss.album
+    catalog = album["catalog"]
+    eng.refresh_statuses(album, catalog)
+    tracks = album["tracks"]
+    counts = eng.status_counts(tracks)
+    needs = counts["blocked"] + counts["uncertain"]
+
+    st.markdown(f"#### {album['album_code']} · {CATALOG_NAMES.get(catalog, catalog)} · {album.get('album_folder_name', '')}")
+    if album.get("pending"):
+        st.caption(f"{len(album['pending'])} tracks haven't been listened to yet — resume from Start.")
+    render_album_details(album)
+
+    if "review_filter" not in ss:
+        ss.review_filter = "needs" if needs else "all"
+    options = {"all": f"All ({len(tracks)})", "needs": f"Needs a look ({needs})", "ready": f"Ready ({counts['ready']})"}
+    choice = st.segmented_control("Show", list(options), format_func=lambda k: options[k], key="review_filter",
+                                  label_visibility="collapsed")
+    choice = choice or "all"
+    shown = [t for t in tracks if choice == "all"
+             or (choice == "needs" and t.get("PFD_Status") in (gate.BLOCKED, gate.PASSED_WITH_UNCERTAINTY))
+             or (choice == "ready" and t.get("PFD_Status") == gate.PASSED)]
+
+    if not shown:
+        st.caption("Nothing here.")
     else:
-        st.warning(f"{len(errors)} open issue(s). BLOCKED rows export with their status and reasons — never as if they passed.")
-        with st.expander("Open issues", expanded=blocked_n == 0):
-            for e in errors:
-                st.caption(e)
+        titles = [t["Title"] for t in shown]
+        df = pd.DataFrame([{
+            "Open": False,
+            "Status": status_label(t),
+            "Track": t["Title"],
+            "Description": ((t.get("PFD_Block_Reasons") or [""])[0] if t.get("PFD_Status") == gate.BLOCKED
+                            else t.get("Track Description", "")),
+            "Keywords": t.get("Keywords", ""),
+            "Ending": t.get("Ending Type", ""),
+        } for t in shown])
+        editor_key = f"review_editor_{ss.editor_nonce}"
+        st.data_editor(
+            df, key=editor_key, hide_index=True, use_container_width=True, num_rows="fixed",
+            disabled=["Status", "Track", "Ending"],
+            column_config={
+                "Open": st.column_config.CheckboxColumn("Open", width="small", help="Open this track below"),
+                "Status": st.column_config.TextColumn("Status", width="small"),
+                "Track": st.column_config.TextColumn("Track", width="medium"),
+                "Description": st.column_config.TextColumn("Description", width="large",
+                                                           help="Blocked rows show why instead"),
+                "Keywords": st.column_config.TextColumn("Keywords", width="medium"),
+                "Ending": st.column_config.TextColumn("Ending", width="small"),
+            },
+            on_change=apply_table_edits, args=(editor_key, titles),
+        )
+        st.caption("Tick Open to see a track below. Blocked rows can't be edited in the table.")
 
-    album_code = st.text_input(
-        "Album code", value=app_data.get("album_code") or capture.detect_album_code(
-            st.session_state.pipeline.get("album_path", ""), st.session_state.pipeline.get("album_name", "")),
-        placeholder="e.g. EPP065")
-    app_data["album_code"] = album_code.strip()
+    selected = find_track(ss.selected) if ss.selected else None
+    if selected:
+        render_fix_panel(selected)
 
-    if not tracks:
-        st.info("Nothing to export yet.")
-    elif not album_code.strip():
-        st.info("Enter the album code to export.")
-    elif st.button("Export ZIP (saves DRAFT to Dropbox)", type="primary"):
-        attach_parent_fits(tracks)
-        eng.validate_data(app_data, catalog)
-        with st.spinner("Building export and saving DRAFT..."):
-            try:
-                dbx = dbx_client()
-                reference = capture.read_columns_reference(dbx)
-                zip_bytes, zip_name, draft_path = capture.export_album(dbx, app_data, catalog, album_code.strip(), reference)
-                st.session_state["export_zip"] = (zip_bytes, zip_name)
-                st.success(f"DRAFT saved to Dropbox: `{draft_path}`"
-                           + ("" if reference else " · column order: app default (no sourceaudio_columns.txt yet)"))
-                send_ntfy("📦 PFD — album exported",
-                          f"{os.path.basename(draft_path)} saved. {len(tracks)} rows, {blocked_n} BLOCKED.")
-            except Exception as exc:
-                report("DRAFT was NOT saved to Dropbox — this export is not captured", exc)
-                zip_bytes, zip_name = capture.build_zip(app_data, catalog, album_code.strip())
-                st.session_state["export_zip"] = (zip_bytes, zip_name)
 
-    if st.session_state.get("export_zip"):
-        zip_bytes, zip_name = st.session_state["export_zip"]
-        st.download_button("Download ZIP", zip_bytes, file_name=zip_name, mime="application/zip", type="primary")
-        st.caption("ZIP: one CSV (with PFD_Status and PFD_Block_Reasons) + Album_Description, Album_Names, MailChimp_Intro, Cover_Art_Prompts.")
+# ══════════════════════════════════════════════════════════════════════════════
+# EXPORT
+# ══════════════════════════════════════════════════════════════════════════════
+def render_export():
+    album = ss.album
+    catalog = album["catalog"]
+    _, issues = eng.validate_data(album, catalog)
+    counts = eng.status_counts(album["tracks"])
+    lane_missing = catalog == "EPP" and not album.get("lane")
+
+    st.markdown(f"#### {album['album_code']} · {CATALOG_NAMES.get(catalog, catalog)}")
+    c = st.columns(4)
+    c[0].metric("Ready", counts["ready"])
+    c[1].metric("Ready with note", counts["uncertain"])
+    c[2].metric("Blocked", counts["blocked"])
+    c[3].metric("Skipped", counts["skipped"])
+
+    if counts["blocked"]:
+        st.warning(f"{counts['blocked']} track(s) are still blocked. Fix or skip them in Review.")
+    if lane_missing:
+        st.warning("Confirm the EPP lane in Review → Album details first.")
+    album_issues = [i for i in issues if i.startswith(("Album description", "Album name"))]
+    if album_issues:
+        with st.expander(f"Album details to check ({len(album_issues)})"):
+            for i in album_issues:
+                st.caption(gate.sentence(i))
+
+    if st.button("Export for SourceAudio", type="primary", key="export_go",
+                 disabled=bool(counts["blocked"] or lane_missing or album.get("pending"))):
+        exported = len([t for t in album["tracks"] if not t.get("PFD_Skipped")])
+        summary = (f"{exported} tracks exported · {counts['ready']} ready · {counts['uncertain']} with a note"
+                   + (f" · {counts['skipped']} skipped" if counts["skipped"] else ""))
+        try:
+            dbx = dbx_client()
+            reference = capture.read_columns_reference(dbx)
+            zip_bytes, zip_name, draft_path = capture.export_album(dbx, album, catalog, album["album_code"], reference)
+            picks = {k: v for k, v in (album.get("writer_test") or {}).items() if v.get("pick")}
+            if picks:
+                lines = [f"# Compare writing styles — {album['album_code']} — {datetime.date.today().isoformat()}", "",
+                         "## Tally", ""] + [f"- {m}: {sum(1 for v in picks.values() if v['pick'] == m)}"
+                                            for m in WRITER_MODES] + [""]
+                for title, v in picks.items():
+                    lines += [f"### {title}", f"Picked: {v['pick']}"] + \
+                             [f"- [{m}] {v['variants'].get(m, '')}" for m in v["order"]] + [""]
+                capture.write_writer_test(dbx, "\n".join(lines))
+            album["exported_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+            album["run_status"] = "exported"
+            save_album(mark_dirty=False)
+            ss.dirty = False
+            ss.export_result = {"zip": zip_bytes, "name": zip_name, "draft": draft_path, "summary": summary}
+            send_ntfy("📦 PFD — album exported", f"{album['album_code']}: {summary}. DRAFT saved to {draft_path}.")
+        except Exception as exc:
+            report("The DRAFT was not saved to Dropbox — this export is not captured", exc)
+            zip_bytes, zip_name = capture.build_zip(album, catalog, album["album_code"])
+            ss.export_result = {"zip": zip_bytes, "name": zip_name, "draft": "", "summary": summary}
+
+    result = ss.export_result
+    if result:
+        st.success(result["summary"])
+        st.download_button("Download ZIP", result["zip"], file_name=result["name"], mime="application/zip",
+                           type="primary", key="export_download")
+        if result["draft"]:
+            st.caption(f"Saved to Dropbox: {result['draft']}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+if ss.step == "review" and ss.album:
+    render_review()
+elif ss.step == "export" and ss.album:
+    render_export()
+else:
+    render_start()

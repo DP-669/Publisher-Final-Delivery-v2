@@ -122,13 +122,20 @@ class TestParsedLists(unittest.TestCase):
         for text in rc + rules.few_shot("rC", "Album") + epp:
             self.assertEqual(gate.banned_found(text), [], text)
         import prompts
-        prompt = prompts.PromptEngine().analysis_prompt("full", "rC")
+        from pfd_fixtures import analysis_dict
+        prompt = prompts.PromptEngine().call_b_prompt({"analysis": analysis_dict(), "simple": {}}, "rC")
         self.assertIn(rc[0], prompt)
         self.assertNotIn(epp[0], prompt)
+        listen = prompts.PromptEngine().call_a_system(30.0) + prompts.PromptEngine().call_a_user("full", 30.0)
+        self.assertNotIn(rc[0], listen)  # the listen never sees catalog examples
 
     def test_analysis_schema_matches_the_rules_block(self):
-        keys = [k for k in gate.analysis_schema()["property_ordering"] if k != "description"]
-        self.assertEqual(keys, rules.RULES.analysis_schema_keys())
+        from analysis_schema import Analysis
+        self.assertEqual(list(Analysis.model_fields), rules.RULES.analysis_schema_keys())
+
+    def test_locked_describes_the_waveform_gate(self):
+        self.assertIn("Python verifies timing, ending, loudness shape and section ordering", rules.RULES.locked)
+        self.assertNotIn("second, independent listen", rules.RULES.locked)
 
 
 if __name__ == "__main__":

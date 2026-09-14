@@ -1,46 +1,61 @@
 """
-The hallucination gate.
+The v4 gate.
 
-Everything here is plain code, independent of any model: it decides whether an
-analysis can be proven real and whether finished text obeys PFD_RULES.md.
-engine.py calls the models; this module judges what came back.
+Plain code, no model calls. It decides whether a listen (Call A) holds up
+against the decoded waveform and against itself, and whether finished text
+obeys PFD_RULES.md.
 
-A track is PASSED or BLOCKED. BLOCKED always carries reasons, and those reasons
-travel into the export. Nothing in this module converts BLOCKED into a result.
+A track is PASSED, PASSED_WITH_UNCERTAINTY or BLOCKED.
+- BLOCKED: the analysis contradicts the waveform or itself (G1–G16), or the
+  finished text breaks a rule. BLOCKED always carries reasons, and they travel
+  into the export. Nothing here converts BLOCKED into a result.
+- PASSED_WITH_UNCERTAINTY: the listen holds up, and some instrument families
+  were marked uncertain. Uncertainty never blocks; uncertain families are
+  simply never mentioned in copy.
+
+Rule IDs (G1…G16) are internal. The app shows plain_reason() sentences only.
 """
-import io
-import json
-import os
 import re
-import shutil
-import subprocess
-import tempfile
+from functools import lru_cache
+from pathlib import Path
 from typing import Dict, List, Optional
 
+from pydantic import ValidationError
+
 import rules
+from analysis_schema import (Analysis, EndingType, Presence, TempoBand, Writing, family_label,
+                             walk_families)
 
 PASSED = "PASSED"
+PASSED_WITH_UNCERTAINTY = "PASSED_WITH_UNCERTAINTY"
 BLOCKED = "BLOCKED"
+READY = (PASSED, PASSED_WITH_UNCERTAINTY)
 
-# Gemini sampling temperature for the analysis and verification calls. Low, so
-# two listens to the same file agree on facts rather than on flourishes.
-# Google's Gemini 3 guide recommends leaving temperature at 1.0 (lower values
-# can loop on long reasoning). The build spec asked to start at 0.3; if real
-# runs show looping or truncated JSON, raise this to 1.0. See DECISIONS.md.
-ANALYSIS_TEMPERATURE = 0.3
-
-DURATION_TOLERANCE = 0.08          # abs(claimed - real) <= 8% of real
 KEYWORD_MIN, KEYWORD_MAX = 12, 18
 INLINE_LIMIT_BYTES = 15 * 1024 * 1024   # larger files go through the Files API
-
 MIX_TYPES = ("FULL", "SPARSE", "SDE")
-ENDING_TYPES = ["Hard Cut", "Button", "Ring-out"]
-TEMPO_BANDS = ["Slow", "Mid", "Fast", "Rubato"]
-VERIFIED_CLAIMS = ("drums", "vocals", "choir", "tempo_band", "ending_type")
+
+# ── Thresholds (v4 build spec) ─────────────────────────────────────────────────
+TIMESTAMP_SLACK_S = 0.5        # G1: timestamps may run 0.5 s past the end
+SECTION_SLACK_S = 0.5          # G2: rounding tolerance for touching sections
+SECTION_COVERAGE_MIN = 0.90    # G2
+PRESENT_CONFIDENCE_MIN = 0.6   # G3
+FIRST_SOUND_TOL_S = 1.5        # G5
+LOUDEST_TOL_S = 6.0            # G6
+TAIL_SILENCE_TOL_S = 1.5       # G7
+DECAY_SPLIT_S = 1.0            # G8
+ENERGY_RHO_MIN = 0.4           # G9
+BPM_TOL = 0.08                 # G10
+SDE_MAX_MUSICAL_FAMILIES = 2   # G15
+
+STRUCTURAL_RULES = ("G1", "G2", "G3", "G4")   # re-run once, no hint
+HINTED_RULES = tuple(f"G{i}" for i in range(5, 17))  # re-run once, rule named in the user text
+
+KNOWN_NAMES_PATH = Path(__file__).resolve().parent / "reference" / "known_names.txt"
 
 
 class SchemaViolation(RuntimeError):
-    """The model's JSON does not match the analysis schema. A hard error, never a guess."""
+    """The model's JSON does not match the schema (G4)."""
 
 
 # ── Mix type ───────────────────────────────────────────────────────────────────
@@ -55,227 +70,332 @@ def mix_type_code(mix_type: str) -> str:
     return "FULL"
 
 
-# ── Real duration ──────────────────────────────────────────────────────────────
+# ── Parsing ────────────────────────────────────────────────────────────────────
 
-def read_duration(data: bytes, ext: str) -> Optional[float]:
-    """
-    True duration in seconds from the file itself, before any API call.
-    mutagen reads the header; ffprobe is the fallback. None means the file's
-    length cannot be proven, and the caller must BLOCK with `no_duration`.
-    """
-    ext = ext if ext.startswith(".") else f".{ext}"
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        tmp.write(data)
-        path = tmp.name
+def _parse(model, text: str, what: str):
     try:
-        seconds = _mutagen_duration(path)
-        if seconds is None:
-            seconds = _ffprobe_duration(path)
-        return seconds
-    finally:
-        os.remove(path)
+        return model.model_validate_json(text or "")
+    except ValidationError as exc:
+        problems = "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()[:8])
+        raise SchemaViolation(f"{what}: {problems}. First 200 chars: {str(text)[:200]!r}")
 
 
-def _mutagen_duration(path: str) -> Optional[float]:
-    try:
-        import mutagen
-        audio = mutagen.File(path)
-    except Exception as exc:  # corrupt header: fall through to ffprobe
-        print(f"[PFD gate] mutagen could not read {os.path.basename(path)}: {exc}")
-        return None
-    length = getattr(getattr(audio, "info", None), "length", None)
-    return float(length) if length and length > 0 else None
+def parse_analysis(text: str) -> Analysis:
+    return _parse(Analysis, text, "analysis")
 
 
-def _ffprobe_duration(path: str) -> Optional[float]:
-    if not shutil.which("ffprobe"):
-        return None
-    try:
-        out = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "csv=p=0", path],
-            capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-        value = float(out)
-        return value if value > 0 else None
-    except (ValueError, subprocess.SubprocessError) as exc:
-        print(f"[PFD gate] ffprobe could not read {os.path.basename(path)}: {exc}")
-        return None
+def parse_writing(text: str) -> Writing:
+    return _parse(Writing, text, "writing")
 
 
-# ── Schemas (mirror the TUNABLE "Analysis schema" block) ───────────────────────
-
-def analysis_schema() -> Dict:
-    """
-    Gemini response_schema. Keys match PFD_RULES.md's Analysis schema block
-    (test_rules checks they stay in sync), plus `description`: the track
-    description Gemini writes in the same listen, used by the `gemini` and
-    `claude_edit` writer modes.
-    """
-    s = {"type": "STRING"}
-    return {
-        "type": "OBJECT",
-        "properties": {
-            "mix_type": {"type": "STRING", "enum": list(MIX_TYPES)},
-            "duration_seconds": {"type": "NUMBER"},
-            "ending_type": {"type": "STRING", "enum": ENDING_TYPES},
-            "events": {
-                "type": "ARRAY", "min_items": 3, "max_items": 6,
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {"t": {"type": "NUMBER"}, "what": s},
-                    "required": ["t", "what"],
-                },
-            },
-            "facts": {
-                "type": "OBJECT",
-                "properties": {
-                    "drums": {"type": "BOOLEAN"},
-                    "vocals": {"type": "BOOLEAN"},
-                    "choir": {"type": "BOOLEAN"},
-                    "tempo_band": {"type": "STRING", "enum": TEMPO_BANDS},
-                    "energy_arc": s,
-                },
-                "required": ["drums", "vocals", "choir", "tempo_band", "energy_arc"],
-            },
-            "job": s,
-            "narrative_map": s,
-            "trailer_or_campaign_voice": s,
-            "editor_voice": s,
-            "supervisor_voice": s,
-            "keywords": {"type": "ARRAY", "min_items": KEYWORD_MIN, "max_items": KEYWORD_MAX, "items": s},
-            "tip": s,
-            "description": s,
-        },
-        "required": ["mix_type", "duration_seconds", "ending_type", "events", "facts", "job",
-                     "narrative_map", "trailer_or_campaign_voice", "editor_voice",
-                     "supervisor_voice", "keywords", "tip", "description"],
-        "property_ordering": ["mix_type", "duration_seconds", "ending_type", "events", "facts",
-                              "job", "narrative_map", "trailer_or_campaign_voice", "editor_voice",
-                              "supervisor_voice", "keywords", "tip", "description"],
-    }
+def failure(rule: str, **detail) -> Dict:
+    return {"rule": rule, **detail}
 
 
-def verification_schema() -> Dict:
-    verdict = {"type": "STRING", "enum": ["TRUE", "FALSE"]}
-    return {
-        "type": "OBJECT",
-        "properties": {**{c: verdict for c in VERIFIED_CLAIMS}, "duration_seconds": {"type": "NUMBER"}},
-        "required": list(VERIFIED_CLAIMS) + ["duration_seconds"],
-    }
+def _present(fam) -> bool:
+    return fam.presence == Presence.present
 
 
-def _is_num(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+# ── G1–G3: the analysis against itself ─────────────────────────────────────────
+
+def _timestamps(a: Analysis):
+    g = a.grounding
+    yield "the first sound", g.first_sound_t
+    yield "the loudest moment", g.loudest_moment_t
+    yield "the quietest stretch", g.quietest_stretch_t
+    yield "the final accent", a.ending.final_accent_t
+    for s in a.sections:
+        yield f"the '{s.label}' section", s.t_start
+        yield f"the '{s.label}' section", s.t_end
+    for t in a.modular_edit_points_t:
+        yield "an edit point", t
+    for path, fam in walk_families(a.instrumentation):
+        for e in fam.evidence:
+            yield f"the {family_label(path)}", e.t_start
+            yield f"the {family_label(path)}", e.t_end
 
 
-def _load_json(text: str, what: str) -> Dict:
-    try:
-        obj = json.loads(text or "")
-    except (json.JSONDecodeError, TypeError) as exc:
-        raise SchemaViolation(f"{what}: response is not JSON ({exc}). First 200 chars: {str(text)[:200]!r}")
-    if not isinstance(obj, dict):
-        raise SchemaViolation(f"{what}: response is not a JSON object.")
-    return obj
+def check_timestamps(a: Analysis, duration: float) -> List[Dict]:
+    """G1: every timestamp inside [0, duration + 0.5]; evidence never ends before it starts."""
+    limit = duration + TIMESTAMP_SLACK_S
+    for what, t in _timestamps(a):
+        if t < 0 or t > limit:
+            return [failure("G1", what=what, t=float(t), duration=duration)]
+    for path, fam in walk_families(a.instrumentation):
+        for e in fam.evidence:
+            if e.t_end < e.t_start:
+                return [failure("G1", what=f"the {family_label(path)}", t=float(e.t_end), duration=duration,
+                                backwards=True)]
+    return []
 
 
-def parse_analysis(text: str) -> Dict:
-    """Parse and validate an analysis response. Raises SchemaViolation on any mismatch."""
-    obj = _load_json(text, "analysis")
-    problems = []
-    schema = analysis_schema()
-    for key in schema["required"]:
-        if key not in obj:
-            problems.append(f"missing '{key}'")
-    if problems:
-        raise SchemaViolation("analysis: " + "; ".join(problems))
-
-    if obj["mix_type"] not in MIX_TYPES:
-        problems.append(f"mix_type '{obj['mix_type']}' not in {MIX_TYPES}")
-    if not _is_num(obj["duration_seconds"]):
-        problems.append("duration_seconds is not a number")
-    if obj["ending_type"] not in ENDING_TYPES:
-        problems.append(f"ending_type '{obj['ending_type']}' not in {ENDING_TYPES}")
-    events = obj["events"]
-    if not isinstance(events, list) or not 3 <= len(events) <= 6:
-        problems.append("events must be a list of 3–6 entries")
-    else:
-        for i, e in enumerate(events):
-            if not isinstance(e, dict) or not _is_num(e.get("t")) or not isinstance(e.get("what"), str):
-                problems.append(f"events[{i}] must be {{t: number, what: string}}")
-    facts = obj["facts"]
-    if not isinstance(facts, dict):
-        problems.append("facts is not an object")
-    else:
-        for k in ("drums", "vocals", "choir"):
-            if not isinstance(facts.get(k), bool):
-                problems.append(f"facts.{k} is not a boolean")
-        if facts.get("tempo_band") not in TEMPO_BANDS:
-            problems.append(f"facts.tempo_band '{facts.get('tempo_band')}' not in {TEMPO_BANDS}")
-        if not isinstance(facts.get("energy_arc"), str):
-            problems.append("facts.energy_arc is not a string")
-    if not isinstance(obj["keywords"], list) or not all(isinstance(k, str) for k in obj["keywords"]):
-        problems.append("keywords is not a list of strings")
-    for k in ("job", "narrative_map", "trailer_or_campaign_voice", "editor_voice",
-              "supervisor_voice", "tip", "description"):
-        if not isinstance(obj[k], str):
-            problems.append(f"{k} is not a string")
-    if problems:
-        raise SchemaViolation("analysis: " + "; ".join(problems))
-    return obj
+def check_sections(a: Analysis, duration: float) -> List[Dict]:
+    """G2: sections ordered, not overlapping, covering at least 90% of the file."""
+    secs = list(a.sections)
+    for s in secs:
+        if s.t_end < s.t_start:
+            return [failure("G2", problem="backwards", label=s.label)]
+    for prev, nxt in zip(secs, secs[1:]):
+        if nxt.t_start < prev.t_start:
+            return [failure("G2", problem="unordered", label=nxt.label)]
+        if nxt.t_start < prev.t_end - SECTION_SLACK_S:
+            return [failure("G2", problem="overlap", label=nxt.label)]
+    covered = sum(max(0.0, min(s.t_end, duration) - max(s.t_start, 0.0)) for s in secs)
+    pct = covered / duration if duration > 0 else 0.0
+    if pct < SECTION_COVERAGE_MIN:
+        return [failure("G2", problem="coverage", pct=round(100 * pct, 1))]
+    return []
 
 
-def parse_verification(text: str) -> Dict:
-    obj = _load_json(text, "verification")
-    problems = [f"missing '{k}'" for k in list(VERIFIED_CLAIMS) + ["duration_seconds"] if k not in obj]
-    problems += [f"{k} must be TRUE or FALSE" for k in VERIFIED_CLAIMS
-                 if k in obj and obj[k] not in ("TRUE", "FALSE")]
-    if "duration_seconds" in obj and not _is_num(obj["duration_seconds"]):
-        problems.append("duration_seconds is not a number")
-    if problems:
-        raise SchemaViolation("verification: " + "; ".join(problems))
-    return obj
-
-
-# ── Verification ───────────────────────────────────────────────────────────────
-
-def claims_for(analysis: Dict) -> Dict[str, str]:
-    """The hard facts the second listen audits, as plain statements. No title, no prose."""
-    f = analysis["facts"]
-    yes = lambda b: "present" if b else "absent"
-    return {
-        "drums": f"Drums are {yes(f['drums'])}.",
-        "vocals": f"Vocals are {yes(f['vocals'])}.",
-        "choir": f"Choir is {yes(f['choir'])}.",
-        "tempo_band": f"The tempo band is {f['tempo_band']}.",
-        "ending_type": f"The ending type is {analysis['ending_type']}.",
-    }
-
-
-def within_tolerance(claimed: float, real: float) -> bool:
-    return abs(claimed - real) <= DURATION_TOLERANCE * real
-
-
-def disagreements(verification: Dict, real_duration: float) -> List[str]:
-    out = [f"second listen disagrees: {c}" for c in VERIFIED_CLAIMS if verification.get(c) != "TRUE"]
-    heard = verification.get("duration_seconds")
-    if not _is_num(heard) or not within_tolerance(float(heard), real_duration):
-        out.append(f"second listen duration {heard}s vs file {real_duration:.1f}s (>8%)")
+def check_presence(a: Analysis) -> List[Dict]:
+    """G3: a present family carries evidence, confidence >= 0.6 and a prominence."""
+    out = []
+    for path, fam in walk_families(a.instrumentation):
+        if not _present(fam):
+            continue
+        if not fam.evidence:
+            out.append(failure("G3", family=path, problem="no_evidence"))
+        elif fam.confidence < PRESENT_CONFIDENCE_MIN:
+            out.append(failure("G3", family=path, problem="low_confidence", confidence=float(fam.confidence)))
+        elif fam.prominence is None:
+            out.append(failure("G3", family=path, problem="no_prominence"))
     return out
 
 
-# ── Physical checks on an analysis ─────────────────────────────────────────────
+# ── G5–G10: the analysis against the waveform ──────────────────────────────────
 
-def analysis_reasons(analysis: Dict, real_duration: float, catalog: str) -> List[str]:
-    reasons = []
-    claimed = float(analysis["duration_seconds"])
-    if not within_tolerance(claimed, real_duration):
-        reasons.append(f"duration mismatch: analysis says {claimed:.1f}s, file is {real_duration:.1f}s (>8%)")
-    for e in analysis["events"]:
-        if float(e["t"]) > real_duration:
-            reasons.append(f"event at {float(e['t']):.1f}s is past the end of the file ({real_duration:.1f}s)")
-    reasons += keyword_reasons(analysis["keywords"], catalog)
-    return reasons
+def spearman(x: List[float], y: List[float]) -> Optional[float]:
+    """Spearman rank correlation with average ranks for ties. None when either side is constant."""
+    if len(x) != len(y) or len(x) < 2:
+        return None
+
+    def ranks(v):
+        order = sorted(range(len(v)), key=lambda i: v[i])
+        r = [0.0] * len(v)
+        i = 0
+        while i < len(order):
+            j = i
+            while j + 1 < len(order) and v[order[j + 1]] == v[order[i]]:
+                j += 1
+            for k in range(i, j + 1):
+                r[order[k]] = (i + j) / 2 + 1
+            i = j + 1
+        return r
+
+    rx, ry = ranks(x), ranks(y)
+    mx, my = sum(rx) / len(rx), sum(ry) / len(ry)
+    sxx = sum((a - mx) ** 2 for a in rx)
+    syy = sum((b - my) ** 2 for b in ry)
+    if sxx == 0 or syy == 0:
+        return None
+    return sum((a - mx) * (b - my) for a, b in zip(rx, ry)) / (sxx * syy) ** 0.5
+
+
+def section_loudness(a: Analysis, per_sec_db: List[float]) -> List[Optional[float]]:
+    out = []
+    for s in a.sections:
+        lo, hi = int(s.t_start), max(int(s.t_start) + 1, int(-(-s.t_end // 1)))
+        vals = per_sec_db[lo:hi]
+        out.append(sum(vals) / len(vals) if vals else None)
+    return out
+
+
+def check_waveform(a: Analysis, m: Dict) -> List[Dict]:
+    out = []
+    g = a.grounding
+
+    if abs(g.first_sound_t - m["first_sound_t"]) > FIRST_SOUND_TOL_S:
+        out.append(failure("G5", model=float(g.first_sound_t), measured=m["first_sound_t"]))
+
+    peaks = m.get("peaks_t") or []
+    if (abs(g.loudest_moment_t - m["loudest_t"]) > LOUDEST_TOL_S
+            and all(abs(g.loudest_moment_t - p) > LOUDEST_TOL_S for p in peaks)):
+        out.append(failure("G6", model=float(g.loudest_moment_t), measured=m["loudest_t"]))
+
+    if abs(g.ends_with_silence_seconds - m["tail_silence"]) > TAIL_SILENCE_TOL_S:
+        out.append(failure("G7", model=float(g.ends_with_silence_seconds), measured=m["tail_silence"]))
+
+    decay = m["decay_seconds"]
+    if a.ending.type == EndingType.hard_cut and decay > DECAY_SPLIT_S:
+        out.append(failure("G8", model=a.ending.type.value, measured=decay))
+    elif a.ending.type in (EndingType.ring_out, EndingType.fade_out) and decay < DECAY_SPLIT_S:
+        out.append(failure("G8", model=a.ending.type.value, measured=decay))
+
+    if len(a.sections) >= 3:
+        loud = section_loudness(a, m.get("per_sec_db") or [])
+        pairs = [(s.energy, l) for s, l in zip(a.sections, loud) if l is not None]
+        if len(pairs) >= 3:
+            rho = spearman([p[0] for p in pairs], [p[1] for p in pairs])
+            if rho is not None and rho < ENERGY_RHO_MIN:
+                out.append(failure("G9", rho=round(rho, 2)))
+
+    p = a.instrumentation.percussion
+    bpm, measured_bpm = a.tempo.bpm_estimate, m.get("tempo_bpm")
+    if ((_present(p.drum_kit) or _present(p.electronic_beats)) and bpm and measured_bpm
+            and a.tempo.band != TempoBand.rubato):
+        if not any(abs(c - measured_bpm) <= BPM_TOL * measured_bpm for c in (bpm, bpm / 2, bpm * 2)):
+            out.append(failure("G10", model=bpm, measured=measured_bpm))
+    return out
+
+
+# ── G11–G16: consistency ───────────────────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def known_names() -> tuple:
+    if not KNOWN_NAMES_PATH.exists():
+        return ()
+    lines = KNOWN_NAMES_PATH.read_text(encoding="utf-8").splitlines()
+    return tuple(l.strip() for l in lines if l.strip() and not l.startswith("#"))
+
+
+def names_found(text: str) -> List[str]:
+    return [n for n in known_names() if _find(n, text or "")]
+
+
+def check_consistency(a: Analysis, mix_code: str) -> List[Dict]:
+    out = []
+    p, v = a.instrumentation.percussion, a.instrumentation.voice
+    groove = _present(p.drum_kit) or _present(p.electronic_beats)
+
+    if groove and a.tempo.band == TempoBand.rubato:
+        out.append(failure("G11"))
+    if a.lyrics.has_intelligible_words and not (_present(v.solo_voice_lyrics) or _present(v.choir)):
+        out.append(failure("G12"))
+    if _present(v.choir) and not any(re.search(r"voice|vocal|choir", e.what, flags=re.IGNORECASE)
+                                     for e in v.choir.evidence):
+        out.append(failure("G13"))
+    if a.dialogue_friendly and _present(v.solo_voice_lyrics):
+        out.append(failure("G14"))
+    if mix_code == "SDE":
+        musical = [path for path, fam in walk_families(a.instrumentation)
+                   if _present(fam) and not path.startswith("sound_design.")
+                   and path != "percussion.trailer_impacts"]
+        if len(musical) > SDE_MAX_MUSICAL_FAMILIES:
+            out.append(failure("G15", count=len(musical)))
+    names = names_found(a.sounds_like_no_names)
+    if names:
+        out.append(failure("G16", names=names))
+    return out
+
+
+def check_analysis(a: Analysis, measured: Dict, mix_code: str) -> List[Dict]:
+    """Every rule that applies to a parsed analysis. Empty list = the listen holds up."""
+    duration = measured["duration"]
+    return (check_timestamps(a, duration) + check_sections(a, duration) + check_presence(a)
+            + check_waveform(a, measured) + check_consistency(a, mix_code))
+
+
+def uncertain_families(a: Analysis) -> List[str]:
+    return [path for path, fam in walk_families(a.instrumentation) if fam.presence == Presence.uncertain]
+
+
+def listen_status(failures: List[Dict], uncertain: List[str]) -> str:
+    if failures:
+        return BLOCKED
+    return PASSED_WITH_UNCERTAINTY if uncertain else PASSED
+
+
+# ── Retry hints (to the model) ─────────────────────────────────────────────────
+
+_HINTS = {
+    "G5": "first_sound_t did not match the file (off by more than 1.5 s). Listen to the opening again.",
+    "G6": "loudest_moment_t is not near any of the loudest moments in the file.",
+    "G7": "ends_with_silence_seconds did not match the file (off by more than 1.5 s).",
+    "G8": "ending.type contradicts how the sound decays at the end of the file.",
+    "G9": "the section energies do not follow the loudness shape of the file.",
+    "G10": "bpm_estimate does not match the beat in the file.",
+    "G11": "a drum kit or electronic beats were reported present with tempo band rubato.",
+    "G12": "intelligible words were reported, but neither solo_voice_lyrics nor choir is present.",
+    "G13": "choir was reported present, but its evidence does not describe voices.",
+    "G14": "dialogue_friendly was true while solo_voice_lyrics is present.",
+    "G15": "this is a sound design element, but more than two families outside sound_design and "
+           "trailer_impacts were reported present.",
+    "G16": "sounds_like_no_names named a real artist, composer or film. Describe the sound without names.",
+}
+
+
+def retry_hint(failures: List[Dict]) -> str:
+    """User-text addendum for a re-run. Names the failed rules; never gives the measured answer."""
+    lines = []
+    for f in failures:
+        hint = _HINTS.get(f["rule"])
+        if hint and hint not in lines:
+            lines.append(hint)
+    if not lines:
+        return ""
+    return "A previous listen to this file was rejected because: " + " ".join(lines) + \
+        " Listen to the whole file again and answer only from the audio."
+
+
+# ── Plain-language reasons (to the user) ───────────────────────────────────────
+
+def _s(seconds) -> str:
+    return f"{float(seconds):.1f}"
+
+
+def plain_reason(f: Dict) -> str:
+    r = f.get("rule")
+    if r == "G1":
+        if f.get("backwards"):
+            return f"It placed {f['what']} so that it ends before it starts."
+        return f"It put {f['what']} at {_s(f['t'])} s, but the file is only {_s(f['duration'])} seconds long."
+    if r == "G2":
+        return {
+            "backwards": "One of its sections ends before it starts.",
+            "unordered": "Its sections are out of order.",
+            "overlap": "Two of its sections overlap, so its map of the track can't be trusted.",
+            "coverage": f"Its sections only cover {f.get('pct', 0):.0f}% of the track.",
+        }.get(f.get("problem"), "Its map of the track's sections doesn't hold together.")
+    if r == "G3":
+        name = family_label(f.get("family", ""))
+        return {
+            "no_evidence": f"It said there is {name} but didn't point to where you can hear it.",
+            "low_confidence": f"It said there is {name} but wasn't confident enough to claim it.",
+            "no_prominence": f"It said there is {name} but not how prominent it is in the mix.",
+        }.get(f.get("problem"), f"Its claim about {name} doesn't hold together.")
+    if r == "G4":
+        return "The analysis came back incomplete, twice."
+    if r == "G5":
+        return f"It said the first sound is at {_s(f['model'])} s, but the file's first sound is at {_s(f['measured'])} s."
+    if r == "G6":
+        return f"It said the loudest moment is at {_s(f['model'])} s, but the file peaks at {_s(f['measured'])} s."
+    if r == "G7":
+        return (f"It said the file ends with {_s(f['model'])} seconds of silence, "
+                f"but there are {_s(f['measured'])} seconds.")
+    if r == "G8":
+        if f["model"] == "hard_cut":
+            return f"It said the track ends with a hard cut, but the file rings out for {_s(f['measured'])} seconds."
+        verb = "fades out" if f["model"] == "fade_out" else "rings out"
+        return f"It said the track {verb}, but the sound stops within {_s(f['measured'])} seconds."
+    if r == "G9":
+        return "Its loud and quiet sections don't match the file's actual loudness."
+    if r == "G10":
+        return f"It heard about {f['model']} BPM, but the beat in the file is closer to {float(f['measured']):.0f} BPM."
+    if r == "G11":
+        return "It said there is a drum groove but also that the track has no steady tempo."
+    if r == "G12":
+        return "It said there are sung words but found no lead voice or choir."
+    if r == "G13":
+        return "It said there is a choir, but what it pointed to doesn't sound like voices."
+    if r == "G14":
+        return "It said the track leaves room for dialogue, but there are sung lyrics."
+    if r == "G15":
+        return f"This is a sound design element, but it heard {f.get('count')} instrument parts."
+    if r == "G16":
+        return f"It compared the track to a real artist or film ({', '.join(f.get('names') or [])})."
+    if r == "NO_AUDIO":
+        return "The file couldn't be opened to measure it."
+    if r == "API":
+        return "The listen didn't finish — the analysis service returned an error."
+    return sentence(f.get("text") or "Something went wrong with this track.")
+
+
+def sentence(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return t
+    t = t[0].upper() + t[1:]
+    return t if t[-1] in ".!?" else t + "."
 
 
 # ── Text checks ────────────────────────────────────────────────────────────────
@@ -353,6 +473,7 @@ def sentences(text: str) -> List[str]:
 
 
 def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = None) -> List[str]:
+    """Tags are compared case-insensitively (both sides lowercased); the text keeps its casing."""
     if tags is None:
         return ["description does not end with a 'Fits:' line"]
     reasons = []
@@ -456,10 +577,13 @@ def apply_lane(track: Dict, lane: str) -> Dict:
     return track
 
 
-# ── Status ─────────────────────────────────────────────────────────────────────
+# ── Display helpers ────────────────────────────────────────────────────────────
 
 def status_for(reasons: List[str]) -> str:
     return BLOCKED if reasons else PASSED
+
+
+ENDING_LABELS = {"hard_cut": "Hard cut", "button": "Button", "ring_out": "Ring-out", "fade_out": "Fade-out"}
 
 
 def format_time(seconds) -> str:
@@ -470,5 +594,5 @@ def format_time(seconds) -> str:
     return f"{int(s // 60)}:{int(round(s % 60)):02d}"
 
 
-def format_events(events: List[Dict]) -> str:
-    return " · ".join(f"{format_time(e.get('t'))} {e.get('what', '')}" for e in events or [])
+def format_sections(sections: List[Dict]) -> str:
+    return " · ".join(f"{format_time(s.get('t_start'))} {s.get('label', '')}" for s in sections or [])

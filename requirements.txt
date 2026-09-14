@@ -3,5 +3,8 @@ pandas
 google-genai
 anthropic
 dropbox
-mutagen
 requests
+pydantic
+librosa
+numpy
+soundfile

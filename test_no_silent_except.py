@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-FILES = ("engine.py", "app.py", "persistence.py", "feedback.py")
+FILES = ("engine.py", "app.py", "gate.py", "waveform.py", "capture.py")
 SILENT = re.compile(r"except(\s+Exception)?\s*:\s*pass\b")
 
 
