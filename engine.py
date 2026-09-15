@@ -77,12 +77,13 @@ CALL_B_CONFIG = types.GenerateContentConfig(
 
 # Which Call A path ships (DECISIONS.md → "Call A schema path").
 #   "schema": Gemini constrained decoding with response_schema=Analysis.
-#   "prompt": the fallback if Gemini rejects the schema — JSON mode only, the JSON
-#             Schema pasted into the system instruction, same Pydantic validation
-#             (a violation is G4).
-# 2026-09-14: gemini-3.1-pro-preview rejected both the nested and the flat Analysis
-# schema with 400 INVALID_ARGUMENT, so the prompt path ships.
-CALL_A_MODE = "prompt"
+#   "prompt": JSON mode only, the JSON Schema pasted into the system instruction,
+#             same Pydantic validation (a violation is G4).
+# 2026-09-15: schema mode, after list caps above 7 moved out of the schema into
+# Python. If Gemini still rejects the schema (400 INVALID_ARGUMENT mentioning
+# "schema"), listen() re-issues the request in prompt mode and marks the track
+# call_a_mode="prompt-fallback" — never silently.
+CALL_A_MODE = "schema"
 CALL_A_PROMPT_CONFIG = CALL_A_CONFIG.model_copy(update={"response_schema": None})
 
 # Wall-clock estimate per analysed file (listen, gate, write), for the Start
@@ -140,6 +141,13 @@ def _is_quota_error(exc: Exception) -> bool:
         "quota", "resource_exhausted", "resourceexhausted",
         "billing", "insufficient", "exceeded", "rate limit", "429", "403",
     ])
+
+
+def _is_schema_rejection(exc: Exception) -> bool:
+    """Gemini's 400 INVALID_ARGUMENT for a response_schema it will not accept."""
+    msg = str(exc)
+    return ((getattr(exc, "code", None) == 400 or "400" in msg) and "INVALID_ARGUMENT" in msg
+            and "schema" in msg.lower())
 
 
 def recent_album_descriptions(catalog: str) -> List[Dict]:
@@ -312,16 +320,35 @@ class IngestionEngine:
         return response.text
 
     # ── Call A + gate ──────────────────────────────────────────────────────────
+    def _call_a(self, client, audio, user: str, duration: float, result: Dict) -> str:
+        """
+        One Call A request in the track's current mode. If Gemini rejects the schema,
+        the same request is re-issued in prompt mode and the record says so:
+        result["call_a_mode"] = "prompt-fallback". Other errors raise.
+        """
+        if result["call_a_mode"] == "schema":
+            try:
+                return self._generate(client, [audio, user], CALL_A_CONFIG, self.prompts.call_a_system(duration))
+            except Exception as exc:
+                if not _is_schema_rejection(exc):
+                    raise
+                log.warning("Gemini rejected the Call A schema; re-issuing in prompt mode: %s", str(exc)[:300])
+                result["call_a_mode"] = "prompt-fallback"
+                result["schema_error"] = str(exc)[:300]
+        return self._generate(client, [audio, user], CALL_A_PROMPT_CONFIG,
+                              self.prompts.call_a_system(duration, include_shape=True))
+
     def listen(self, file_bytes: bytes, ext: str, mix_type: str, gemini_api_key: str,
                correction: str = "", measured: Optional[Dict] = None) -> Dict:
         """
         Waveform → Call A → gate, at most two Call A per track.
-        Returns {status, failures, measured, analysis, simple, uncertain, attempts, correction}.
+        Returns {status, failures, measured, analysis, simple, uncertain, attempts, correction, call_a_mode}.
         API errors raise; a file that cannot be decoded is BLOCKED without calling the model.
         """
         mix = gate.mix_type_code(mix_type)
         result = {"status": gate.BLOCKED, "failures": [], "measured": None, "analysis": None,
-                  "simple": None, "uncertain": [], "attempts": 0, "correction": (correction or "").strip()}
+                  "simple": None, "uncertain": [], "attempts": 0, "correction": (correction or "").strip(),
+                  "call_a_mode": CALL_A_MODE}
         if measured is None:
             try:
                 measured = waveform.measure_bytes(file_bytes, ext)
@@ -337,15 +364,12 @@ class IngestionEngine:
 
         client = self._client(gemini_api_key)
         audio = self._audio_part(client, file_bytes, ext)
-        prompt_mode = CALL_A_MODE == "prompt"
-        config = CALL_A_PROMPT_CONFIG if prompt_mode else CALL_A_CONFIG
-        system = self.prompts.call_a_system(duration, include_shape=prompt_mode)
         failures: List[Dict] = []
         for attempt in (1, 2):
             result["attempts"] = attempt
             user = self.prompts.call_a_user(mix, duration, hint=gate.retry_hint(failures),
                                             correction=result["correction"])
-            text = self._generate(client, [audio, user], config, system)
+            text = self._call_a(client, audio, user, duration, result)
             try:
                 analysis = gate.parse_analysis(text)
             except gate.SchemaViolation as exc:
@@ -493,6 +517,7 @@ class IngestionEngine:
             "analysis": a or None,
             "simple": simple or None,
             "measured": {k: v for k, v in measured.items() if k != "per_sec_db"} or None,
+            "call_a_mode": result.get("call_a_mode", ""),
             "PFD_Gate": gate_state,
             "PFD_Notes": [],
             "PFD_Added": [],

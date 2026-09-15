@@ -141,6 +141,28 @@ class TestListen(ListenCase):
         self.assertIs(config.response_schema, Analysis)
         self.assertNotIn("JSON Schema", config.system_instruction)
         self.assertEqual(result["status"], gate.PASSED)
+        self.assertEqual(result["call_a_mode"], "schema")
+
+    def test_schema_rejection_falls_back_to_prompt_mode_and_says_so(self):
+        rejection = RuntimeError("400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': "
+                                 "'Invalid JSON payload: response_schema too complex', 'status': 'INVALID_ARGUMENT'}}")
+        self.replies(rejection, analysis_dict(), writing_dict())
+        with patch("engine.CALL_A_MODE", "schema"), self.assertLogs("pfd", level="WARNING") as logs:
+            track = self.process()
+        first, second = self.calls()[0].kwargs["config"], self.calls()[1].kwargs["config"]
+        self.assertIs(first.response_schema, Analysis)
+        self.assertIsNone(second.response_schema)
+        self.assertIn("JSON Schema", second.system_instruction)
+        self.assertEqual(track["call_a_mode"], "prompt-fallback")
+        self.assertEqual(track["PFD_Gate"]["attempts"], 1)  # the re-issue is the same attempt
+        self.assertEqual(track["PFD_Status"], gate.PASSED)
+        self.assertTrue(any("rejected the Call A schema" in m for m in logs.output))
+
+    def test_other_400s_are_not_treated_as_schema_rejections(self):
+        self.replies(RuntimeError("400 INVALID_ARGUMENT. Request contains an invalid argument."))
+        with patch("engine.CALL_A_MODE", "schema"), self.assertRaises(RuntimeError):
+            self.engine.listen(AUDIO, ".mp3", "full", "k")
+        self.assertEqual(len(self.calls()), 1)
 
     def test_duplicate_family_is_recorded(self):
         a = analysis_dict()

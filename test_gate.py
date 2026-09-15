@@ -100,6 +100,33 @@ class TestStructure(unittest.TestCase):
         secs[0], secs[1] = secs[1], secs[0]
         self.assertIn("G2", rules_of(check(analysis_dict(sections=secs))))
 
+    def test_g2_more_than_ten_sections(self):
+        secs = [{"t_start": float(i * 5), "t_end": float(i * 5 + 5), "label": f"s{i}", "energy": 3,
+                 "what_changes": "x"} for i in range(12)]
+        parsed = gate.parse_analysis(json.dumps(analysis_dict(sections=secs)))  # the schema no longer caps it
+        failures = gate.check_sections(parsed, 60.0)
+        self.assertEqual((failures[0]["rule"], failures[0]["problem"]), ("G2", "too_many"))
+        self.assertEqual(gate.plain_reason(failures[0]), "It split the track into 12 sections; the most allowed is 10.")
+
+    def test_edit_points_are_trimmed_to_eight_and_logged(self):
+        points = [float(i) for i in range(1, 12)]
+        with self.assertLogs("pfd", level="WARNING") as logs:
+            parsed = gate.parse_analysis(json.dumps(analysis_dict(modular_edit_points_t=points)))
+        self.assertEqual(parsed.modular_edit_points_t, points[:8])
+        self.assertTrue(any("11 edit points" in m for m in logs.output))
+
+    def test_no_list_cap_above_seven_in_the_call_a_schema(self):
+        def caps(node):
+            if isinstance(node, dict):
+                if node.get("type") == "array" and "maxItems" in node:
+                    yield node["maxItems"]
+                for v in node.values():
+                    yield from caps(v)
+            elif isinstance(node, list):
+                for v in node:
+                    yield from caps(v)
+        self.assertTrue(all(c <= 7 for c in caps(Analysis.model_json_schema())))
+
     def test_g2_coverage_under_90_percent(self):
         secs = analysis_dict()["sections"][:2]
         secs[1]["t_end"] = 30.0

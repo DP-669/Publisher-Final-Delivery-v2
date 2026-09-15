@@ -230,13 +230,13 @@ class Analysis(BaseModel):
     grounding: Grounding
     tempo: Tempo
     energy_arc: EnergyArc
-    sections: conlist(Section, min_length=2, max_length=10)
+    sections: conlist(Section, min_length=2)  # max 10 enforced in Python (gate G2): Gemini rejects maxItems > 7 here
     ending: Ending
     instrumentation: List[Observation]  # replaces nested Instrumentation (max_length removed: Gemini rejects maxItems>7 on complex nested lists)
     lyrics: Lyrics
     hybridity_electronic_pct: int = Field(ge=0, le=100)
     dialogue_friendly: bool
-    modular_edit_points_t: List[confloat(ge=0)] = Field(max_length=8)
+    modular_edit_points_t: List[confloat(ge=0)]  # trimmed to 8 in Python (gate.parse_analysis)
     the_job: str = Field(max_length=200)
     narrative_map: str = Field(max_length=300)
     genre_tags: conlist(str, min_length=2, max_length=6)

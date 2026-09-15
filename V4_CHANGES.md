@@ -2,7 +2,7 @@
 
 Branch `v4-rebuild`, cut from `v3-final` (tag on `5352af9`, the v3-build head). The rejected `gate-calibration` branch is untouched.
 
-**Status:** built, and live-verified on one track. Call A runs on the prompt path (JSON Schema in the system instruction, Pydantic validation), because Gemini rejects the analysis schema as a constrained `response_schema` (GATE_FIX.md → "Call A schema path"). That one live track was blocked, correctly, on the model's own timing, loudness and tempo mistakes. No full album has been run yet.
+**Status (2026-09-15):** built, and live-verified on three tracks, one per catalog. Call A runs in schema mode (`response_schema=Analysis`), with an automatic, visible fallback to prompt mode if Gemini rejects the schema (GATE_FIX.md → "Call A schema path"). rC was blocked legitimately; SSC passed with a note; EPP passed. No full album has been run yet.
 
 ## Gate
 See GATE_FIX.md. In short:

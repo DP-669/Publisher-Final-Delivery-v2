@@ -219,6 +219,8 @@ with st.sidebar:
                 + model_badge("Checking", claude_model, bool(claude_api_key)), unsafe_allow_html=True)
     _dbx = dropbox_status(dropbox_configured, dropbox_token or "")
     st.caption(("🟢 Dropbox: " if _dbx["ok"] else "🔴 Dropbox: ") + _dbx["detail"])
+    if any(t.get("call_a_mode") == "prompt-fallback" for t in (ss.album or {}).get("tracks", [])):
+        st.warning("Schema rejected by Gemini — ran in prompt mode; check DECISIONS.md.")
     with st.expander("Settings"):
         st.toggle("Compare writing styles", key="compare_styles",
                   help="In Review, write three versions of a track's description and pick the best.")

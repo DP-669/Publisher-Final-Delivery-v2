@@ -15,6 +15,7 @@ A track is PASSED, PASSED_WITH_UNCERTAINTY or BLOCKED.
 
 Rule IDs (G1…G16) are internal. The app shows plain_reason() sentences only.
 """
+import logging
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -47,6 +48,11 @@ DECAY_SPLIT_S = 1.0            # G8
 ENERGY_RHO_MIN = 0.4           # G9
 BPM_TOL = 0.08                 # G10
 SDE_MAX_MUSICAL_FAMILIES = 2   # G15
+MAX_SECTIONS = 10              # G2 (not in the schema: Gemini rejects maxItems > 7)
+MAX_EDIT_POINTS = 8            # trimmed in parse_analysis
+MAX_OBSERVATIONS = 20          # logged in parse_analysis
+
+log = logging.getLogger("pfd")
 
 STRUCTURAL_RULES = ("G1", "G2", "G3", "G4")   # re-run once, no hint
 HINTED_RULES = tuple(f"G{i}" for i in range(5, 18))  # re-run once, rule named in the user text
@@ -81,7 +87,19 @@ def _parse(model, text: str, what: str):
 
 
 def parse_analysis(text: str) -> Analysis:
-    return _parse(Analysis, text, "analysis")
+    """
+    Validate Call A. List caps above 7 are not in the schema (Gemini rejects them);
+    they are enforced here and in G2: edit points are trimmed to 8, more than 10
+    sections fails G2, more than 20 observations is logged.
+    """
+    a = _parse(Analysis, text, "analysis")
+    if len(a.modular_edit_points_t) > MAX_EDIT_POINTS:
+        log.warning("Call A returned %d edit points; kept the first %d", len(a.modular_edit_points_t), MAX_EDIT_POINTS)
+        a.modular_edit_points_t = a.modular_edit_points_t[:MAX_EDIT_POINTS]
+    if len(a.instrumentation) > MAX_OBSERVATIONS:
+        log.warning("Call A listed %d observations (spec cap %d); duplicates are merged in the family map",
+                    len(a.instrumentation), MAX_OBSERVATIONS)
+    return a
 
 
 def parse_writing(text: str) -> Writing:
@@ -130,8 +148,10 @@ def check_timestamps(a: Analysis, duration: float) -> List[Dict]:
 
 
 def check_sections(a: Analysis, duration: float) -> List[Dict]:
-    """G2: sections ordered, not overlapping, covering at least 90% of the file."""
+    """G2: at most 10 sections, ordered, not overlapping, covering at least 90% of the file."""
     secs = list(a.sections)
+    if len(secs) > MAX_SECTIONS:
+        return [failure("G2", problem="too_many", count=len(secs))]
     for s in secs:
         if s.t_end < s.t_start:
             return [failure("G2", problem="backwards", label=s.label)]
@@ -350,6 +370,7 @@ def plain_reason(f: Dict) -> str:
         return f"It put {f['what']} at {_s(f['t'])} s, but the file is only {_s(f['duration'])} seconds long."
     if r == "G2":
         return {
+            "too_many": f"It split the track into {f.get('count')} sections; the most allowed is {MAX_SECTIONS}.",
             "backwards": "One of its sections ends before it starts.",
             "unordered": "Its sections are out of order.",
             "overlap": "Two of its sections overlap, so its map of the track can't be trusted.",

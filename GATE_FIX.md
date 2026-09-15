@@ -40,9 +40,31 @@ v4 replaces "two listens must agree" with "one listen must agree with the decode
 - **Removed.** The second listen, the verification schema, the mutagen/ffprobe header read, the ±8% duration rule.
 
 ## Call A schema path — which one shipped
-**Shipped: the prompt path** (`engine.CALL_A_MODE = "prompt"`). Call A sends `response_mime_type="application/json"` with no `response_schema`. The Analysis JSON Schema is pasted into the system instruction, and the reply is validated with the same Pydantic model; a violation is G4. Switching back is one constant.
+**Shipped (2026-09-15): the schema path** (`engine.CALL_A_MODE = "schema"`). Call A uses `response_schema=Analysis`.
 
-Evidence, all on `gemini-3.1-pro-preview`, 2026-09-14:
+**List caps above 7 are no longer in the schema; Python enforces them:**
+- more than 10 sections fails G2
+- edit points are trimmed to 8, with a log line
+- more than 20 observations is logged (the instrumentation cap was removed in `a65017c`)
+
+**Automatic fallback:**
+- **Trigger:** a `400 INVALID_ARGUMENT` whose message mentions "schema".
+- **What happens:** the same request is re-issued in prompt mode (JSON Schema in the system instruction, same Pydantic validation). The track is marked `call_a_mode="prompt-fallback"`, a warning is logged, and the sidebar shows "Schema rejected by Gemini — ran in prompt mode; check DECISIONS.md."
+- **Other 400s** still raise.
+- **Caveat:** the 400s seen on 2026-09-14 said only "Request contains an invalid argument.", so a rejection worded like that would not fall back. It would show as an analysis error on the row.
+
+**Verification, 2026-09-15, `gemini-3.1-pro-preview`:** three real tracks, zero 400s, all recorded `call_a_mode="schema"`, no fallback warnings.
+
+| Catalog | Track | Result | Call A attempts | Time |
+|---|---|---|---|---|
+| rC | Loaded Gun (full mix, mastered) | BLOCKED — G5 first sound 0.0 vs 1.5 s; G10 120 vs 68 BPM | 2 | 72 s |
+| SSC | Frozen In Motion (Collin Reyer, master) | PASSED_WITH_UNCERTAINTY — orchestral strings | 1 | 57 s |
+| EPP | EPP056 003 Folk Celebration | PASSED | 1 | 42 s |
+
+- **The rC block is legitimate:** the local waveform check on the same file shows digital silence until 1.25 s, and librosa's onset tempi are 68/136/129/144/55, none near 120.
+- **Call B:** valid Writing JSON with 15 keywords on SSC and EPP. The Claude gate was skipped locally (no key), so Gemini's text was kept with a note.
+
+History (the path before 2026-09-15), all on `gemini-3.1-pro-preview`, 2026-09-14:
 - **Nested schema** (31 families × 7 groups, 320 properties): 400 INVALID_ARGUMENT in every form. Limit found: base plus one group is accepted, base plus two groups (144 properties) is rejected.
 - **Flat observation schema:** also 400. Text-only checks: the base analysis alone is accepted, and the Observation list alone is accepted (with or without the family enum). Base plus list is rejected, even with the enum replaced by a plain string. Under the approved fallback rule, the prompt path ships.
 - **Prompt path, live, one real 71 s redCola full mix:** JSON validated against the Pydantic model on both attempts (no G4), inside 6000 tokens including thinking. 60 s for two Call A attempts. The waveform took 1.5 s.

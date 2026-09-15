@@ -1,10 +1,14 @@
-# PFD v4 — Call A schema path (2026-09-14)
+# PFD v4 — Call A schema path (updated 2026-09-15)
 
-**Shipped: the prompt path.** Call A uses `response_mime_type="application/json"` with no `response_schema`. The Analysis JSON Schema is pasted into the system instruction and validated with the Pydantic model; a validation failure is G4. The switch is `engine.CALL_A_MODE`.
+**Shipped: the schema path** (`engine.CALL_A_MODE = "schema"`, `response_schema=Analysis`). It went live after the list caps above 7 moved from the schema into Python: sections ≤ 10 via G2, edit points trimmed to 8, instrumentation unbounded and logged over 20.
 
-- Why: on `gemini-3.1-pro-preview`, both the nested 31-family schema and Damir's flat observation-list schema return `400 INVALID_ARGUMENT` as a constrained schema.
-- Live check: one real 71 s redCola full mix. Valid JSON on both attempts within 6000 tokens, 60 s total. BLOCKED on G5/G9/G10, and a local waveform check shows the model's claims were wrong on each.
-- Details: GATE_FIX.md → "Call A schema path". Full v4 change list: V4_CHANGES.md.
+- **Fallback:** a `400 INVALID_ARGUMENT` mentioning "schema" re-issues Call A in prompt mode. The track is marked `call_a_mode="prompt-fallback"` and the sidebar shows a warning.
+- **Verified** on three real tracks, one per catalog, with zero 400s and all `call_a_mode="schema"`:
+  - rC Loaded Gun: BLOCKED, legitimate (G5, G10)
+  - SSC Frozen In Motion: PASSED_WITH_UNCERTAINTY
+  - EPP EPP056 003 Folk Celebration: PASSED
+- **2026-09-14:** the prompt path shipped briefly. Gemini rejected the nested schema and the capped flat schema with `400 INVALID_ARGUMENT`.
+- **Details:** GATE_FIX.md → "Call A schema path". The full v4 change list is in V4_CHANGES.md.
 
 The v3 report below is kept as history.
 
