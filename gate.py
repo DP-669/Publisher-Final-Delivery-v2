@@ -41,12 +41,14 @@ TIMESTAMP_SLACK_S = 0.5        # G1: timestamps may run 0.5 s past the end
 SECTION_SLACK_S = 0.5          # G2: rounding tolerance for touching sections
 SECTION_COVERAGE_MIN = 0.90    # G2
 PRESENT_CONFIDENCE_MIN = 0.6   # G3
-FIRST_SOUND_TOL_S = 1.5        # G5
+FIRST_SOUND_TOL_S = 1.5        # G5: leading silence the model may miss, compared at 0.1 s (what the app shows)
+DISPLAY_PRECISION_S = 1        # decimal places the app shows for a timestamp
 LOUDEST_TOL_S = 6.0            # G6
 TAIL_SILENCE_TOL_S = 1.5       # G7
 DECAY_SPLIT_S = 1.0            # G8
 ENERGY_RHO_MIN = 0.4           # G9
-BPM_TOL = 0.08                 # G10
+BPM_DIFF_BLOCK = 0.20          # G10: a confident tempo must differ by more than this to block
+BPM_MULTIPLE_TOL = 0.10        # G10: within this of the tempo, its double or its half = explained
 SDE_MAX_MUSICAL_FAMILIES = 2   # G15
 MAX_SECTIONS = 10              # G2 (not in the schema: Gemini rejects maxItems > 7)
 MAX_EDIT_POINTS = 8            # trimmed in parse_analysis
@@ -228,7 +230,9 @@ def check_waveform(a: Analysis, m: Dict) -> List[Dict]:
     out = []
     g = a.grounding
 
-    if abs(g.first_sound_t - m["first_sound_t"]) > FIRST_SOUND_TOL_S:
+    # Compared at the precision the app displays, so a file whose first sound reads
+    # 1.5 s is not blocked for a model that said 0.0 s.
+    if round(abs(g.first_sound_t - m["first_sound_t"]), DISPLAY_PRECISION_S) > FIRST_SOUND_TOL_S:
         out.append(failure("G5", model=float(g.first_sound_t), measured=m["first_sound_t"]))
 
     peaks = m.get("peaks_t") or []
@@ -254,12 +258,31 @@ def check_waveform(a: Analysis, m: Dict) -> List[Dict]:
                 out.append(failure("G9", rho=round(rho, 2)))
 
     p = families(a).percussion
-    bpm, measured_bpm = a.tempo.bpm_estimate, m.get("tempo_bpm")
-    if ((_present(p.drum_kit) or _present(p.electronic_beats)) and bpm and measured_bpm
-            and a.tempo.band != TempoBand.rubato):
-        if not any(abs(c - measured_bpm) <= BPM_TOL * measured_bpm for c in (bpm, bpm / 2, bpm * 2)):
-            out.append(failure("G10", model=bpm, measured=measured_bpm))
+    if (_present(p.drum_kit) or _present(p.electronic_beats)) and a.tempo.bpm_estimate \
+            and a.tempo.band != TempoBand.rubato:
+        out += check_bpm(a.tempo.bpm_estimate, m)
     return out
+
+
+def check_bpm(bpm: int, m: Dict) -> List[Dict]:
+    """
+    G10. Only a tempo librosa is confident about can block, and only when the
+    model's BPM is more than 20% away from it and is not its half or double.
+    Two candidates, a half/double pair or a weak pulse are ambiguity, not a
+    hallucination: logged, never blocked.
+    """
+    measured = m.get("tempo_bpm")
+    if not measured:
+        return []
+    candidates = ", ".join(f"{c:.0f}" for c in (m.get("tempo_candidates") or [measured]))
+    if not m.get("tempo_confident"):
+        log.info("G10 not applied: librosa's tempo is ambiguous (%s BPM); the model said %s BPM", candidates, bpm)
+        return []
+    if any(abs(bpm - c) <= BPM_MULTIPLE_TOL * c for c in (measured, measured * 2, measured / 2)):
+        return []
+    if abs(bpm - measured) / measured <= BPM_DIFF_BLOCK:
+        return []
+    return [failure("G10", model=bpm, measured=measured)]
 
 
 # ── G11–G16: consistency ───────────────────────────────────────────────────────

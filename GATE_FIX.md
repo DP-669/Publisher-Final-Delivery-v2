@@ -18,12 +18,12 @@ v4 replaces "two listens must agree" with "one listen must agree with the decode
 | G2 | sections overlap, are out of order, or cover < 90% of the file |
 | G3 | a present family with evidence has confidence < 0.6 or no prominence |
 | G4 | the JSON does not match the Pydantic schema |
-| G5 | first sound off by > 1.5 s |
+| G5 | first sound off by more than 1.5 s, compared at the 0.1 s precision the app shows |
 | G6 | loudest moment > 6 s from the measured loudest and from each of the top-3 peaks |
 | G7 | trailing silence off by > 1.5 s |
 | G8 | hard_cut but the file decays > 1.0 s, or ring_out/fade_out but it decays < 1.0 s |
 | G9 | Spearman(section energy, measured section loudness) < 0.4, with ≥ 3 sections |
-| G10 | kit or beats present, and none of bpm, bpm/2, bpm×2 is within 8% of librosa's tempo (not for rubato) |
+| G10 | kit or beats present, librosa confident in one tempo, and the model's BPM more than 20% away from it and not within 10% of it, its double or its half (not for rubato). Ambiguous tempo is logged, never blocked |
 | G11 | kit or beats present with tempo band rubato |
 | G12 | intelligible words without solo_voice_lyrics or choir |
 | G13 | choir present, but no evidence mentions voice / vocal / choir |
@@ -61,6 +61,8 @@ v4 replaces "two listens must agree" with "one listen must agree with the decode
 | EPP | EPP056 003 Folk Celebration | PASSED | 1 | 42 s |
 
 - **The rC block is legitimate:** the local waveform check on the same file shows digital silence until 1.25 s, and librosa's onset tempi are 68/136/129/144/55, none near 120.
+
+**Gate calibration, 2026-09-16 (Damir).** G5 now compares at the 0.1 s precision the app displays, and G10 only blocks on a tempo librosa is confident about. Re-run of the same three tracks, schema mode, zero 400s: **all three PASSED** — rC "Loaded Gun" (was blocked on G5 by 0.03 s and on G10 against an ambiguous 68/136 pair), SSC "Frozen In Motion", EPP "Folk Celebration". All three files have rival tempo peaks at 0.85–1.00 of the top, so none of them can block on BPM. Two things surfaced that are not gate problems and are open in DECISIONS.md: Gemini does not enforce string `max_length` in schema mode (one Call A came back with a 312-character `narrative_map`, caught as G4, clean on the re-run), and Call B truncated its JSON once on the same track and wrote cleanly the next time.
 - **Call B:** valid Writing JSON with 15 keywords on SSC and EPP. The Claude gate was skipped locally (no key), so Gemini's text was kept with a note.
 
 History (the path before 2026-09-15), all on `gemini-3.1-pro-preview`, 2026-09-14:

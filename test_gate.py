@@ -172,6 +172,13 @@ class TestWaveform(unittest.TestCase):
         g = dict(analysis_dict()["grounding"], first_sound_t=1.9)
         self.assertNotIn("G5", rules_of(check(analysis_dict(grounding=g))))
 
+    def test_g5_allows_up_to_one_and_a_half_seconds_of_missed_lead_in(self):
+        """Loaded Gun: the model said 0.0 s, the file's first sound reads 1.5 s."""
+        g = dict(analysis_dict()["grounding"], first_sound_t=0.0)
+        measured = dict(MEASURED, first_sound_t=1.5325170068027212)
+        self.assertNotIn("G5", rules_of(check(analysis_dict(grounding=g), measured)))
+        self.assertIn("G5", rules_of(check(analysis_dict(grounding=g), dict(MEASURED, first_sound_t=1.6))))
+
     def test_g6_loudest_moment(self):
         g = dict(analysis_dict()["grounding"], loudest_moment_t=30.0)
         self.assertIn("G6", rules_of(check(analysis_dict(grounding=g))))
@@ -215,17 +222,34 @@ class TestWaveform(unittest.TestCase):
         secs[1]["t_end"] = 59.0
         self.assertNotIn("G9", rules_of(check(analysis_dict(sections=secs))))
 
-    def test_g10_bpm_against_measured_tempo(self):
-        tempo = {"band": "mid", "bpm_estimate": 97, "pulse_confidence": 0.8}
-        self.assertIn("G10", rules_of(check(analysis_dict(tempo=tempo))))
-        for half_or_double in (60, 240):
-            tempo = dict(tempo, bpm_estimate=half_or_double)
-            self.assertNotIn("G10", rules_of(check(analysis_dict(tempo=tempo))))
+    def _tempo(self, bpm):
+        return analysis_dict(tempo={"band": "mid", "bpm_estimate": bpm, "pulse_confidence": 0.8})
+
+    def test_g10_blocks_only_on_a_confident_tempo_far_away(self):
+        self.assertIn("G10", rules_of(check(self._tempo(160))))  # 33% off 120, not a half or double
+
+    def test_g10_ignores_a_difference_under_twenty_percent(self):
+        self.assertNotIn("G10", rules_of(check(self._tempo(97))))   # 19% off
+        self.assertNotIn("G10", rules_of(check(self._tempo(140))))  # 17% off
+
+    def test_g10_ignores_half_and_double_time(self):
+        for half_or_double in (60, 240, 232):  # 232 is within 10% of 240; the schema caps bpm at 240
+            self.assertNotIn("G10", rules_of(check(self._tempo(half_or_double))))
+
+    def test_g10_never_blocks_when_librosa_is_ambiguous(self):
+        """Loaded Gun: librosa peaks at 68 and 136. Two candidates are ambiguity, not a hallucination."""
+        ambiguous = dict(MEASURED, tempo_bpm=68.0, tempo_candidates=[68.0, 136.0], tempo_confident=False)
+        with self.assertLogs("pfd", level="INFO") as logs:
+            failures = check(self._tempo(120), ambiguous)
+        self.assertNotIn("G10", rules_of(failures))
+        self.assertTrue(any("tempo is ambiguous" in m for m in logs.output))
+
+    def test_g10_needs_a_measured_tempo(self):
+        no_tempo = dict(MEASURED, tempo_bpm=None, tempo_candidates=[], tempo_confident=False)
+        self.assertNotIn("G10", rules_of(check(self._tempo(160), no_tempo)))
 
     def test_g10_only_with_a_groove(self):
-        a = with_family(analysis_dict(tempo={"band": "mid", "bpm_estimate": 97, "pulse_confidence": 0.8}),
-                        "percussion.drum_kit", absent())
-        self.assertNotIn("G10", rules_of(check(a)))
+        self.assertNotIn("G10", rules_of(check(with_family(self._tempo(160), "percussion.drum_kit", absent()))))
 
 
 class TestConsistency(unittest.TestCase):

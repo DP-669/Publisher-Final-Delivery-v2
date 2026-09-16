@@ -98,8 +98,17 @@ v3 entries above that mention tabs, the second listen or the writer test are sup
 - G17 (present, no evidence) is read from the raw list, and G3 skips evidence-less families so the problem is reported once; its retry hint quotes the family names · spec: "same as G3, one retry quoting the violation" · `gate.check_observations`.
 - Call A is never split into several audio calls · Damir: one listen only · none.
 
+## Gate calibration (2026-09-16, Damir)
+- G5 compares the first sound at 0.1 s precision, the precision the app displays · Damir: leading silence is only a block past 1.5 s; the tolerance was already 1.5 s, and rC "Loaded Gun" failed by 0.03 s (measured 1.5325 s, displayed "1.5 s") · drop the `round(..., DISPLAY_PRECISION_S)` in `gate.check_waveform`.
+- G10 blocks only on a tempo librosa is confident about, and only when the model's BPM is more than 20% away and not within 10% of that tempo, its double or its half; ambiguity is logged, never blocked · Damir: two candidates or low confidence must not block · `gate.check_bpm`, `gate.BPM_DIFF_BLOCK`, `gate.BPM_MULTIPLE_TOL`.
+- Tempo confidence = no rival autocorrelation peak within 75% of the top (a half/double pair counts as a rival) and librosa's beat tracker agreeing with the top candidate or its half/double · measured on the three verification tracks: all three have rivals at 0.85–1.00 of the top, so none of them can block on BPM · `waveform.measure_tempo`, `waveform.TEMPO_RIVAL_RATIO`.
+- Live re-run 2026-09-16, same three tracks, schema mode, zero 400s: rC "Loaded Gun" PASSED (was BLOCKED on G5+G10), SSC "Frozen In Motion Master" PASSED, EPP "EPP056 003 Folk Celebration" PASSED.
+- The four `live3_*.json` verification files were deleted on Damir's explicit word.
+
 ## Open
-- One live track, BLOCKED on G5/G9/G10. The local waveform check shows the model was wrong on each (silent 1.5 s lead-in, reversed intro energy, 115 vs 68/136 BPM). The block rate across an album is unmeasured: run one small album before touching thresholds.
+- Gemini does not enforce string `max_length` in schema mode: SSC's first Call A came back with a 312-character `narrative_map` and was caught by Pydantic as G4; the re-run was clean. Either raise the string caps or accept one re-run on long tracks.
+- Call B truncation is intermittent: the same SSC track returned cut-off JSON once ("EOF while parsing", a red row saying the description couldn't be written) and wrote cleanly on the next run. Thinking tokens count against `max_output_tokens`, so 2500 may be tight for Call B. Raising it is a config change Damir has not approved.
+- The block rate across a whole album is still unmeasured: three tracks are not an album.
 
 ## Self-agreement runs
 Written by scripts/self_agreement.py.

@@ -64,6 +64,24 @@ class TestMeasure(WaveCase):
         self.assertTrue(10.0 <= m["loudest_t"] <= 13.0, m["loudest_t"])
         self.assertIn(m["peaks_t"][0], (10.0, 11.0, 12.0))
 
+    def test_tempo_keys_are_measured(self):
+        m = self.measure(np.concatenate([tone(4), silence(1), tone(4)]))
+        self.assertIn("tempo_candidates", m)
+        self.assertIsInstance(m["tempo_confident"], bool)
+        for c in m["tempo_candidates"]:
+            self.assertTrue(waveform.TEMPO_MIN_BPM <= c <= waveform.TEMPO_MAX_BPM, c)
+
+    def test_two_competing_pulses_are_not_confident(self):
+        """A rival peak within 75% of the top means the tempo is ambiguous."""
+        clicks = np.zeros(int(12 * SR))
+        for i in range(0, int(12 * SR), int(0.5 * SR)):           # 120 BPM
+            clicks[i:i + 200] += 0.8
+        for i in range(int(0.25 * SR), int(12 * SR), int(0.5 * SR)):  # offbeat, same strength
+            clicks[i:i + 200] += 0.8
+        _, candidates, confident = waveform.measure_tempo(clicks.astype(np.float32), SR)
+        self.assertTrue(candidates)
+        self.assertFalse(confident)
+
     def test_top_peaks_are_spaced(self):
         self.assertEqual(waveform.top_peaks([0, 9, 8, 7, 0, 0, 0, 6, 0, 0, 0, 0, 5]), [1.0, 7.0, 12.0])
 

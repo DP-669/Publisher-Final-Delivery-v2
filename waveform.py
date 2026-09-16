@@ -28,6 +28,9 @@ HOP = 512
 AUDIBLE_CAP_DB = -50.0
 LOUD_WINDOW_DB = 6.0
 DECAY_LOOKBACK_S = 8.0
+TEMPO_MIN_BPM, TEMPO_MAX_BPM = 50.0, 200.0
+TEMPO_SEPARATION_BPM = 4.0
+TEMPO_RIVAL_RATIO = 0.75   # a second peak this close in strength means the tempo is ambiguous
 
 
 def measure_waveform(path: str) -> dict:
@@ -63,15 +66,52 @@ def measure_waveform(path: str) -> dict:
     per_sec = [float(db[(t >= i) & (t < i + 1)].mean()) if ((t >= i) & (t < i + 1)).any() else float(floor)
                for i in range(int(dur))]
 
-    tempo_bpm = None
-    if dur >= 4:
-        tempo = np.atleast_1d(librosa.beat.beat_track(y=y, sr=sr)[0])
-        tempo_bpm = float(tempo[0]) if len(tempo) and tempo[0] > 0 else None
+    tempo_bpm, candidates, confident = measure_tempo(y, sr, hop) if dur >= 4 else (None, [], False)
 
     return dict(duration=dur, first_sound_t=first_sound, loudest_t=loudest,
                 quietest_t=quietest, tail_silence=tail_silence,
                 decay_seconds=decay_s, per_sec_db=per_sec,
-                peaks_t=top_peaks(per_sec), tempo_bpm=tempo_bpm)
+                peaks_t=top_peaks(per_sec), tempo_bpm=tempo_bpm,
+                tempo_candidates=candidates, tempo_confident=confident)
+
+
+def measure_tempo(y, sr: int, hop: int = HOP):
+    """
+    (primary bpm, candidates, confident).
+
+    Candidates are the strongest peaks of the onset-strength autocorrelation.
+    `confident` means one tempo stands alone: no rival peak within
+    TEMPO_RIVAL_RATIO of the top (a half/double pair is a rival, not a
+    confirmation), and librosa's own beat tracker agrees with it or with its
+    half/double. Ambiguity is not a hallucination — G10 never blocks on it.
+    """
+    import librosa
+
+    onset = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
+    if onset.size < 8:
+        return None, [], False
+    ac = librosa.autocorrelate(onset, max_size=onset.size)
+    lags = np.arange(1, len(ac))
+    bpms = 60 * sr / hop / lags
+    keep = (bpms >= TEMPO_MIN_BPM) & (bpms <= TEMPO_MAX_BPM)
+    bpms, strengths = bpms[keep], ac[1:][keep]
+    if not len(bpms):
+        return None, [], False
+
+    picked = []
+    for i in np.argsort(strengths)[::-1]:
+        if all(abs(bpms[i] - b) > TEMPO_SEPARATION_BPM for b, _ in picked):
+            picked.append((float(bpms[i]), float(strengths[i])))
+        if len(picked) == 3:
+            break
+    top_bpm, top_strength = picked[0]
+    rivals = [b for b, s in picked[1:] if top_strength > 0 and s >= TEMPO_RIVAL_RATIO * top_strength]
+
+    beat = np.atleast_1d(librosa.beat.beat_track(onset_envelope=onset, sr=sr, hop_length=hop)[0])
+    beat_bpm = float(beat[0]) if beat.size and beat[0] > 0 else None
+    agrees = beat_bpm is not None and any(abs(beat_bpm - c) <= 0.10 * c
+                                          for c in (top_bpm, top_bpm * 2, top_bpm / 2))
+    return top_bpm, [b for b, _ in picked], bool(not rivals and agrees)
 
 
 def top_peaks(per_sec_db: List[float], count: int = 3, min_gap_s: int = 5) -> List[float]:

@@ -16,6 +16,7 @@ MEASURED = {
     "tail_silence": 1.0, "decay_seconds": 2.5,
     "per_sec_db": [-30.0] * 20 + [-20.0] * 20 + [-10.0] * 20,
     "peaks_t": [40.0, 46.0, 52.0], "tempo_bpm": 120.0,
+    "tempo_candidates": [120.0], "tempo_confident": True,
 }
 
 

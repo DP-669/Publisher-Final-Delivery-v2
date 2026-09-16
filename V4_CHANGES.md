@@ -2,7 +2,7 @@
 
 Branch `v4-rebuild`, cut from `v3-final` (tag on `5352af9`, the v3-build head). The rejected `gate-calibration` branch is untouched.
 
-**Status (2026-09-15):** built, and live-verified on three tracks, one per catalog. Call A runs in schema mode (`response_schema=Analysis`), with an automatic, visible fallback to prompt mode if Gemini rejects the schema (GATE_FIX.md → "Call A schema path"). rC was blocked legitimately; SSC passed with a note; EPP passed. No full album has been run yet.
+**Status (2026-09-15):** built, and live-verified on three tracks, one per catalog. Call A runs in schema mode (`response_schema=Analysis`), with an automatic, visible fallback to prompt mode if Gemini rejects the schema (GATE_FIX.md → "Call A schema path"). After the 2026-09-16 gate calibration (G5 compared at 0.1 s; G10 only on a tempo librosa is confident about), all three tracks pass. No full album has been run yet.
 
 ## Gate
 See GATE_FIX.md. In short:
