@@ -11,7 +11,7 @@ One web app that turns a folder of finished MP3s into the metadata package Vesna
 - **Every album is captured** as before: the app's DRAFT and Vesna's FINAL, compared automatically.
 
 ## Running an album — Damir (iPad)
-1. **Start:** tap the catalog, paste the Dropbox folder link. The app shows the album code, how many audio files it found and roughly how long it will take. Tap **Analyze album** and leave it. You can stop it and resume later.
+1. **Start:** tap the catalog, then give the app the audio. Either paste a Dropbox link — an album folder, a folder of loose files, or a single file — or switch to **Upload files** and drop files in from the iPad or a computer. The app shows the album code, how many audio files it found and roughly how long it will take. Tap **Analyze** and leave it. You can stop it and resume later. One file goes through exactly the same listen and checks as a track in an album.
 2. **Review:** the table opens on **Needs a look**.
    - **Green** needs nothing.
    - **Amber** is ready, with a note: the app wasn't sure about an instrument. If you can hear it, tap **Add it** and the description is rewritten.

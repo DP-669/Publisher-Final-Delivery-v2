@@ -117,6 +117,47 @@ class FileEntry:
     notes: str = ""     # Alt mix: omitted elements. Cutdown: duration.
 
 
+def detect_mix_type(name: str) -> str:
+    """
+    Mix type from a file name, for loose Dropbox files and manual uploads.
+    full | sparse | sound_design — the three kinds that go through the listen.
+    """
+    n = os.path.splitext(name)[0].lower()
+    if any(x in n for x in ("sparse", "sparce", "sprs", "sp_")):
+        return "sparse"
+    if any(x in n for x in ("sound design", "sound_design", "sde", "element")):
+        return "sound_design"
+    return "full"
+
+
+def _entry_for(meta, mix_type: str, parent_track: str = "") -> FileEntry:
+    title = _clean_title(meta.name)
+    category = {"sparse": "sparse_mix", "sound_design": "sound_design"}.get(mix_type, "full_mix")
+    return FileEntry(
+        display_name=title,
+        dropbox_path=getattr(meta, "path_lower", "") or getattr(meta, "path_display", ""),
+        file_id=getattr(meta, "id", ""),
+        size=getattr(meta, "size", 0),
+        category=category,
+        parent_track=parent_track or title,
+        mix_type=mix_type,
+    )
+
+
+def single_file_entry(dbx, path: str) -> FileEntry:
+    """One audio file shared by its own link. It goes through the same analysis as an album track."""
+    meta = dbx.files_get_metadata(path)
+    return _entry_for(meta, detect_mix_type(meta.name))
+
+
+def loose_audio_entries(dbx, folder_path: str) -> List[FileEntry]:
+    """Audio sitting directly in a folder, with no track subfolders. Sorted by name."""
+    import dropbox as dbx_mod
+    out = [_entry_for(e, detect_mix_type(e.name)) for e in _list_folder(dbx, folder_path)
+           if isinstance(e, dbx_mod.files.FileMetadata) and _is_audio(e.name)]
+    return sorted(out, key=lambda e: e.display_name.lower())
+
+
 @dataclass
 class CrawlResult:
     album_name: str

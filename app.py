@@ -25,12 +25,13 @@ import models as model_registry
 import rules
 from analysis_schema import family_label, find_observation
 from dropbox_pipeline import (
-    crawl_album_folder, generate_alt_description, generate_cutdown_description, is_quota_error,
-    resolve_shared_link, send_ntfy,
+    crawl_album_folder, detect_mix_type, generate_alt_description, generate_cutdown_description, is_quota_error,
+    loose_audio_entries, resolve_shared_link, send_ntfy, single_file_entry,
 )
 from engine import (
     CLAUDE_PIN_EXPLICIT, CLAUDE_WRITING_MODEL, GEMINI_AUDIO_MODEL, GEMINI_PIN_EXPLICIT, SECONDS_PER_TRACK,
-    SKIPPED, WRITER_MODES, ClaudeError, IngestionEngine, _secret_value, is_alt_or_cutdown, remaining_uncertain,
+    SKIPPED, WRITER_MODES, ClaudeError, IngestionEngine, _secret_value, base_title, is_alt_or_cutdown,
+    remaining_uncertain,
 )
 from pfd_errors import report
 
@@ -39,7 +40,8 @@ st.set_page_config(page_title="Publisher Final Delivery", page_icon="🎵", layo
 
 st.markdown("""
 <style>
-    .block-container { max-width: 1100px; padding-top: 1.5rem; }
+    /* Streamlit's own header floats over the top of the page; keep the step bar clear of it. */
+    .block-container { max-width: 1100px; padding-top: 5rem; }
     div[data-testid="stButton"] button[kind] p { font-size: 1rem; }
     .pfd-catalog button { min-height: 4.5rem; }
     .pfd-catalog button p { font-size: 1.15rem !important; font-weight: 600; }
@@ -66,7 +68,8 @@ if "engine" not in ss:
 eng: IngestionEngine = ss.engine
 for _k, _v in {"step": "start", "album": None, "running": False, "dirty": False, "confirm_reset": False,
                "catalog_choice": None, "selected": None, "editor_nonce": 0, "folder_checks": {},
-               "fix_mode": "", "export_result": None, "field_ver": 0, "audio_cache": {}}.items():
+               "fix_mode": "", "export_result": None, "field_ver": 0, "audio_cache": {},
+               "uploads": {}}.items():
     if _k not in ss:
         ss[_k] = _v
 
@@ -161,18 +164,44 @@ def reset_album():
     for key in ("album", "selected", "export_result"):
         ss[key] = None
     ss.update(step="start", running=False, dirty=False, confirm_reset=False, fix_mode="", folder_checks={},
-              catalog_choice=None)
-    ss.pop("link_input", None)
-    ss.pop("code_input", None)
+              catalog_choice=None, uploads={}, audio_cache={})
+    for key in ("link_input", "code_input", "upload_code", "upload_input"):
+        ss.pop(key, None)
+
+
+def track_bytes(track: dict) -> bytes:
+    """The audio behind a track: an uploaded file from this session, or its Dropbox path."""
+    key = track.get("Upload Key")
+    if key:
+        data = ss.uploads.get(key)
+        if data is None:
+            raise RuntimeError("That file was uploaded in an earlier session. Upload it again to re-run this track.")
+        return data
+    return eng.download_bytes_from_dropbox(dropbox_token, track["Source Path"])
+
+
+def track_extension(track: dict) -> str:
+    name = track.get("Upload Key") or track.get("Source Path", "")
+    return os.path.splitext(name)[1] or ".mp3"
 
 
 def track_audio(track: dict):
+    if track.get("Upload Key"):
+        return ss.uploads.get(track["Upload Key"])
     path = track.get("Source Path", "")
     if not path:
         return None
     if path not in ss.audio_cache:
         ss.audio_cache = {path: eng.download_bytes_from_dropbox(dropbox_token, path)}  # keep one file in memory
     return ss.audio_cache[path]
+
+
+def can_listen_again(track: dict) -> bool:
+    if is_alt_or_cutdown(track) or not gemini_api_key:
+        return False
+    if track.get("Upload Key"):
+        return track["Upload Key"] in ss.uploads
+    return bool(track.get("Source Path") and dropbox_configured)
 
 
 def mix_for(entry: dict) -> str:
@@ -187,25 +216,50 @@ def recent_albums(configured: bool) -> list:
 
 
 def folder_check(link: str, catalog: str) -> dict:
-    """Resolve the link and count audio, once per link."""
+    """
+    Resolve a Dropbox link once. Three shapes, all analysed the same way:
+    an album folder with track subfolders, a folder of loose audio files, or one file.
+    """
     if link in ss.folder_checks:
         return ss.folder_checks[link]
-    out = {"ok": False, "error": ""}
+    out = {"ok": False, "error": "", "kind": "", "analyzable": [], "auto": []}
     try:
         dbx = dbx_client()
-        album_path = resolve_shared_link(dbx, link)
-        if os.path.splitext(album_path)[1].lower() in AUDIO_FORMATS:
-            raise ValueError("This link points to a single file, not an album folder.")
-        crawl = crawl_album_folder(dbx, album_path, catalog)
-        out.update(ok=True, album_path=album_path, folder_name=crawl.album_name,
-                   code=capture.detect_album_code(crawl.album_name, album_path),
-                   analyzable=[dataclasses.asdict(e) for e in crawl.analyzable],
-                   auto=[dataclasses.asdict(e) for e in crawl.auto_described])
+        path = resolve_shared_link(dbx, link)
+        if os.path.splitext(path)[1].lower() in AUDIO_FORMATS:
+            entry = single_file_entry(dbx, path)
+            folder = os.path.dirname(path)
+            out.update(ok=True, kind="file", album_path=folder, folder_name=os.path.basename(folder),
+                       code=capture.detect_album_code(entry.display_name, path),
+                       analyzable=[dataclasses.asdict(entry)])
+        else:
+            crawl = crawl_album_folder(dbx, path, catalog)
+            entries = [dataclasses.asdict(e) for e in crawl.analyzable]
+            auto = [dataclasses.asdict(e) for e in crawl.auto_described]
+            kind = "album"
+            if not entries and not auto:  # loose files, no track subfolders
+                entries = [dataclasses.asdict(e) for e in loose_audio_entries(dbx, path)]
+                kind = "files"
+            out.update(ok=True, kind=kind, album_path=path, folder_name=crawl.album_name,
+                       code=capture.detect_album_code(crawl.album_name, path),
+                       analyzable=entries, auto=auto)
     except Exception as exc:
-        report("Could not read that Dropbox folder", exc, show=False)
+        report("Could not read that Dropbox link", exc, show=False)
         out["error"] = f"{type(exc).__name__}: {exc}"
     ss.folder_checks[link] = out
     return out
+
+
+def upload_entries(files) -> tuple:
+    """(entries, {name: bytes}) for manually uploaded audio."""
+    entries, blobs = [], {}
+    for f in files or []:
+        title = os.path.splitext(f.name)[0]
+        blobs[f.name] = f.getvalue()
+        entries.append({"display_name": title, "dropbox_path": "", "file_id": "", "size": len(blobs[f.name]),
+                        "category": "full_mix", "parent_track": base_title(title),
+                        "mix_type": detect_mix_type(f.name), "notes": "", "upload_key": f.name})
+    return entries, blobs
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -290,11 +344,18 @@ def render_progress():
         header.markdown(f"#### Track {done + 1} of {total} — listening…\n{entry['display_name']}")
         bar.progress(done / total if total else 0.0)
         mix = mix_for(entry)
-        ext = os.path.splitext(entry["dropbox_path"])[1]
+        upload_key = entry.get("upload_key", "")
+        ext = os.path.splitext(upload_key or entry["dropbox_path"])[1] or ".mp3"
         try:
-            data = eng.download_bytes_from_dropbox(dropbox_token, entry["dropbox_path"])
+            if upload_key:
+                data = ss.uploads.get(upload_key)
+                if data is None:
+                    raise RuntimeError("that file was uploaded in an earlier session — upload it again")
+            else:
+                data = eng.download_bytes_from_dropbox(dropbox_token, entry["dropbox_path"])
             track = eng.process_track(entry["display_name"], mix, data, ext, catalog, gemini_api_key, claude_api_key,
                                       album_lane(), entry["dropbox_path"], entry["parent_track"])
+            track["Upload Key"] = upload_key
         except Exception as exc:
             report(f"Analysis failed — {entry['display_name']}", exc)
             if is_quota_error(exc):
@@ -307,6 +368,7 @@ def render_progress():
                 st.rerun()
             track = eng.blocked_record(entry["display_name"], mix, gate.failure("API", error=str(exc)[:300]),
                                        catalog, entry["dropbox_path"], entry["parent_track"])
+            track["Upload Key"] = upload_key
         put_track(track)
         album["pending"].pop(0)
         eng.refresh_statuses(album, catalog)
@@ -327,17 +389,21 @@ def render_progress():
     st.rerun()
 
 
-def start_album(catalog: str, link: str, check: dict, code: str):
+def start_album(catalog: str, code: str, entries: list, auto: list, check: dict, uploads: dict):
+    """A folder, a handful of loose files, one file or an upload — all start a run the same way."""
     now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    ss.uploads = dict(uploads)
     ss.album = {
-        "album_code": code, "catalog": catalog, "shared_link": link, "album_path": check["album_path"],
-        "album_folder_name": check["folder_name"], "created": now, "updated": now, "run_status": "analyzing",
-        "pending": list(check["analyzable"]), "total": len(check["analyzable"]), "tracks": [],
+        "album_code": code, "catalog": catalog, "shared_link": ss.get("link_input", ""),
+        "album_path": check.get("album_path", ""),
+        "album_folder_name": check.get("folder_name") or code, "created": now, "updated": now,
+        "run_status": "analyzing", "input": "upload" if uploads else (check.get("kind") or "album"),
+        "pending": list(entries), "total": len(entries), "tracks": [],
         "lane": None, "lane_proposed": None, "album_description": "", "album_name_candidates": [],
         "album_name_rationales": {}, "album_name_selected": "", "mailchimp_intro": "", "cover_art": "",
         "writer_test": {}, "exported_at": None,
     }
-    for e in check["auto"]:
+    for e in auto:
         desc = (generate_alt_description(e["parent_track"], e["notes"]) if e["category"] == "alt_mix"
                 else generate_cutdown_description(e["parent_track"], e["notes"]))
         ss.album["tracks"].append({"Title": e["display_name"], "Mix Type": e["mix_type"],
@@ -431,39 +497,58 @@ def render_start():
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    c_link, c_code = st.columns([5, 1])
-    link = c_link.text_input("Paste the Dropbox folder link", key="link_input",
-                             placeholder="https://www.dropbox.com/scl/fo/…").strip()
-    check, code, problem = {}, "", ""
-    if link:
-        if not dropbox_configured:
-            problem = "Dropbox is not configured, so the folder can't be read."
-        else:
-            with st.spinner("Checking the folder…"):
+    st.markdown("#### Audio")
+    source = st.radio("Where the audio is", ["Dropbox link", "Upload files"], horizontal=True,
+                      key="input_mode", label_visibility="collapsed")
+
+    check, entries, auto, uploads, code, problem, has_input = {}, [], [], {}, "", "", False
+    if source == "Dropbox link":
+        c_link, c_code = st.columns([5, 1])
+        link = c_link.text_input("Paste a Dropbox link — an album folder, a folder of files, or a single file",
+                                 key="link_input", placeholder="https://www.dropbox.com/scl/fo/…").strip()
+        has_input = bool(link)
+        if link and not dropbox_configured:
+            problem = "Dropbox is not configured, so the link can't be read."
+        elif link:
+            with st.spinner("Checking the link…"):
                 check = folder_check(link, ss.catalog_choice or "")
             if not check.get("ok"):
                 problem = f"That link couldn't be opened. {check.get('error', '')}"
-    if check.get("ok"):
-        if check["code"]:
-            code = check["code"]
-            c_code.text_input("Album code", value=code, disabled=True, key=f"code_shown_{code}")
-        else:
-            code = c_code.text_input("Album code", key="code_input", placeholder="SSC042").strip().upper()
-        n = len(check["analyzable"])
+            else:
+                entries, auto = check["analyzable"], check["auto"]
+                if check["code"]:
+                    code = check["code"]
+                    c_code.text_input("Album code", value=code, disabled=True, key=f"code_shown_{code}")
+                else:
+                    code = c_code.text_input("Album code", key="code_input", placeholder="SSC042").strip().upper()
+    else:
+        files = st.file_uploader("Audio files", type=sorted(e.lstrip(".") for e in AUDIO_FORMATS),
+                                 accept_multiple_files=True, key="upload_input")
+        code = st.text_input("Album code", key="upload_code", placeholder="SSC042").strip().upper()
+        has_input = bool(files)
+        entries, uploads = upload_entries(files)
+
+    if has_input and not problem:
+        n = len(entries)
         prefix = re.match(r"(EPP|RC|SSC)", code or "", flags=re.IGNORECASE)
         detected = rules.catalog_code(prefix.group(1)) if prefix else None
         if not n:
-            problem = "No audio files were found in that folder."
+            problem = ("No audio files were found behind that link." if source == "Dropbox link"
+                       else "None of those files are audio.")
         elif not code:
-            problem = "The album code couldn't be read from the folder name. Type it in."
+            problem = ("The album code couldn't be read from the name. Type it in." if source == "Dropbox link"
+                       else "Type the album code for these files.")
         elif ss.catalog_choice and detected and detected != ss.catalog_choice:
-            problem = (f"This folder is {code}, which is {CATALOG_NAMES[detected]} — "
+            problem = (f"This is {code}, which is {CATALOG_NAMES[detected]} — "
                        f"not {CATALOG_NAMES[ss.catalog_choice]}.")
         else:
             minutes = max(1, round(n * SECONDS_PER_TRACK / 60))
-            st.success(f"{code} · {n} audio files found · about {minutes} minutes")
-            if check["auto"]:
-                st.caption(f"Plus {len(check['auto'])} alt mixes and cutdowns, described from their folder names.")
+            st.success(f"{code} · {n} audio file{'' if n == 1 else 's'} found · "
+                       f"about {minutes} minute{'' if minutes == 1 else 's'}")
+            if auto:
+                st.caption(f"Plus {len(auto)} alt mixes and cutdowns, described from their folder names.")
+            if check.get("kind") == "file":
+                st.caption("A single file runs through the same listen and checks as a track in an album.")
             if any(r["code"] == code for r in (recent_albums(dropbox_configured) if dropbox_configured else [])):
                 st.caption(f"{code} has been analyzed before. Analyzing again replaces its saved progress.")
     if problem:
@@ -471,9 +556,10 @@ def render_start():
     if not gemini_api_key:
         st.caption("The Gemini API key is missing from the app's secrets.")
 
-    ready = bool(ss.catalog_choice and link and check.get("ok") and code and not problem and gemini_api_key)
-    if st.button("Analyze album", type="primary", disabled=not ready, key="analyze_album"):
-        start_album(ss.catalog_choice, link, check, code)
+    ready = bool(ss.catalog_choice and entries and code and not problem and gemini_api_key)
+    label = "Analyze" if len(entries) == 1 else "Analyze album"
+    if st.button(label, type="primary", disabled=not ready, key="analyze_album"):
+        start_album(ss.catalog_choice, code, entries, auto, check, uploads)
         st.rerun()
 
     st.divider()
@@ -642,13 +728,14 @@ def render_album_details(album: dict):
 
 def rerun_listen(track: dict, correction: str = ""):
     album = ss.album
-    ext = os.path.splitext(track.get("Source Path", ""))[1]
     with st.spinner("Listening again…"):
         try:
-            data = eng.download_bytes_from_dropbox(dropbox_token, track["Source Path"])
-            new = eng.process_track(track["Title"], track.get("Mix Type", "full"), data, ext, album["catalog"],
-                                    gemini_api_key, claude_api_key, album_lane(), track["Source Path"],
-                                    track.get("Parent Track", ""), correction=correction)
+            data = track_bytes(track)
+            new = eng.process_track(track["Title"], track.get("Mix Type", "full"), data, track_extension(track),
+                                    album["catalog"], gemini_api_key, claude_api_key, album_lane(),
+                                    track.get("Source Path", ""), track.get("Parent Track", ""),
+                                    correction=correction)
+            new["Upload Key"] = track.get("Upload Key", "")
             put_track(new)
         except Exception as exc:
             report(f"Couldn't listen again to {track['Title']}", exc)
@@ -698,9 +785,13 @@ def render_fix_panel(track: dict):
         ss.fix_mode = ""
         st.rerun()
 
-    if track.get("Source Path") and dropbox_configured and not is_alt_or_cutdown(track):
+    if not is_alt_or_cutdown(track) and (track.get("Upload Key") or (track.get("Source Path") and dropbox_configured)):
         try:
-            st.audio(track_audio(track), format=AUDIO_FORMATS.get(os.path.splitext(track["Source Path"])[1], "audio/mpeg"))
+            audio = track_audio(track)
+            if audio:
+                st.audio(audio, format=AUDIO_FORMATS.get(track_extension(track), "audio/mpeg"))
+            else:
+                st.caption("That file was uploaded in an earlier session, so it can't be played here.")
         except Exception as exc:
             report("Couldn't load the audio", exc)
 
@@ -714,7 +805,7 @@ def render_fix_panel(track: dict):
             st.write(track["Track Description"])
 
         c = st.columns(4)
-        can_listen = bool(track.get("Source Path") and gemini_api_key and dropbox_configured) and not is_alt_or_cutdown(track)
+        can_listen = can_listen_again(track)
         if c[0].button("Run again", key="fix_run", type="primary", disabled=not can_listen):
             if track.get("PFD_Reason_Kind") == "text" and track.get("analysis"):
                 with st.spinner("Writing again…"):
