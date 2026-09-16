@@ -111,6 +111,12 @@ v3 entries above that mention tabs, the second listen or the writer test are sup
 - The text checks (`description_reasons`, `keyword_reasons`, `fits_reasons`) return failure dicts instead of strings; `gate.reason_text` keeps the old wording for model prompts, `gate.normalize` reads reasons written by older versions · one shape everywhere the app shows a block · git history.
 - Override: an editor who has listened can pass a blocked track with a typed reason. It clears the listen rules only — the text rules still apply — and the reason is written to the row and the CSV · LOCKED says BLOCKED is never *silently* converted; this is explicit and recorded · `engine.override_track`.
 
+## Revision capture (2026-09-16, Damir) — the next RSI layer
+- Every edit to generated copy keeps both versions: `PFD_Generated` pins what the machine wrote when Call B wrote it, and each edit appends an entry to the track's `PFD_Log` — the same JSON the override log uses, so it travels in state.json · edits used to overwrite the generated text and it was gone · `engine.record_revision`, `engine.generated_text`.
+- An entry carries action (edit / manual), time, field, the generated baseline, from, to, catalog, album code, track id, title, mix type and the writer mode · style learning needs the catalog and the track the copy belongs to, not just the words · `engine.record_revision`.
+- Captured from the Review table (Description and Keywords) and from "I'll write it". Album description, names and the MailChimp intro are not captured yet · the brief names the track descriptions in Review · add the same call in `render_album_details`.
+- **Capture only. Nothing reads the log yet.** The analysis layer — what the team consistently changes, per catalog, and what that implies for PFD_RULES.md — is the next RSI layer after the stability fixes have been used on real albums. It is deliberately not built now.
+
 ## Open
 - Gemini does not enforce string `max_length` in schema mode: SSC's first Call A came back with a 312-character `narrative_map` and was caught by Pydantic as G4; the re-run was clean. Either raise the string caps or accept one re-run on long tracks.
 - Call B truncation is intermittent: the same SSC track returned cut-off JSON once ("EOF while parsing", a red row saying the description couldn't be written) and wrote cleanly on the next run. Thinking tokens count against `max_output_tokens`, so 2500 may be tight for Call B. Raising it is a config change Damir has not approved.

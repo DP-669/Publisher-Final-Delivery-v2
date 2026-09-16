@@ -124,6 +124,46 @@ OVERRIDE = "OVERRIDE"
 ANALYSED_MIXES = ("full", "full_mix", "sparse", "sound_design", "sde", "unknown")
 
 
+def _now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def generated_text(track: Dict, field: str) -> str:
+    """What the machine wrote for a field, before any human touched it."""
+    return (track.get("PFD_Generated") or {}).get(field, "")
+
+
+def record_revision(track: Dict, field: str, before: str, after: str, catalog: str,
+                    album_code: str = "", action: str = "edit") -> Dict:
+    """
+    Keep both versions of a piece of copy: what the machine wrote and what the
+    editor changed it to, with the catalog and the track it belongs to. Written
+    into the track's PFD_Log, the same JSON the override log uses, so it travels
+    in state.json. Nothing reads these yet — this is capture only, the first
+    layer of style learning (DECISIONS.md → "Next RSI layer").
+    """
+    entry = {
+        "action": action,
+        "at": _now(),
+        "field": field,
+        "generated": generated_text(track, field),
+        "from": before,
+        "to": after,
+        "catalog": rules.catalog_code(catalog) if catalog else "",
+        "album_code": album_code,
+        "track_id": track_key(track),
+        "track": track.get("Title", ""),
+        "mix_type": track.get("Mix Type", ""),
+        "writer": rules.setting("track_writer"),
+    }
+    track.setdefault("PFD_Log", []).append(entry)
+    return entry
+
+
+def revisions(track: Dict) -> List[Dict]:
+    return [e for e in track.get("PFD_Log") or [] if e.get("action") in ("edit", "manual")]
+
+
 def override_reason(track: Dict) -> str:
     """The typed reason, whatever shape the record was written in."""
     o = track.get("PFD_Override")
@@ -441,6 +481,9 @@ class IngestionEngine:
         track["Tip"] = writing.tip
         track["Gemini Description"] = writing.description
         track["Track Description"] = self.finish_description(track, catalog, claude_api_key, lane, mode)
+        # The baseline a later human edit is measured against.
+        track["PFD_Generated"] = {"Track Description": track["Track Description"],
+                                  "Keywords": track.get("Keywords", ""), "at": _now()}
         track.pop("PFD_Write_Error", None)
         if lane:
             gate.apply_lane(track, lane)
@@ -696,15 +739,17 @@ class IngestionEngine:
         return wrote
 
     def manual_description(self, track: Dict, text: str, catalog: str, gemini_api_key: str,
-                           lane: Optional[str] = None, keywords: str = "") -> List[Dict]:
+                           lane: Optional[str] = None, keywords: str = "", album_code: str = "") -> List[Dict]:
         """
         "I'll write it". Returns the rule problems in the text; nothing is saved
         while there are any. Keywords come from Call B when there is an analysis;
-        otherwise the editor types them.
+        otherwise the editor types them. Both versions are kept.
         """
         problems = gate.description_reasons(text, catalog, base_title(track.get("Title", "")), lane)
         if problems:
             return problems
+        record_revision(track, "Track Description", track.get("Track Description", ""), text.strip(),
+                        catalog, album_code, action="manual")
         track["Track Description"] = text.strip()
         track["PFD_Manual"] = True
         track.pop("PFD_Write_Error", None)

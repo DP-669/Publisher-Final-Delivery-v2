@@ -645,11 +645,17 @@ def apply_table_edits(editor_key: str, ids: list):
             opened = True
         if track.get("PFD_Status") == gate.BLOCKED:
             continue  # blocked rows show a reason, not copy; they are fixed in the panel
+        code = (album or {}).get("album_code", "")
         if "Description" in change and change["Description"] != track.get("Track Description", ""):
+            # Both versions are kept: what the machine wrote, and this edit.
+            eng.record_revision(track, "Track Description", track.get("Track Description", ""),
+                                change["Description"], album["catalog"], code)
             track["Track Description"] = change["Description"]
             changed = True
         if ("Keywords" in change and not is_alt_or_cutdown(track)
                 and change["Keywords"] != track.get("Keywords", "")):
+            eng.record_revision(track, "Keywords", track.get("Keywords", ""), change["Keywords"],
+                                album["catalog"], code)
             track["Keywords"] = change["Keywords"]
             changed = True
         if changed:
@@ -940,7 +946,8 @@ def render_fix_panel(track: dict):
             if st.button("Save", key="fix_manual_save", type="primary", disabled=not text.strip()):
                 try:
                     with st.spinner("Saving and writing keywords…"):
-                        problems = eng.manual_description(track, text, catalog, gemini_api_key, album_lane(), keywords)
+                        problems = eng.manual_description(track, text, catalog, gemini_api_key, album_lane(),
+                                                          keywords, album.get("album_code", ""))
                 except Exception as exc:
                     report("Keywords couldn't be written for the manual description", exc)
                     problems = []
@@ -999,6 +1006,15 @@ def render_fix_panel(track: dict):
         st.write(track["Track Description"])
     if track.get("Sections"):
         st.caption(f"Sections: {track['Sections']}")
+    edits = [e for e in (track.get("PFD_Log") or []) if e.get("action") in ("edit", "manual")]
+    if edits:
+        with st.expander(f"Your edits ({len(edits)})"):
+            st.caption("Both versions are kept: what the app wrote, and what you changed it to.")
+            for e in reversed(edits):
+                st.markdown(f"**{e['field']}** · {e['at'][:16].replace('T', ' ')} UTC")
+                if e.get("generated"):
+                    st.caption(f"The app wrote: {e['generated']}")
+                st.caption(f"You changed it to: {e['to']}")
     if ss.get("compare_styles") and track.get("analysis"):
         st.markdown("**Compare writing styles**")
         render_compare(track)
