@@ -13,7 +13,10 @@ A track is PASSED, PASSED_WITH_UNCERTAINTY or BLOCKED.
   were marked uncertain. Uncertainty never blocks; uncertain families are
   simply never mentioned in copy.
 
-Rule IDs (G1…G16) are internal. The app shows plain_reason() sentences only.
+Every blocked track carries structured reasons. explain() turns one into the
+four things the team needs: the check that failed (G1…G17 or a named text
+check), the values that disagreed, what that means, and what to do next.
+summary() is the one-line form for the table, export_line() the one for the CSV.
 """
 import logging
 import re
@@ -385,67 +388,255 @@ def _s(seconds) -> str:
     return f"{float(seconds):.1f}"
 
 
-def plain_reason(f: Dict) -> str:
+# Every blocked track shows four things: which check failed, the values that
+# disagreed, what that means in plain English, and what to do next. The app
+# never shows a reason without all four — Damir's team acts on these.
+
+LISTEN_ACTION = ("Play the track above. If the analysis is right, press Override to let it through. "
+                 "If it is wrong, press Tell it what's true and say what is actually there, or Run again "
+                 "for a fresh listen.")
+TEXT_ACTION = "Press Run again to rewrite it, or edit the text in the table. I'll write it replaces it by hand."
+
+
+def _labels(paths) -> str:
+    return ", ".join(family_label(p) for p in paths or [])
+
+
+def explain(f: Dict) -> Dict:
+    """{code, check, values, meaning, action} for one failure. Never returns a bare sentence."""
     r = f.get("rule")
+    e = lambda code, check, values, meaning, action: {
+        "code": code, "check": check, "values": values, "meaning": meaning, "action": action}
+
+    # ── The listen against the file ───────────────────────────────────────────
     if r == "G1":
         if f.get("backwards"):
-            return f"It placed {f['what']} so that it ends before it starts."
-        return f"It put {f['what']} at {_s(f['t'])} s, but the file is only {_s(f['duration'])} seconds long."
+            return e("G1", "Timing", f"{f.get('what', 'a moment')} ends before it starts",
+                     "A moment in the analysis runs backwards, so its timing can't be trusted.", LISTEN_ACTION)
+        return e("G1", "Timing", f"{f.get('what', 'a moment')} at {_s(f.get('t', 0))} s · "
+                                 f"file is {_s(f.get('duration', 0))} s long",
+                 "The analysis put a moment past the end of the file, so it wasn't listening to this audio.",
+                 LISTEN_ACTION)
     if r == "G2":
-        return {
-            "too_many": f"It split the track into {f.get('count')} sections; the most allowed is {MAX_SECTIONS}.",
-            "backwards": "One of its sections ends before it starts.",
-            "unordered": "Its sections are out of order.",
-            "overlap": "Two of its sections overlap, so its map of the track can't be trusted.",
-            "coverage": f"Its sections only cover {f.get('pct', 0):.0f}% of the track.",
-        }.get(f.get("problem"), "Its map of the track's sections doesn't hold together.")
+        values = {
+            "too_many": f"{f.get('count')} sections · most allowed {MAX_SECTIONS}",
+            "backwards": f"section '{f.get('label', '')}' ends before it starts",
+            "unordered": f"section '{f.get('label', '')}' is out of order",
+            "overlap": f"section '{f.get('label', '')}' overlaps the one before it",
+            "coverage": f"sections cover {f.get('pct', 0):.0f}% of the track · needs "
+                        f"{SECTION_COVERAGE_MIN:.0%}",
+        }.get(f.get("problem"), "the section list doesn't hold together")
+        return e("G2", "Sections", values,
+                 "Its map of the track's sections doesn't line up with the file.", LISTEN_ACTION)
     if r == "G3":
         name = family_label(f.get("family", ""))
-        return {
-            "no_evidence": f"It said there is {name} but didn't point to where you can hear it.",
-            "low_confidence": f"It said there is {name} but wasn't confident enough to claim it.",
-            "no_prominence": f"It said there is {name} but not how prominent it is in the mix.",
-        }.get(f.get("problem"), f"Its claim about {name} doesn't hold together.")
+        values = {
+            "low_confidence": f"{name}: confidence {float(f.get('confidence', 0)):.0%} · "
+                              f"needs {PRESENT_CONFIDENCE_MIN:.0%}",
+            "no_prominence": f"{name}: no prominence given",
+        }.get(f.get("problem"), f"{name}: claim incomplete")
+        return e("G3", "Instruments", values,
+                 "It claimed an instrument without the confidence or detail the rules require.", LISTEN_ACTION)
     if r == "G4":
-        return "The analysis came back incomplete, twice."
+        return e("G4", "Schema error", str(f.get("error", ""))[:200] or "the reply did not match the schema",
+                 "Gemini's answer didn't fit the required shape, twice — usually a field longer than its limit.",
+                 "Press Run again. If it keeps failing, press I'll write it and type the description yourself.")
     if r == "G5":
-        return f"It said the first sound is at {_s(f['model'])} s, but the file's first sound is at {_s(f['measured'])} s."
+        return e("G5", "Silence at the start",
+                 f"Analysis: {_s(f.get('model', 0))} s · file: {_s(f.get('measured', 0))} s · "
+                 f"allowed gap: {FIRST_SOUND_TOL_S} s",
+                 "The analysis disagrees about when the first sound happens — usually a silent lead-in it missed.",
+                 "Play the opening. If the file starts where the analysis says, press Override. Otherwise press "
+                 "Tell it what's true (for example: \"there are 2 seconds of silence before the first hit\").")
     if r == "G6":
-        return f"It said the loudest moment is at {_s(f['model'])} s, but the file peaks at {_s(f['measured'])} s."
+        return e("G6", "Loudest moment",
+                 f"Analysis: {_s(f.get('model', 0))} s · file peaks at {_s(f.get('measured', 0))} s",
+                 "It put the track's loudest moment somewhere the file isn't loud.", LISTEN_ACTION)
     if r == "G7":
-        return (f"It said the file ends with {_s(f['model'])} seconds of silence, "
-                f"but there are {_s(f['measured'])} seconds.")
+        return e("G7", "Silence at the end",
+                 f"Analysis: {_s(f.get('model', 0))} s · file: {_s(f.get('measured', 0))} s · "
+                 f"allowed gap: {TAIL_SILENCE_TOL_S} s",
+                 "It disagrees about how much silence follows the last sound.", LISTEN_ACTION)
     if r == "G8":
-        if f["model"] == "hard_cut":
-            return f"It said the track ends with a hard cut, but the file rings out for {_s(f['measured'])} seconds."
-        verb = "fades out" if f["model"] == "fade_out" else "rings out"
-        return f"It said the track {verb}, but the sound stops within {_s(f['measured'])} seconds."
+        label = ENDING_LABELS.get(f.get("model"), str(f.get("model")))
+        return e("G8", "Ending", f"Analysis: {label} · file decays for {_s(f.get('measured', 0))} s",
+                 "The ending it described doesn't match the way the sound actually stops.",
+                 "Listen to the last few seconds. If the analysis is right, press Override; if not, press "
+                 "Tell it what's true (for example: \"it rings out for about 3 seconds\").")
     if r == "G9":
-        return "Its loud and quiet sections don't match the file's actual loudness."
+        return e("G9", "Loudness shape",
+                 f"Correlation {f.get('rho')} · needs {ENERGY_RHO_MIN}",
+                 "The loud and quiet sections it described don't follow the file's real loudness.", LISTEN_ACTION)
     if r == "G10":
-        return f"It heard about {f['model']} BPM, but the beat in the file is closer to {float(f['measured']):.0f} BPM."
+        candidates = f.get("candidates")
+        heard = f"librosa: {float(f.get('measured', 0)):.0f} BPM"
+        if candidates:
+            heard += f" (candidates {', '.join(f'{c:.0f}' for c in candidates)})"
+        return e("G10", "Tempo", f"Gemini: {f.get('model')} BPM · {heard}",
+                 "The tempo it heard doesn't match the beat in the file, and it isn't half or double time.",
+                 "If the track is rubato or free time, or librosa has the beat wrong, press Override. "
+                 "Otherwise press Run again.")
+    # ── The listen against itself ─────────────────────────────────────────────
     if r == "G11":
-        return "It said there is a drum groove but also that the track has no steady tempo."
+        return e("G11", "Tempo", "Drums: present · tempo band: rubato",
+                 "It heard a drum groove and also said the track has no steady tempo. Both can't be true.",
+                 LISTEN_ACTION)
     if r == "G12":
-        return "It said there are sung words but found no lead voice or choir."
+        return e("G12", "Voices", "Sung words: yes · lead voice or choir: none listed",
+                 "It reported sung words without any voice to sing them.", LISTEN_ACTION)
     if r == "G13":
-        return "It said there is a choir, but what it pointed to doesn't sound like voices."
+        return e("G13", "Voices", "Choir: present · evidence doesn't mention voices",
+                 "It said there is a choir, but what it pointed to doesn't sound like voices.", LISTEN_ACTION)
     if r == "G14":
-        return "It said the track leaves room for dialogue, but there are sung lyrics."
+        return e("G14", "Dialogue", "Dialogue-friendly: yes · sung lyrics: yes",
+                 "A track with sung lyrics doesn't leave room for dialogue.", LISTEN_ACTION)
     if r == "G15":
-        return f"This is a sound design element, but it heard {f.get('count')} instrument parts."
+        return e("G15", "Sound design element",
+                 f"{f.get('count')} instrument families present · most allowed {SDE_MAX_MUSICAL_FAMILIES}",
+                 "This file is filed as a sound design element, but it was heard as a band.",
+                 "If it really is a full cue, fix the folder or press Override. Otherwise press Run again.")
     if r == "G16":
-        return f"It compared the track to a real artist or film ({', '.join(f.get('names') or [])})."
+        return e("G16", "Named a real artist", ", ".join(f.get("names") or []),
+                 "The 'sounds like' note named a real artist, composer or film. Copy never does that.",
+                 "Press Run again — the re-listen is told to describe the sound without names.")
     if r == "G17":
-        names = [family_label(p) for p in f.get("families") or []]
-        if len(names) == 1:
-            return f"It said there is {names[0]} but didn't point to where you can hear it."
-        return f"It said there is {', '.join(names)} but didn't point to where you can hear them."
+        return e("G17", "Evidence", f"{_labels(f.get('families'))}: present with no evidence",
+                 "It claimed an instrument without pointing to where you can hear it.", LISTEN_ACTION)
+    # ── Nothing to judge ──────────────────────────────────────────────────────
     if r == "NO_AUDIO":
-        return "The file couldn't be opened to measure it."
+        return e("No audio", "File", str(f.get("error", ""))[:200] or "the file could not be decoded",
+                 "The file couldn't be opened, so nothing could be measured or heard.",
+                 "Check the file plays. Share or upload it again, then press Run again.")
     if r == "API":
-        return "The listen didn't finish — the analysis service returned an error."
-    return sentence(f.get("text") or "Something went wrong with this track.")
+        return e("API error", "Listen", str(f.get("error", ""))[:200] or "the analysis service returned an error",
+                 "The listen never finished, so there is nothing to judge.",
+                 "Press Run again. If it keeps failing, check the model badges in the sidebar.")
+    if r == "WRITE":
+        return e("Writing failed", "Description", str(f.get("error", ""))[:200] or "the writing call failed",
+                 "The listen passed, but the description came back cut off or malformed.",
+                 "Press Run again — it rewrites the description without listening again. If it keeps "
+                 "failing, press I'll write it.")
+    if r == "NO_ANALYSIS":
+        return e("Not listened to", "Listen", "no analysis on this track",
+                 "This track hasn't been through a listen yet.", "Press Run again to listen to it.")
+    if r == "PARENT":
+        return e("Parent blocked", "Full mix", f"full mix: {f.get('title', '')} · {f.get('status', 'blocked')}",
+                 "Alt mixes and cutdowns inherit the status of their full mix.",
+                 "Fix the full mix and this one clears with it, or press Skip this track.")
+    # ── The finished text against PFD_RULES.md ────────────────────────────────
+    if r == "DESC_EMPTY":
+        return e("Description", "Description", "no description written",
+                 "Nothing was written for this track yet.", TEXT_ACTION)
+    if r == "FITS_MISSING":
+        return e("Fits line", "Description", "no 'Fits:' line at the end",
+                 "Every description ends with 2–3 placement tags from this catalog's list.",
+                 "Press Run again, or edit the description in the table and end it with, for example, "
+                 "\"Fits: Trailer, Film\".")
+    if r == "FITS_COUNT":
+        return e("Fits line", "Description", f"{f.get('count')} tags · needs 2–3",
+                 "The Fits line carries two or three placement tags.", TEXT_ACTION)
+    if r == "FITS_TAG":
+        return e("Fits tag", "Description",
+                 f"'{f.get('tag')}' · legal tags: {', '.join(f.get('legal') or [])}",
+                 f"That tag isn't in the {f.get('catalog')} placement list.",
+                 "Edit the Fits line in the table to use a legal tag, or press Run again.")
+    if r == "FITS_LANE":
+        return e("Fits tag", "EPP lane", f"first tag: '{f.get('first', '')}' · lane: '{f.get('lane')}'",
+                 "On EPP the album's lane is always the first Fits tag.",
+                 "Confirm the lane in Album details, or edit the Fits line so the lane comes first.")
+    if r == "SENTENCES":
+        return e("Length", "Description", f"{f.get('count')} sentences before the Fits line · needs 2–3",
+                 "A track description is two or three sentences, then the Fits line.", TEXT_ACTION)
+    if r == "BANNED":
+        return e("Banned words", "Description", ", ".join(f.get("words") or []),
+                 "These words are on the hard banned list in PFD_RULES.md.", TEXT_ACTION)
+    if r == "FORBIDDEN":
+        return e("Wrong catalog", "Description",
+                 f"{', '.join(f.get('words') or [])} · catalog: {f.get('catalog')}",
+                 "Those placement words belong to a different catalog.", TEXT_ACTION)
+    if r == "CINEMATIC_FIRST":
+        return e("Cinematic", "Description", "'cinematic' in the first sentence",
+                 "'Cinematic' is legal elsewhere, never in a description's first sentence.", TEXT_ACTION)
+    if r == "TITLE_IN_DESC":
+        return e("Title", "Description", f"the title '{f.get('title')}' appears in the text",
+                 "A description never repeats the track title.", TEXT_ACTION)
+    if r == "THIS_TRACK":
+        return e("Phrasing", "Description", "\"this track\"",
+                 "Descriptions never say \"this track\".", TEXT_ACTION)
+    if r == "KW_COUNT":
+        return e("Keywords", "Keywords", f"{f.get('count')} keywords · needs {KEYWORD_MIN}–{KEYWORD_MAX}",
+                 "Every track ships with 12 to 18 keywords.",
+                 "Press Run again to rewrite them, or edit the Keywords cell in the table.")
+    if r == "KW_LONG":
+        return e("Keywords", "Keywords", f"'{f.get('keyword')}' · most allowed 3 words",
+                 "A keyword is at most three words.", TEXT_ACTION)
+    if r == "KW_BANNED":
+        return e("Keywords", "Keywords", f"'{f.get('keyword')}' contains {', '.join(f.get('words') or [])}",
+                 "That keyword uses a word on the hard banned list.", TEXT_ACTION)
+    if r == "KW_FORBIDDEN":
+        return e("Keywords", "Keywords",
+                 f"'{f.get('keyword')}' uses {', '.join(f.get('words') or [])} · catalog: {f.get('catalog')}",
+                 "That keyword belongs to a different catalog.", TEXT_ACTION)
+    if r == "KW_CINEMATIC":
+        return e("Keywords", "Keywords", f"'{f.get('keyword')}'",
+                 "'Cinematic' is never a keyword.", TEXT_ACTION)
+    if r == "KW_LANE":
+        return e("Keywords", "EPP lane", f"first keyword: '{f.get('first', '')}' · lane: '{f.get('lane')}'",
+                 "On EPP the album's lane is always the first keyword.",
+                 "Confirm the lane in Album details, or put the lane first in the Keywords cell.")
+    return e("Note", "Track", sentence(f.get("text") or "something went wrong with this track"),
+             "", "Press Run again, or press I'll write it to take it by hand.")
+
+
+def summary(f: Dict) -> str:
+    """One line for the table: the check and the values that disagreed."""
+    x = explain(f)
+    return f"{x['code']} · {x['check']}: {x['values']}" if x["values"] else f"{x['code']} · {x['check']}"
+
+
+def export_line(f: Dict) -> str:
+    """The whole reason on one line, for the CSV Vesna reads."""
+    x = explain(f)
+    parts = [f"{x['code']} · {x['check']}: {x['values']}"]
+    if x["meaning"]:
+        parts.append(x["meaning"])
+    if x["action"]:
+        parts.append(f"What to do: {x['action']}")
+    return " — ".join(parts)
+
+
+def reason_text(f) -> str:
+    """The short technical wording, for model prompts and logs."""
+    if isinstance(f, str):
+        return f
+    r = f.get("rule")
+    texts = {
+        "DESC_EMPTY": "track description is empty",
+        "FITS_MISSING": "description does not end with a 'Fits:' line",
+        "FITS_COUNT": f"Fits line has {f.get('count')} tags (must be 2–3)",
+        "FITS_TAG": f"Fits tag '{f.get('tag')}' is not in the {f.get('catalog')} placement list",
+        "FITS_LANE": f"first Fits tag must be the lane '{f.get('lane')}'",
+        "SENTENCES": f"description has {f.get('count')} sentences before Fits (must be 2–3)",
+        "BANNED": f"description uses banned words: {', '.join(f.get('words') or [])}",
+        "FORBIDDEN": f"description uses forbidden placement words for {f.get('catalog')}: "
+                     f"{', '.join(f.get('words') or [])}",
+        "CINEMATIC_FIRST": "'cinematic' in the first sentence",
+        "TITLE_IN_DESC": "description contains the track title",
+        "THIS_TRACK": "description says 'this track'",
+        "KW_COUNT": f"keyword count {f.get('count')} (must be {KEYWORD_MIN}–{KEYWORD_MAX})",
+        "KW_LONG": f"keyword '{f.get('keyword')}' is longer than 3 words",
+        "KW_BANNED": f"keyword '{f.get('keyword')}' contains a banned word",
+        "KW_FORBIDDEN": f"keyword '{f.get('keyword')}' uses a forbidden placement word "
+                        f"({', '.join(f.get('words') or [])})",
+        "KW_CINEMATIC": f"keyword '{f.get('keyword')}': 'cinematic' is never a keyword",
+        "KW_LANE": f"first keyword must be the lane '{f.get('lane')}'",
+    }
+    return texts.get(r) or summary(f)
+
+
+def normalize(reasons) -> List[Dict]:
+    """Reasons from an older state.json are plain strings; keep them readable."""
+    return [r if isinstance(r, dict) else {"rule": "NOTE", "text": str(r)} for r in reasons or []]
 
 
 def sentence(text: str) -> str:
@@ -489,23 +680,25 @@ def split_keywords(keywords) -> List[str]:
     return [k.strip() for k in items if k and k.strip()]
 
 
-def keyword_reasons(keywords, catalog: str, lane: Optional[str] = None) -> List[str]:
+def keyword_reasons(keywords, catalog: str, lane: Optional[str] = None) -> List[Dict]:
     kws = split_keywords(keywords)
+    code = rules.catalog_code(catalog)
     reasons = []
     if not KEYWORD_MIN <= len(kws) <= KEYWORD_MAX:
-        reasons.append(f"keyword count {len(kws)} (must be {KEYWORD_MIN}–{KEYWORD_MAX})")
+        reasons.append(failure("KW_COUNT", count=len(kws)))
     for i, kw in enumerate(kws):
         if len(kw.split()) > 3:
-            reasons.append(f"keyword '{kw}' is longer than 3 words")
-        if banned_found(kw):
-            reasons.append(f"keyword '{kw}' contains a banned word")
+            reasons.append(failure("KW_LONG", keyword=kw))
+        banned = banned_found(kw)
+        if banned:
+            reasons.append(failure("KW_BANNED", keyword=kw, words=banned))
         bad = forbidden_found(kw, catalog, lead=(i == 0))
         if bad:
-            reasons.append(f"keyword '{kw}' uses a forbidden placement word ({', '.join(bad)})")
+            reasons.append(failure("KW_FORBIDDEN", keyword=kw, words=bad, catalog=code))
         if _find("cinematic", kw):
-            reasons.append(f"keyword '{kw}': 'cinematic' is never a keyword")
+            reasons.append(failure("KW_CINEMATIC", keyword=kw))
     if lane and (not kws or kws[0].lower() != lane.lower()):
-        reasons.append(f"first keyword must be the lane '{lane}'")
+        reasons.append(failure("KW_LANE", lane=lane, first=kws[0] if kws else ""))
     return reasons
 
 
@@ -530,50 +723,53 @@ def sentences(text: str) -> List[str]:
     return [s for s in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if s.strip()]
 
 
-def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = None) -> List[str]:
+def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = None) -> List[Dict]:
     """Tags are compared case-insensitively (both sides lowercased); the text keeps its casing."""
     if tags is None:
-        return ["description does not end with a 'Fits:' line"]
+        return [failure("FITS_MISSING")]
+    code = rules.catalog_code(catalog)
+    legal_list = rules.fits_list(catalog)
+    legal = {t.lower() for t in legal_list}
+    is_epp = code == "EPP"
+    lane_names = {n.lower() for n in rules.lane_names()}
     reasons = []
     if not 2 <= len(tags) <= 3:
-        reasons.append(f"Fits line has {len(tags)} tags (must be 2–3)")
-    legal = {t.lower() for t in rules.fits_list(catalog)}
-    is_epp = rules.catalog_code(catalog) == "EPP"
-    lane_names = {n.lower() for n in rules.lane_names()}
+        reasons.append(failure("FITS_COUNT", count=len(tags)))
     for i, tag in enumerate(tags):
         if is_epp and i == 0 and (tag.lower() == (lane or "").lower() or (not lane and tag.lower() in lane_names)):
             continue
         if tag.lower() not in legal:
-            reasons.append(f"Fits tag '{tag}' is not in the {rules.catalog_code(catalog)} placement list")
+            reasons.append(failure("FITS_TAG", tag=tag, catalog=code, legal=list(legal_list)))
     if is_epp and lane and (not tags or tags[0].lower() != lane.lower()):
-        reasons.append(f"first Fits tag must be the lane '{lane}'")
+        reasons.append(failure("FITS_LANE", lane=lane, first=tags[0] if tags else ""))
     return reasons
 
 
 def description_reasons(description: str, catalog: str, title: str = "",
-                        lane: Optional[str] = None) -> List[str]:
+                        lane: Optional[str] = None) -> List[Dict]:
     desc = (description or "").strip()
     if not desc:
-        return ["track description is empty"]
+        return [failure("DESC_EMPTY")]
+    code = rules.catalog_code(catalog)
     body, tags = split_fits(desc)
     reasons = fits_reasons(tags, catalog, lane)
     sents = sentences(body)
     if not 2 <= len(sents) <= 3:
-        reasons.append(f"description has {len(sents)} sentences before Fits (must be 2–3)")
+        reasons.append(failure("SENTENCES", count=len(sents)))
     bad = banned_found(desc)
     if bad:
-        reasons.append(f"description uses banned words: {', '.join(bad)}")
+        reasons.append(failure("BANNED", words=bad))
     lead_text = (sents[0] if sents else "") + " " + ", ".join(tags or [])
     rest = " ".join(sents[1:])
     bad = sorted(set(forbidden_found(lead_text, catalog, lead=True) + forbidden_found(rest, catalog, lead=False)))
     if bad:
-        reasons.append(f"description uses forbidden placement words for {rules.catalog_code(catalog)}: {', '.join(bad)}")
+        reasons.append(failure("FORBIDDEN", words=bad, catalog=code))
     if sents and _find("cinematic", sents[0]):
-        reasons.append("'cinematic' in the first sentence")
+        reasons.append(failure("CINEMATIC_FIRST"))
     if title and len(title.strip()) > 2 and _find(title.strip(), desc):
-        reasons.append("description contains the track title")
+        reasons.append(failure("TITLE_IN_DESC", title=title.strip()))
     if _find("this track", desc):
-        reasons.append("description says 'this track'")
+        reasons.append(failure("THIS_TRACK"))
     return reasons
 
 

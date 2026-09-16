@@ -35,7 +35,8 @@ v4 replaces "two listens must agree" with "one listen must agree with the decode
 - **Retry.** Any failure re-runs Call A once. For G5–G17 the user text names what failed (G17 quotes the family names), never the measured value, so the model cannot copy the answer. A second failure blocks. At most 2 Call A per track.
 - **Status.** PASSED, PASSED_WITH_UNCERTAINTY or BLOCKED. Uncertainty never blocks. Uncertain families go to `do_not_claim`, are never mentioned in copy, and are listed in the export.
 - **Call B** (Gemini, text only, temperature 0.7) gets the analysis without the scratchpad, plus do_not_claim, the catalog rules and few-shot examples, plus: "You may only mention instruments present in the analysis. Anything in do_not_claim is never mentioned."
-- **Reasons.** The app shows plain sentences, never rule IDs.
+- **Reasons.** Every blocked track shows four things, everywhere it appears: the check that failed (`G10`, `Fits line`, `Keywords`…), the values that disagreed ("Gemini: 120 BPM · librosa: 68 BPM (candidates 68, 136)"), what that means in plain English, and what to do next. `gate.explain()` builds them; `summary()` is the table line, `export_line()` the CSV line. Rule IDs are shown on purpose — Damir's team asked for them on 2026-09-16, which reverses the earlier "never show rule IDs" decision.
+- **Override.** When an editor has listened and the analysis is right, Override passes the track with the reason they typed. It is recorded on the row and in the export ("Overridden by an editor: …"), never silent, and it clears only the listen rules — the text rules still apply.
 - **Fits.** Tag matching lowercases both sides; a test pins it.
 - **Removed.** The second listen, the verification schema, the mutagen/ffprobe header read, the ±8% duration rule.
 

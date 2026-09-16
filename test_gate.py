@@ -20,6 +20,10 @@ def rules_of(failures):
     return [f["rule"] for f in failures]
 
 
+def codes(reasons):
+    return {r["rule"] for r in reasons}
+
+
 class TestCleanListen(unittest.TestCase):
     def test_fixture_passes_every_rule(self):
         self.assertEqual(check(analysis_dict()), [])
@@ -106,7 +110,8 @@ class TestStructure(unittest.TestCase):
         parsed = gate.parse_analysis(json.dumps(analysis_dict(sections=secs)))  # the schema no longer caps it
         failures = gate.check_sections(parsed, 60.0)
         self.assertEqual((failures[0]["rule"], failures[0]["problem"]), ("G2", "too_many"))
-        self.assertEqual(gate.plain_reason(failures[0]), "It split the track into 12 sections; the most allowed is 10.")
+        x = gate.explain(failures[0])
+        self.assertEqual((x["code"], x["check"], x["values"]), ("G2", "Sections", "12 sections · most allowed 10"))
 
     def test_edit_points_are_trimmed_to_eight_and_logged(self):
         points = [float(i) for i in range(1, 12)]
@@ -143,8 +148,9 @@ class TestStructure(unittest.TestCase):
         hint = gate.retry_hint(failures)
         self.assertIn("percussion.drum_kit", hint)
         self.assertIn("1–2 evidence items", hint)
-        self.assertEqual(gate.plain_reason(failures[0]),
-                         "It said there is drum kit but didn't point to where you can hear it.")
+        x = gate.explain(failures[0])
+        self.assertEqual((x["code"], x["check"]), ("G17", "Evidence"))
+        self.assertEqual(x["values"], "drum kit: present with no evidence")
 
     def test_g3_present_with_low_confidence(self):
         fam = present("lead", confidence=0.5)
@@ -197,8 +203,10 @@ class TestWaveform(unittest.TestCase):
         failures = check(analysis_dict(ending=ending))
         self.assertIn("G8", rules_of(failures))
         f = next(x for x in failures if x["rule"] == "G8")
-        self.assertEqual(gate.plain_reason(f),
-                         "It said the track ends with a hard cut, but the file rings out for 2.5 seconds.")
+        x = gate.explain(f)
+        self.assertEqual((x["code"], x["check"]), ("G8", "Ending"))
+        self.assertEqual(x["values"], "Analysis: Hard cut · file decays for 2.5 s")
+        self.assertIn("Override", x["action"])
 
     def test_g8_ring_out_that_stops(self):
         self.assertIn("G8", rules_of(check(analysis_dict(), dict(MEASURED, decay_seconds=0.2))))
@@ -308,11 +316,51 @@ class TestReasonsAndHints(unittest.TestCase):
            gate.failure("G17", families=["voice.choir", "strings.harp"]), gate.failure("NO_AUDIO"),
            gate.failure("API")]
 
-    def test_every_rule_has_a_plain_sentence_without_its_id(self):
-        for f in self.ALL:
-            text = gate.plain_reason(f)
-            self.assertTrue(text and text[0].isupper() and text.endswith("."), text)
-            self.assertIsNone(re.search(r"\bG\d+\b", text), text)
+    TEXT_RULES = [gate.failure("DESC_EMPTY"), gate.failure("FITS_MISSING"), gate.failure("FITS_COUNT", count=1),
+                  gate.failure("FITS_TAG", tag="Advertising", catalog="rC", legal=["Trailer", "Film"]),
+                  gate.failure("FITS_LANE", lane="Sounds Tender", first="Documentary"),
+                  gate.failure("SENTENCES", count=5), gate.failure("BANNED", words=["epic"]),
+                  gate.failure("FORBIDDEN", words=["commercial"], catalog="rC"),
+                  gate.failure("CINEMATIC_FIRST"), gate.failure("TITLE_IN_DESC", title="Glass Hours"),
+                  gate.failure("THIS_TRACK"), gate.failure("KW_COUNT", count=3),
+                  gate.failure("KW_LONG", keyword="one two three four"),
+                  gate.failure("KW_BANNED", keyword="Epic Rise", words=["epic"]),
+                  gate.failure("KW_FORBIDDEN", keyword="Advert Spot", words=["advertising"], catalog="rC"),
+                  gate.failure("KW_CINEMATIC", keyword="Cinematic Swell"),
+                  gate.failure("KW_LANE", lane="Sounds Tender", first="Documentary"),
+                  gate.failure("WRITE", error="EOF while parsing"), gate.failure("NO_ANALYSIS"),
+                  gate.failure("PARENT", title="Glass Hours", status="blocked")]
+
+    def test_every_reason_names_the_check_the_values_and_what_to_do(self):
+        for f in self.ALL + self.TEXT_RULES:
+            x = gate.explain(f)
+            self.assertTrue(x["code"], f)
+            self.assertTrue(x["check"], f)
+            self.assertTrue(x["values"], f)          # the values that disagreed
+            self.assertTrue(x["meaning"], f)         # plain English
+            self.assertTrue(x["action"], f)          # what to do next
+            self.assertIn("What to do:", gate.export_line(f))
+            self.assertTrue(gate.summary(f).startswith(f"{x['code']} · {x['check']}"), gate.summary(f))
+
+    def test_the_gate_rules_show_their_id(self):
+        """Damir's team asked for the rule ID, the values, the meaning and the instruction."""
+        f = gate.failure("G10", model=120, measured=68.0, candidates=[68.0, 136.0])
+        x = gate.explain(f)
+        self.assertEqual((x["code"], x["check"]), ("G10", "Tempo"))
+        self.assertEqual(x["values"], "Gemini: 120 BPM · librosa: 68 BPM (candidates 68, 136)")
+        self.assertIn("half or double time", x["meaning"])
+        self.assertIn("Override", x["action"])
+
+    def test_legacy_string_reasons_still_read(self):
+        (reason,) = gate.normalize(["duration mismatch"])
+        self.assertEqual(reason["rule"], "NOTE")
+        self.assertIn("Duration mismatch", gate.explain(reason)["values"])
+
+    def test_reason_text_keeps_the_wording_the_model_is_given(self):
+        self.assertEqual(gate.reason_text(gate.failure("FITS_MISSING")),
+                         "description does not end with a 'Fits:' line")
+        self.assertEqual(gate.reason_text(gate.failure("BANNED", words=["epic", "huge"])),
+                         "description uses banned words: epic, huge")
 
     def test_hints_name_the_rule_but_never_the_measured_answer(self):
         hint = gate.retry_hint([gate.failure("G5", model=3.0, measured=0.5)])
@@ -347,24 +395,24 @@ class TestTextRules(unittest.TestCase):
         self.assertEqual(gate.split_fits("A. B. Fits: documentary, Film")[1], ["documentary", "Film"])
 
     def test_description_rules(self):
-        r = gate.description_reasons("Cinematic swell. Ends hard. Fits: Trailer, Film", "rC")
-        self.assertIn("'cinematic' in the first sentence", r)
-        r = gate.description_reasons("One sentence only. Fits: Trailer", "rC")
-        self.assertTrue(any("sentences" in x for x in r) and any("tags" in x for x in r), r)
-        r = gate.description_reasons("Epic drums hit. It ends hard. Fits: Trailer, Film", "rC")
-        self.assertTrue(any("banned" in x for x in r), r)
-        r = gate.description_reasons("Low drone. It ends. No fits line here.", "rC")
-        self.assertIn("description does not end with a 'Fits:' line", r)
+        self.assertIn("CINEMATIC_FIRST", codes(gate.description_reasons("Cinematic swell. Ends hard. Fits: Trailer, Film", "rC")))
+        r = codes(gate.description_reasons("One sentence only. Fits: Trailer", "rC"))
+        self.assertIn("SENTENCES", r)
+        self.assertIn("FITS_COUNT", r)
+        self.assertIn("BANNED", codes(gate.description_reasons("Epic drums hit. It ends hard. Fits: Trailer, Film", "rC")))
+        self.assertIn("FITS_MISSING", codes(gate.description_reasons("Low drone. It ends. No fits line here.", "rC")))
 
     def test_forbidden_placement_word(self):
         reasons = gate.description_reasons("Glossy pulse for a commercial cut. It ends on a button. Fits: Trailer, Film", "rC")
-        self.assertTrue(any("commercial" in r for r in reasons), reasons)
+        bad = next(r for r in reasons if r["rule"] == "FORBIDDEN")
+        self.assertIn("commercial", bad["words"])
+        self.assertIn("commercial", gate.explain(bad)["values"])
 
     def test_ssc_trailer_only_forbidden_as_lead(self):
         body = "Strings hold a long line. Works under a trailer's quiet middle. Fits: Film, Drama"
-        self.assertFalse(any("forbidden" in r for r in gate.description_reasons(body, "SSC")))
+        self.assertNotIn("FORBIDDEN", codes(gate.description_reasons(body, "SSC")))
         lead = "Trailer-ready strings rise. They end softly. Fits: Film, Drama"
-        self.assertTrue(any("forbidden" in r for r in gate.description_reasons(lead, "SSC")))
+        self.assertIn("FORBIDDEN", codes(gate.description_reasons(lead, "SSC")))
 
     def test_sentence_helper(self):
         self.assertEqual(gate.sentence("keyword count 3 (must be 12–18)"), "Keyword count 3 (must be 12–18).")

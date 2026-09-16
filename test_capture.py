@@ -29,7 +29,8 @@ def _app_data(status=gate.PASSED):
             "Title": "Glass Hours Full Mix", "Mix Type": "full",
             "Track Description": "Brass swells over tape hiss. Ends on a button. Fits: Sounds Tender, Documentary",
             "Keywords": "Sounds Tender, Slow Brass", "PFD_Status": status,
-            "PFD_Block_Reasons": [] if status == gate.PASSED else ["duration mismatch"],
+            "PFD_Block_Reasons": [] if status == gate.PASSED else [
+                {"rule": "G5", "model": 0.0, "measured": 2.0}],
         }],
     }
 
@@ -45,7 +46,10 @@ class TestExport(unittest.TestCase):
         df = pd.read_csv(io.BytesIO(data))
         self.assertEqual(list(df.columns[-2:]), ["PFD_Status", "PFD_Block_Reasons"])
         self.assertEqual(df.loc[0, "PFD_Status"], "BLOCKED")
-        self.assertIn("duration mismatch", df.loc[0, "PFD_Block_Reasons"])
+        exported = df.loc[0, "PFD_Block_Reasons"]
+        self.assertIn("G5 · Silence at the start", exported)       # which check
+        self.assertIn("Analysis: 0.0 s · file: 2.0 s", exported)   # the values that disagreed
+        self.assertIn("What to do:", exported)                     # and the instruction
         self.assertEqual(zip_name, "EPP_TEST_Glass_Hours.zip")
 
     def test_zip_is_one_csv_plus_text_assets(self):
@@ -80,6 +84,16 @@ class TestV4Rows(unittest.TestCase):
         data = _app_data()
         data["tracks"].append(dict(data["tracks"][0], Title="Skipped One", PFD_Skipped=True))
         self.assertEqual(list(capture.track_rows(data, "EPP")["Title"]), ["Glass Hours Full Mix"])
+
+    def test_legacy_string_reasons_still_export(self):
+        data = _app_data(gate.BLOCKED)
+        data["tracks"][0]["PFD_Block_Reasons"] = ["duration mismatch"]   # written by an older version
+        self.assertIn("Duration mismatch", capture.track_rows(data, "EPP").loc[0, "PFD_Block_Reasons"])
+
+    def test_an_override_is_recorded_in_the_export(self):
+        data = _app_data()
+        data["tracks"][0]["PFD_Override"] = "free time — librosa has the beat wrong"
+        self.assertIn("Overridden by an editor: free time", capture.track_rows(data, "EPP").loc[0, "PFD_Block_Reasons"])
 
     def test_uncertainty_and_corrections_travel_as_notes(self):
         data = _app_data(gate.PASSED_WITH_UNCERTAINTY)

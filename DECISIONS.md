@@ -105,6 +105,12 @@ v3 entries above that mention tabs, the second listen or the writer test are sup
 - Live re-run 2026-09-16, same three tracks, schema mode, zero 400s: rC "Loaded Gun" PASSED (was BLOCKED on G5+G10), SSC "Frozen In Motion Master" PASSED, EPP "EPP056 003 Folk Celebration" PASSED.
 - The four `live3_*.json` verification files were deleted on Damir's explicit word.
 
+## Blocked messaging (2026-09-16, Damir)
+- Every blocked reason is a structured failure explained as {code, check, values, meaning, action} · "Run it again" told the team nothing; they need the check, the numbers that disagreed, what it means and what to do · `gate.explain` / `summary` / `export_line`.
+- Rule IDs (G1–G17) and named text checks are shown in the app · Damir asked for them explicitly; this **reverses** the earlier decision that rule IDs stay internal · drop `code` from `gate.summary` and the app renderer.
+- The text checks (`description_reasons`, `keyword_reasons`, `fits_reasons`) return failure dicts instead of strings; `gate.reason_text` keeps the old wording for model prompts, `gate.normalize` reads reasons written by older versions · one shape everywhere the app shows a block · git history.
+- Override: an editor who has listened can pass a blocked track with a typed reason. It clears the listen rules only — the text rules still apply — and the reason is written to the row and the CSV · LOCKED says BLOCKED is never *silently* converted; this is explicit and recorded · `engine.override_track`.
+
 ## Open
 - Gemini does not enforce string `max_length` in schema mode: SSC's first Call A came back with a 312-character `narrative_map` and was caught by Pydantic as G4; the re-run was clean. Either raise the string caps or accept one re-run on long tracks.
 - Call B truncation is intermittent: the same SSC track returned cut-off JSON once ("EOF while parsing", a red row saying the description couldn't be written) and wrote cleanly on the next run. Thinking tokens count against `max_output_tokens`, so 2500 may be tight for Call B. Raising it is a config change Damir has not approved.

@@ -89,9 +89,12 @@ def _block_reasons(track: Dict) -> str:
     """BLOCKED: the plain reasons. Ready rows: the notes an editor should see (uncertainty, corrections, manual)."""
     status = track.get("PFD_Status") or gate.BLOCKED
     if status == gate.BLOCKED:
-        return " ".join(track.get("PFD_Block_Reasons") or []) or "No status recorded."
+        reasons = gate.normalize(track.get("PFD_Block_Reasons"))
+        return " | ".join(gate.export_line(f) for f in reasons) or "No status recorded."
     notes = []
     g = track.get("PFD_Gate") or {}
+    if track.get("PFD_Override"):
+        notes.append(f"Overridden by an editor: {track['PFD_Override']}")
     if g.get("override_note"):
         notes.append(g["override_note"])
     if track.get("PFD_Manual"):

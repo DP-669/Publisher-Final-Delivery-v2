@@ -75,7 +75,7 @@ class TestApplyLane(unittest.TestCase):
 
     def test_fits_without_the_lane_first_fails(self):
         reasons = gate.fits_reasons(["Documentary", "Sounds Tender"], "EPP", "Sounds Tender")
-        self.assertTrue(any("first Fits tag must be the lane" in r for r in reasons), reasons)
+        self.assertTrue(any(r["rule"] == "FITS_LANE" for r in reasons), reasons)
         self.assertTrue(gate.keyword_reasons("Documentary Cut, Sounds Tender", "EPP", "Sounds Tender"))
 
     def test_unknown_lane_is_refused(self):

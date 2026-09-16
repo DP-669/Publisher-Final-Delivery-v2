@@ -12,6 +12,7 @@ Sidebar: system health only.
 """
 import dataclasses
 import datetime
+import html
 import os
 import random
 import re
@@ -595,6 +596,19 @@ def apply_table_edits(editor_key: str, titles: list):
     ss.editor_nonce += 1
 
 
+def render_reason(f: dict, tone: str = "pfd-reason"):
+    """A blocked reason, in full: which check, the values, what it means, what to do."""
+    x = gate.explain(f)
+    lines = [f"<b>{html.escape(x['code'])} · {html.escape(x['check'])}</b>"]
+    if x["values"]:
+        lines.append(f"<code>{html.escape(x['values'])}</code>")
+    if x["meaning"]:
+        lines.append(html.escape(x["meaning"]))
+    if x["action"]:
+        lines.append(f"<b>What to do:</b> {html.escape(x['action'])}")
+    st.markdown(f"<div class='{tone}'>" + "<br>".join(lines) + "</div>", unsafe_allow_html=True)
+
+
 def status_label(track: dict) -> str:
     label = f"{DOT.get(track.get('PFD_Status'), '⚪')} {LABEL.get(track.get('PFD_Status'), '')}"
     return label + (" · Manual" if track.get("PFD_Manual") else "")
@@ -796,15 +810,15 @@ def render_fix_panel(track: dict):
             report("Couldn't load the audio", exc)
 
     if status == gate.BLOCKED:
-        for reason in track.get("PFD_Block_Reasons") or []:
-            st.markdown(f'<div class="pfd-reason">{reason}</div>', unsafe_allow_html=True)
+        for reason in gate.normalize(track.get("PFD_Block_Reasons")):
+            render_reason(reason)
         if is_alt_or_cutdown(track):
             st.caption("This version follows its full mix. Fix the full mix, or skip this one.")
         elif track.get("PFD_Reason_Kind") == "text" and track.get("Track Description"):
             st.caption("What it says now:")
             st.write(track["Track Description"])
 
-        c = st.columns(4)
+        c = st.columns(5)
         can_listen = can_listen_again(track)
         if c[0].button("Run again", key="fix_run", type="primary", disabled=not can_listen):
             if track.get("PFD_Reason_Kind") == "text" and track.get("analysis"):
@@ -818,14 +832,29 @@ def render_fix_panel(track: dict):
             ss.fix_mode = "correct"
         if c[2].button("I'll write it", key="fix_manual", disabled=is_alt_or_cutdown(track)):
             ss.fix_mode = "manual"
-        if c[3].button("Skip this track", key="fix_skip", type="tertiary"):
+        if c[3].button("Override", key="fix_override",
+                       disabled=track.get("PFD_Reason_Kind") != "listen" or is_alt_or_cutdown(track),
+                       help="You listened and the analysis is right. The track passes with a note in the export."):
+            ss.fix_mode = "override"
+        if c[4].button("Skip this track", key="fix_skip", type="tertiary"):
             eng.skip(track)
             eng.refresh_statuses(album, catalog)
             save_album()
             ss.selected = None
             st.rerun()
 
-        if ss.fix_mode == "correct":
+        if ss.fix_mode == "override":
+            st.caption("The track passes and the export records that you overrode it. Say why, in a few words.")
+            why = st.text_input("Why is the analysis right?", key=f"override_{track['Title']}",
+                                placeholder="e.g. free time, no steady tempo — librosa has it wrong")
+            if st.button("Override and continue", key="fix_override_go", type="primary"):
+                with st.spinner("Writing the description…"):
+                    eng.override_track(track, catalog, gemini_api_key, claude_api_key, why, album_lane())
+                eng.refresh_statuses(album, catalog)
+                save_album()
+                ss.fix_mode = ""
+                st.rerun()
+        elif ss.fix_mode == "correct":
             correction = st.text_input("What's true about this track?", key=f"correction_{track['Title']}",
                                        placeholder="e.g. There are no drums — the hits are timpani. It fades out.")
             if st.button("Listen again with this", key="fix_correct_go", disabled=not correction.strip()):
@@ -845,7 +874,7 @@ def render_fix_panel(track: dict):
                     problems = []
                 if problems:
                     for p in problems:
-                        st.markdown(f'<div class="pfd-reason">{p}</div>', unsafe_allow_html=True)
+                        render_reason(p)
                 else:
                     eng.refresh_statuses(album, catalog)
                     save_album()
@@ -883,6 +912,8 @@ def render_fix_panel(track: dict):
                 save_album()
                 st.rerun()
 
+    if track.get("PFD_Override"):
+        st.caption(f"Overridden by an editor: {track['PFD_Override']} — the export says so.")
     note = (track.get("PFD_Gate") or {}).get("override_note")
     if note:
         st.caption(note)
@@ -932,8 +963,8 @@ def render_review():
             "Open": False,
             "Status": status_label(t),
             "Track": t["Title"],
-            "Description": ((t.get("PFD_Block_Reasons") or [""])[0] if t.get("PFD_Status") == gate.BLOCKED
-                            else t.get("Track Description", "")),
+            "Description": (" · ".join(gate.summary(f) for f in gate.normalize(t.get("PFD_Block_Reasons")))
+                            if t.get("PFD_Status") == gate.BLOCKED else t.get("Track Description", "")),
             "Keywords": t.get("Keywords", ""),
             "Ending": t.get("Ending Type", ""),
         } for t in shown])

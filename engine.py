@@ -433,7 +433,8 @@ class IngestionEngine:
             return self.call_claude(system, self.prompts.track_synth_prompt(track, catalog, is_redo, guidance),
                                     claude_api_key)
         gemini_text = track.get("Gemini Description", "")
-        issues = gate.description_reasons(gemini_text, catalog, base_title(track.get("Title", "")), lane)
+        issues = [gate.reason_text(r) for r in
+                  gate.description_reasons(gemini_text, catalog, base_title(track.get("Title", "")), lane)]
         if mode == "claude_edit":
             return self.call_claude(system, self.prompts.track_edit_prompt(track, catalog, gemini_text, issues,
                                                                            is_redo, guidance), claude_api_key)
@@ -549,33 +550,33 @@ class IngestionEngine:
         elif is_alt_or_cutdown(track):
             # Template text from folder names, not a listen: status follows the parent full mix.
             if parent is None:
-                reasons = [f"Its full mix, '{track.get('Parent Track', '')}', was not analysed."]
+                reasons = [gate.failure("PARENT", title=track.get("Parent Track", ""), status="not analysed")]
             elif parent.get("PFD_Status") not in gate.READY:
-                reasons = [f"Its full mix, '{parent.get('Title', '')}', is blocked."]
+                reasons = [gate.failure("PARENT", title=parent.get("Title", ""), status="blocked")]
             else:
                 reasons = []
             status = gate.BLOCKED if reasons else gate.PASSED
         else:
             g = track.get("PFD_Gate") or {}
             manual = bool(track.get("PFD_Manual"))
+            overridden = bool(track.get("PFD_Override"))
             reasons = []
-            if not manual and g.get("status") == gate.BLOCKED:
+            if not manual and not overridden and g.get("status") == gate.BLOCKED:
                 kind = "listen"
-                reasons = [gate.plain_reason(f) for f in g.get("failures") or []] or ["It hasn't been listened to yet."]
+                reasons = list(g.get("failures") or []) or [gate.failure("NO_ANALYSIS")]
             else:
                 kind = "text"
                 if track.get("PFD_Write_Error") and not manual:
-                    reasons.append("The description couldn't be written. Run it again.")
+                    reasons.append(gate.failure("WRITE", error=track["PFD_Write_Error"]))
                 if track.get("analysis") or manual:
                     if track.get("Keywords") or final:
-                        reasons += [gate.sentence(r) for r in gate.keyword_reasons(track.get("Keywords", ""), catalog, lane)]
+                        reasons += gate.keyword_reasons(track.get("Keywords", ""), catalog, lane)
                     desc = track.get("Track Description", "")
                     if desc or final:
-                        reasons += [gate.sentence(r) for r in gate.description_reasons(
-                            desc, catalog, base_title(track.get("Title", "")), lane)]
+                        reasons += gate.description_reasons(desc, catalog, base_title(track.get("Title", "")), lane)
                 else:
                     kind = "listen"
-                    reasons.append("It hasn't been listened to yet.")
+                    reasons.append(gate.failure("NO_ANALYSIS"))
             if reasons:
                 status = gate.BLOCKED
             elif not manual and not g.get("override_note") and remaining_uncertain(track):
@@ -632,14 +633,28 @@ class IngestionEngine:
         track.setdefault("PFD_Dismissed", []).append(family_path)
         self.refresh_status(track, catalog, lane)
 
+    def override_track(self, track: Dict, catalog: str, gemini_api_key: str, claude_api_key: str,
+                       note: str = "", lane: Optional[str] = None) -> bool:
+        """
+        The editor listened and accepts the analysis. Recorded on the row and in
+        the export — never a silent pass. The description is written afterwards
+        if the block stopped it from being written at all.
+        """
+        track["PFD_Override"] = (note or "").strip() or "An editor listened and accepted the analysis."
+        wrote = True
+        if track.get("analysis") and not track.get("Track Description"):
+            wrote = self.try_write(track, catalog, gemini_api_key, claude_api_key, lane)
+        self.refresh_status(track, catalog, lane)
+        return wrote
+
     def manual_description(self, track: Dict, text: str, catalog: str, gemini_api_key: str,
-                           lane: Optional[str] = None, keywords: str = "") -> List[str]:
+                           lane: Optional[str] = None, keywords: str = "") -> List[Dict]:
         """
         "I'll write it". Returns the rule problems in the text; nothing is saved
         while there are any. Keywords come from Call B when there is an analysis;
         otherwise the editor types them.
         """
-        problems = [gate.sentence(r) for r in gate.description_reasons(text, catalog, base_title(track.get("Title", "")), lane)]
+        problems = gate.description_reasons(text, catalog, base_title(track.get("Title", "")), lane)
         if problems:
             return problems
         track["Track Description"] = text.strip()
@@ -785,7 +800,8 @@ class IngestionEngine:
         self.refresh_statuses(data, catalog, final=True)
         for t in tracks:
             if t.get("PFD_Status") == gate.BLOCKED:
-                errors.append(f"{t.get('Title', '?')}: {' '.join(t.get('PFD_Block_Reasons') or [])}")
+                errors.append(f"{t.get('Title', '?')} — "
+                              + " · ".join(gate.summary(f) for f in gate.normalize(t.get("PFD_Block_Reasons"))))
         errors += [f"Album description: {r}" for r in gate.album_description_reasons(data.get("album_description", ""), catalog)]
         name = data.get("album_name_selected", "")
         errors += [f"Album name: {r}" for r in gate.album_name_reasons(name, catalog)]

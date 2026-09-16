@@ -233,8 +233,9 @@ class TestProcessTrack(ListenCase):
         track = self.process()
         self.assertEqual(track["PFD_Status"], gate.BLOCKED)
         self.assertEqual(track["PFD_Reason_Kind"], "listen")
-        self.assertEqual(track["PFD_Block_Reasons"],
-                         ["It said the track ends with a hard cut, but the file rings out for 2.5 seconds."])
+        (reason,) = track["PFD_Block_Reasons"]
+        self.assertEqual(reason["rule"], "G8")
+        self.assertEqual(gate.summary(reason), "G8 · Ending: Analysis: Hard cut · file decays for 2.5 s")
         self.assertEqual(len(self.calls()), 2)
 
     def test_title_never_reaches_a_model(self):
@@ -259,7 +260,19 @@ class TestProcessTrack(ListenCase):
         self.replies(analysis_dict(), writing_dict(description="Epic strings. It rings out. Fits: Trailer, Film"))
         track = self.process()
         self.assertEqual((track["PFD_Status"], track["PFD_Reason_Kind"]), (gate.BLOCKED, "text"))
-        self.assertTrue(any("banned" in r for r in track["PFD_Block_Reasons"]))
+        banned = next(r for r in track["PFD_Block_Reasons"] if r["rule"] == "BANNED")
+        self.assertEqual(banned["words"], ["epic"])
+        self.assertIn("What to do:", gate.export_line(banned))
+
+    def test_override_passes_the_track_and_records_why(self):
+        bad = analysis_dict(ending={"type": "hard_cut", "final_accent_t": 58.0, "tail_seconds": 0.0})
+        self.replies(bad, bad, writing_dict())
+        track = self.process()
+        self.assertEqual(track["PFD_Status"], gate.BLOCKED)
+        self.engine.override_track(track, "rC", "gemini-key", "", "free time — librosa has the beat wrong")
+        self.assertEqual(track["PFD_Status"], gate.PASSED, track["PFD_Block_Reasons"])
+        self.assertEqual(track["PFD_Override"], "free time — librosa has the beat wrong")
+        self.assertEqual(track["Track Description"], DESCRIPTION)  # written after the override
 
     def test_quota_error_while_writing_stops_the_run(self):
         self.replies(analysis_dict(), RuntimeError("429 RESOURCE_EXHAUSTED"))
