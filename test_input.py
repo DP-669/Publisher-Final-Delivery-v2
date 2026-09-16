@@ -40,6 +40,28 @@ class TestMixTypeFromName(unittest.TestCase):
             self.assertEqual(dp.detect_mix_type(name), "sound_design", name)
 
 
+class TestSplitLinks(unittest.TestCase):
+    def test_one_per_line(self):
+        text = " https://www.dropbox.com/scl/fi/a?dl=0 \n\nhttps://www.dropbox.com/scl/fi/b?dl=0\n"
+        self.assertEqual(dp.split_links(text),
+                         ["https://www.dropbox.com/scl/fi/a?dl=0", "https://www.dropbox.com/scl/fi/b?dl=0"])
+
+    def test_comma_separated(self):
+        text = "https://www.dropbox.com/scl/fi/a?dl=0, https://www.dropbox.com/scl/fi/b?dl=0"
+        self.assertEqual(len(dp.split_links(text)), 2)
+
+    def test_a_comma_inside_a_url_is_not_a_separator(self):
+        one = "https://www.dropbox.com/scl/fo/x?rlkey=a,b&dl=0"
+        self.assertEqual(dp.split_links(one), [one])
+
+    def test_duplicates_and_blanks_are_dropped(self):
+        link = "https://www.dropbox.com/scl/fi/a?dl=0"
+        self.assertEqual(dp.split_links(f"{link}\n\n{link}\n  \n"), [link])
+
+    def test_empty(self):
+        self.assertEqual(dp.split_links("   \n "), [])
+
+
 class TestSingleFile(unittest.TestCase):
     def test_one_file_becomes_one_analysable_entry(self):
         dbx = MagicMock()

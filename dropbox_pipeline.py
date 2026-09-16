@@ -4,6 +4,7 @@ Supports rC (numbered folders), SSC (organic naming), EPP (cutdowns).
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import List
 
@@ -142,6 +143,25 @@ def _entry_for(meta, mix_type: str, parent_track: str = "") -> FileEntry:
         parent_track=parent_track or title,
         mix_type=mix_type,
     )
+
+
+def split_links(text: str) -> List[str]:
+    """
+    Several Dropbox links pasted together: one per line, or separated by commas.
+    A comma inside a URL query is left alone — only commas between links split.
+    """
+    out = []
+    for line in (text or "").replace("\r", "\n").split("\n"):
+        for part in re.split(r",(?=\s*https?://)|,\s*$", line):
+            part = (part or "").strip().strip(",").strip()
+            if part:
+                out.append(part)
+    seen, unique = set(), []
+    for link in out:
+        if link not in seen:
+            seen.add(link)
+            unique.append(link)
+    return unique
 
 
 def single_file_entry(dbx, path: str) -> FileEntry:

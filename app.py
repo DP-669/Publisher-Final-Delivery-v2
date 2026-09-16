@@ -27,7 +27,7 @@ import rules
 from analysis_schema import family_label, find_observation
 from dropbox_pipeline import (
     crawl_album_folder, detect_mix_type, generate_alt_description, generate_cutdown_description, is_quota_error,
-    loose_audio_entries, resolve_shared_link, send_ntfy, single_file_entry,
+    loose_audio_entries, resolve_shared_link, send_ntfy, single_file_entry, split_links,
 )
 from engine import (
     CLAUDE_PIN_EXPLICIT, CLAUDE_WRITING_MODEL, GEMINI_AUDIO_MODEL, GEMINI_PIN_EXPLICIT, OVERRIDE,
@@ -114,7 +114,8 @@ def model_badge(label: str, info: dict, has_key: bool) -> str:
     if not has_key:
         colour, dot, note = "#ffebee;color:#b71c1c", "🔴", "no key"
     elif info["source"] == "fallback":
-        colour, dot, note = "#fff8e1;color:#8d6e00", "🟠", f"fallback pin — {info['error']}"
+        why = "the key was refused" if "API key" in str(info.get("error", "")) else "the model list didn't answer"
+        colour, dot, note = "#fff8e1;color:#8d6e00", "🟠", f"using the pinned model — {why}"
     else:
         colour, dot, note = "#e8f5e9;color:#1b5e20", "🟢", "pinned by secret" if info["source"] == "secret" else "latest"
     return (f'<div class="pfd-badge" style="background:{colour};">{dot} {label}: {info["id"]}</div>'
@@ -236,6 +237,28 @@ def recent_albums(configured: bool) -> list:
     return capture.list_recent_albums(dbx_client())
 
 
+def links_check(text: str, catalog: str) -> dict:
+    """
+    One or several Dropbox links. Each is resolved on its own, so one bad link
+    never throws away the others; the failures are listed for the user.
+    """
+    links = split_links(text)
+    if len(links) == 1:
+        return folder_check(links[0], catalog)
+    entries, auto, problems, code = [], [], [], ""
+    for link in links:
+        one = folder_check(link, catalog)
+        if not one.get("ok"):
+            problems.append(f"{link.split('/')[-1][:40]}: {one.get('error', 'could not be opened')}")
+            continue
+        entries += one["analyzable"]
+        auto += one["auto"]
+        code = code or one.get("code", "")
+    return {"ok": bool(entries), "kind": "links", "album_path": "", "folder_name": code or "Selected files",
+            "code": code, "analyzable": entries, "auto": auto,
+            "error": "; ".join(problems), "partial": problems}
+
+
 def folder_check(link: str, catalog: str) -> dict:
     """
     Resolve a Dropbox link once. Three shapes, all analysed the same way:
@@ -250,9 +273,10 @@ def folder_check(link: str, catalog: str) -> dict:
         if os.path.splitext(path)[1].lower() in AUDIO_FORMATS:
             entry = single_file_entry(dbx, path)
             folder = os.path.dirname(path)
+            row = dataclasses.asdict(entry)
+            row["track_id"] = new_track_id()
             out.update(ok=True, kind="file", album_path=folder, folder_name=os.path.basename(folder),
-                       code=capture.detect_album_code(entry.display_name, path),
-                       analyzable=[dataclasses.asdict(entry)])
+                       code=capture.detect_album_code(entry.display_name, path), analyzable=[row])
         else:
             crawl = crawl_album_folder(dbx, path, catalog)
             entries = [dataclasses.asdict(e) for e in crawl.analyzable]
@@ -363,7 +387,8 @@ def render_progress():
     while album["pending"]:
         entry = album["pending"][0]
         done = total - len(album["pending"])
-        header.markdown(f"#### Track {done + 1} of {total} — listening…\n{entry['display_name']}")
+        header.markdown(f"#### Analyzing track {done + 1} of {total} · {entry['display_name']}\n"
+                        f"Listening, checking it against the file, then writing.")
         bar.progress(done / total if total else 0.0)
         mix = mix_for(entry)
         upload_key = entry.get("upload_key", "")
@@ -530,17 +555,21 @@ def render_start():
     check, entries, auto, uploads, code, problem, has_input = {}, [], [], {}, "", "", False
     if source == "Dropbox link":
         c_link, c_code = st.columns([5, 1])
-        link = c_link.text_input("Paste a Dropbox link — an album folder, a folder of files, or a single file",
-                                 key="link_input", placeholder="https://www.dropbox.com/scl/fo/…").strip()
+        link = c_link.text_area("Paste Dropbox links — an album folder, a folder of files, a single file, "
+                                "or several links (one per line)", key="link_input", height=80,
+                                placeholder="https://www.dropbox.com/scl/fo/…").strip()
         has_input = bool(link)
         if link and not dropbox_configured:
             problem = "Dropbox is not configured, so the link can't be read."
         elif link:
-            with st.spinner("Checking the link…"):
-                check = folder_check(link, ss.catalog_choice or "")
+            with st.spinner("Checking the links…"):
+                check = links_check(link, ss.catalog_choice or "")
             if not check.get("ok"):
                 problem = f"That link couldn't be opened. {check.get('error', '')}"
             else:
+                if check.get("partial"):
+                    st.warning("Some links couldn't be opened, and are left out: "
+                               + "; ".join(check["partial"]))
                 entries, auto = check["analyzable"], check["auto"]
                 if check["code"]:
                     code = check["code"]
@@ -574,7 +603,9 @@ def render_start():
             if auto:
                 st.caption(f"Plus {len(auto)} alt mixes and cutdowns, described from their folder names.")
             if check.get("kind") == "file":
-                st.caption("A single file runs through the same listen and checks as a track in an album.")
+                st.caption("One file, run as a one-track album: the same listen and the same checks.")
+            elif check.get("kind") == "links":
+                st.caption(f"{n} files from {len(split_links(link))} links, run as one album.")
             if any(r["code"] == code for r in (recent_albums(dropbox_configured) if dropbox_configured else [])):
                 st.caption(f"{code} has been analyzed before. Analyzing again replaces its saved progress.")
     if problem:
