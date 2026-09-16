@@ -74,8 +74,11 @@ CALL_B_CONFIG = types.GenerateContentConfig(
     response_mime_type="application/json",
     response_schema=Writing,
     temperature=0.7, top_p=0.95,
-    candidate_count=1, max_output_tokens=2500,
+    candidate_count=1, max_output_tokens=8192,
 )
+# Gemini 3.x counts thinking tokens against max_output_tokens; at 2500 the JSON was
+# cut off mid-string. A reply that is not valid JSON is written again once with this.
+CALL_B_RETRY_MAX_OUTPUT_TOKENS = 16384
 
 # Which Call A path ships (DECISIONS.md → "Call A schema path").
 #   "schema": Gemini constrained decoding with response_schema=Analysis.
@@ -465,9 +468,17 @@ class IngestionEngine:
         """Call B, then the configured writer. Raises SchemaViolation / ClaudeError / API errors."""
         if not track.get("analysis"):
             raise ValueError(f"'{track.get('Title')}' has no analysis to write from.")
-        text = self._generate(self._client(gemini_api_key),
-                              self.prompts.call_b_prompt(track, catalog, is_redo, guidance),
-                              CALL_B_CONFIG, rules.system_instruction(catalog))
+        client = self._client(gemini_api_key)
+        prompt = self.prompts.call_b_prompt(track, catalog, is_redo, guidance)
+        system = rules.system_instruction(catalog)
+        text = self._generate(client, prompt, CALL_B_CONFIG, system)
+        try:
+            json.loads(text or "")
+        except json.JSONDecodeError as exc:
+            log.warning("Call B reply was not valid JSON (%s; likely cut off at %d tokens); writing again with %d.",
+                        exc, CALL_B_CONFIG.max_output_tokens, CALL_B_RETRY_MAX_OUTPUT_TOKENS)
+            text = self._generate(client, prompt, CALL_B_CONFIG.model_copy(
+                update={"max_output_tokens": CALL_B_RETRY_MAX_OUTPUT_TOKENS}), system)
         writing = gate.parse_writing(text)
         track["Keywords"] = self.process_keywords(writing.keywords, catalog, gemini_api_key)
         track["PFD_Keyword_Warnings"] = list(self.keyword_warnings)

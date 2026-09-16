@@ -220,7 +220,7 @@ class TestProcessTrack(ListenCase):
         call = self.calls()[1]
         config, prompt = call.kwargs["config"], call.kwargs["contents"]
         self.assertIs(config.response_schema, Writing)
-        self.assertEqual((config.temperature, config.top_p, config.max_output_tokens), (0.7, 0.95, 2500))
+        self.assertEqual((config.temperature, config.top_p, config.max_output_tokens), (0.7, 0.95, 8192))
         self.assertEqual(config.system_instruction, rules.system_instruction("SSC"))
         self.assertIn(WRITER_GROUNDING, prompt)
         self.assertIn("keys_and_synths.synth_pad", prompt.split("do_not_claim:")[1])
@@ -295,6 +295,15 @@ class TestProcessTrack(ListenCase):
         self.engine.override_track(track, "rC", "g", "", "house style, signed off by Damir")
         self.assertEqual(track["PFD_Status"], engine.OVERRIDE)
         self.assertTrue(track["PFD_Override"]["overrode"])
+
+    def test_a_cut_off_writing_reply_is_written_again_with_more_room(self):
+        cut_off = '{\n  "trailer_or_campaign_voice": "Distorted synth pulses'
+        self.replies(analysis_dict(), cut_off, writing_dict())
+        with self.assertLogs("pfd", level="WARNING") as logs:
+            track = self.process()
+        self.assertEqual(track["PFD_Status"], gate.PASSED, track["PFD_Block_Reasons"])
+        self.assertEqual([c.kwargs["config"].max_output_tokens for c in self.calls()[1:]], [8192, 16384])
+        self.assertTrue(any("not valid JSON" in m for m in logs.output))
 
     def test_quota_error_while_writing_stops_the_run(self):
         self.replies(analysis_dict(), RuntimeError("429 RESOURCE_EXHAUSTED"))
