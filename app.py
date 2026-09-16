@@ -32,7 +32,7 @@ from dropbox_pipeline import (
 from engine import (
     CLAUDE_PIN_EXPLICIT, CLAUDE_WRITING_MODEL, GEMINI_AUDIO_MODEL, GEMINI_PIN_EXPLICIT, SECONDS_PER_TRACK,
     SKIPPED, WRITER_MODES, ClaudeError, IngestionEngine, _secret_value, base_title, is_alt_or_cutdown,
-    remaining_uncertain,
+    new_track_id, remaining_uncertain, track_key,
 )
 from pfd_errors import report
 
@@ -70,7 +70,7 @@ eng: IngestionEngine = ss.engine
 for _k, _v in {"step": "start", "album": None, "running": False, "dirty": False, "confirm_reset": False,
                "catalog_choice": None, "selected": None, "editor_nonce": 0, "folder_checks": {},
                "fix_mode": "", "export_result": None, "field_ver": 0, "audio_cache": {},
-               "uploads": {}}.items():
+               "uploads": {}, "results": {}}.items():
     if _k not in ss:
         ss[_k] = _v
 
@@ -131,17 +131,37 @@ def album_lane():
     return album.get("lane") if album.get("catalog") == "EPP" else None
 
 
-def find_track(title: str):
-    return next((t for t in (ss.album or {}).get("tracks", []) if t.get("Title") == title), None)
+def find_track(track_id: str):
+    return next((t for t in (ss.album or {}).get("tracks", []) if track_key(t) == track_id), None)
 
 
 def put_track(track: dict):
+    """
+    Store a row under its stable id, in the album and in the session's own result
+    store. ss.results is what makes a computed result survive anything the page
+    does: a rerender, a filter, a step change, or an album reloaded from Dropbox.
+    """
+    key = track_key(track)
     tracks = ss.album["tracks"]
     for i, t in enumerate(tracks):
-        if t.get("Title") == track["Title"]:
+        if track_key(t) == key:
             tracks[i] = track
-            return
-    tracks.append(track)
+            break
+    else:
+        tracks.append(track)
+    ss.results[key] = track
+
+
+def restore_results(album: dict):
+    """Put back anything this session already computed. A result is never lost to a blank row."""
+    for i, t in enumerate(album.get("tracks") or []):
+        cached = ss.results.get(track_key(t))
+        if cached is t:
+            continue
+        if cached and (cached.get("analysis") or cached.get("Track Description")) and not t.get("analysis"):
+            album["tracks"][i] = cached
+        else:
+            ss.results[track_key(t)] = t
 
 
 def save_album(mark_dirty: bool = True):
@@ -165,7 +185,7 @@ def reset_album():
     for key in ("album", "selected", "export_result"):
         ss[key] = None
     ss.update(step="start", running=False, dirty=False, confirm_reset=False, fix_mode="", folder_checks={},
-              catalog_choice=None, uploads={}, audio_cache={})
+              catalog_choice=None, uploads={}, audio_cache={}, results={})
     for key in ("link_input", "code_input", "upload_code", "upload_input"):
         ss.pop(key, None)
 
@@ -259,7 +279,8 @@ def upload_entries(files) -> tuple:
         blobs[f.name] = f.getvalue()
         entries.append({"display_name": title, "dropbox_path": "", "file_id": "", "size": len(blobs[f.name]),
                         "category": "full_mix", "parent_track": base_title(title),
-                        "mix_type": detect_mix_type(f.name), "notes": "", "upload_key": f.name})
+                        "mix_type": detect_mix_type(f.name), "notes": "", "upload_key": f.name,
+                        "track_id": new_track_id()})
     return entries, blobs
 
 
@@ -355,7 +376,8 @@ def render_progress():
             else:
                 data = eng.download_bytes_from_dropbox(dropbox_token, entry["dropbox_path"])
             track = eng.process_track(entry["display_name"], mix, data, ext, catalog, gemini_api_key, claude_api_key,
-                                      album_lane(), entry["dropbox_path"], entry["parent_track"])
+                                      album_lane(), entry["dropbox_path"], entry["parent_track"],
+                                      track_id=entry.get("track_id", ""))
             track["Upload Key"] = upload_key
         except Exception as exc:
             report(f"Analysis failed — {entry['display_name']}", exc)
@@ -368,7 +390,8 @@ def render_progress():
                           f"('{entry['display_name']}'). Top up Gemini credits, then Resume.", priority="urgent")
                 st.rerun()
             track = eng.blocked_record(entry["display_name"], mix, gate.failure("API", error=str(exc)[:300]),
-                                       catalog, entry["dropbox_path"], entry["parent_track"])
+                                       catalog, entry["dropbox_path"], entry["parent_track"],
+                                       track_id=entry.get("track_id", ""))
             track["Upload Key"] = upload_key
         put_track(track)
         album["pending"].pop(0)
@@ -404,12 +427,13 @@ def start_album(catalog: str, code: str, entries: list, auto: list, check: dict,
         "album_name_rationales": {}, "album_name_selected": "", "mailchimp_intro": "", "cover_art": "",
         "writer_test": {}, "exported_at": None,
     }
+    ss.results = {}
     for e in auto:
         desc = (generate_alt_description(e["parent_track"], e["notes"]) if e["category"] == "alt_mix"
                 else generate_cutdown_description(e["parent_track"], e["notes"]))
-        ss.album["tracks"].append({"Title": e["display_name"], "Mix Type": e["mix_type"],
-                                   "Parent Track": e["parent_track"], "Source Path": e["dropbox_path"],
-                                   "Track Description": desc, "Keywords": ""})
+        put_track({"track_id": new_track_id(), "Title": e["display_name"], "Mix Type": e["mix_type"],
+                   "Parent Track": e["parent_track"], "Source Path": e["dropbox_path"],
+                   "Track Description": desc, "Keywords": ""})
     ss.running = True
     ss.export_result = None
     save_album()
@@ -425,6 +449,7 @@ def open_album(code: str):
     state.setdefault("pending", [])
     state.setdefault("writer_test", {})
     ss.album = state
+    restore_results(state)
     ss.update(dirty=False, selected=None, export_result=None, catalog_choice=state.get("catalog"))
     ss.step = "review" if state["tracks"] and not state["pending"] else "start"
     st.rerun()
@@ -570,17 +595,23 @@ def render_start():
 # ══════════════════════════════════════════════════════════════════════════════
 # REVIEW
 # ══════════════════════════════════════════════════════════════════════════════
-def apply_table_edits(editor_key: str, titles: list):
+def apply_table_edits(editor_key: str, ids: list):
+    """
+    Edits land on the track under its stable id. The editor is only remounted
+    when a row is opened — remounting on every keystroke used to throw away
+    what the user had just typed.
+    """
     edits = (ss.get(editor_key) or {}).get("edited_rows", {})
     album = ss.album
-    changed = False
+    changed = opened = False
     for idx, change in edits.items():
-        track = find_track(titles[int(idx)])
+        track = find_track(ids[int(idx)])
         if track is None:
             continue
         if change.get("Open"):
-            ss.selected = track["Title"]
+            ss.selected = track_key(track)
             ss.fix_mode = ""
+            opened = True
         if track.get("PFD_Status") == gate.BLOCKED:
             continue  # blocked rows show a reason, not copy; they are fixed in the panel
         if "Description" in change and change["Description"] != track.get("Track Description", ""):
@@ -590,10 +621,13 @@ def apply_table_edits(editor_key: str, titles: list):
                 and change["Keywords"] != track.get("Keywords", "")):
             track["Keywords"] = change["Keywords"]
             changed = True
+        if changed:
+            ss.results[track_key(track)] = track
     if changed:
         eng.refresh_statuses(album, album["catalog"])
         save_album()
-    ss.editor_nonce += 1
+    if opened:
+        ss.editor_nonce += 1
 
 
 def render_reason(f: dict, tone: str = "pfd-reason"):
@@ -748,9 +782,9 @@ def rerun_listen(track: dict, correction: str = ""):
             new = eng.process_track(track["Title"], track.get("Mix Type", "full"), data, track_extension(track),
                                     album["catalog"], gemini_api_key, claude_api_key, album_lane(),
                                     track.get("Source Path", ""), track.get("Parent Track", ""),
-                                    correction=correction)
+                                    correction=correction, track_id=track_key(track))
             new["Upload Key"] = track.get("Upload Key", "")
-            put_track(new)
+            put_track(new)   # the old result stands until this one is ready
         except Exception as exc:
             report(f"Couldn't listen again to {track['Title']}", exc)
             return
@@ -762,20 +796,20 @@ def rerun_listen(track: dict, correction: str = ""):
 
 def render_compare(track: dict):
     album = ss.album
-    entry = album.setdefault("writer_test", {}).get(track["Title"])
-    if st.button("Write three versions", key=f"compare_{track['Title']}", disabled=not track.get("analysis")):
+    entry = album.setdefault("writer_test", {}).get(track_key(track))
+    if st.button("Write three versions", key=f"compare_{track_key(track)}", disabled=not track.get("analysis")):
         with st.spinner("Writing three versions…"):
             variants = eng.writer_variants(track, album["catalog"], claude_api_key, album_lane())
         order = list(WRITER_MODES)
         random.shuffle(order)
-        album["writer_test"][track["Title"]] = {"variants": variants, "order": order, "pick": None}
+        album["writer_test"][track_key(track)] = {"variants": variants, "order": order, "pick": None}
         save_album()
         st.rerun()
     if entry:
         labels = [f"Version {i}" for i in range(1, len(entry["order"]) + 1)]
         for label, mode in zip(labels, entry["order"]):
             st.markdown(f"**{label}.** {entry['variants'].get(mode) or '_(this version failed)_'}")
-        choice = st.radio("The one you'd ship", labels, horizontal=True, key=f"compare_pick_{track['Title']}",
+        choice = st.radio("The one you'd ship", labels, horizontal=True, key=f"compare_pick_{track_key(track)}",
                           index=None if entry["pick"] is None else entry["order"].index(entry["pick"]))
         if choice:
             mode = entry["order"][labels.index(choice)]
@@ -845,7 +879,7 @@ def render_fix_panel(track: dict):
 
         if ss.fix_mode == "override":
             st.caption("The track passes and the export records that you overrode it. Say why, in a few words.")
-            why = st.text_input("Why is the analysis right?", key=f"override_{track['Title']}",
+            why = st.text_input("Why is the analysis right?", key=f"override_{track_key(track)}",
                                 placeholder="e.g. free time, no steady tempo — librosa has it wrong")
             if st.button("Override and continue", key="fix_override_go", type="primary"):
                 with st.spinner("Writing the description…"):
@@ -855,16 +889,16 @@ def render_fix_panel(track: dict):
                 ss.fix_mode = ""
                 st.rerun()
         elif ss.fix_mode == "correct":
-            correction = st.text_input("What's true about this track?", key=f"correction_{track['Title']}",
+            correction = st.text_input("What's true about this track?", key=f"correction_{track_key(track)}",
                                        placeholder="e.g. There are no drums — the hits are timpani. It fades out.")
             if st.button("Listen again with this", key="fix_correct_go", disabled=not correction.strip()):
                 rerun_listen(track, correction=correction)
         elif ss.fix_mode == "manual":
-            text = st.text_area("Description", key=f"manual_{track['Title']}", height=110,
+            text = st.text_area("Description", key=f"manual_{track_key(track)}", height=110,
                                 placeholder="Two or three sentences, then the Fits line. Fits: …")
             keywords = ""
             if not track.get("analysis"):
-                keywords = st.text_input("Keywords (12–18, comma-separated)", key=f"manual_kw_{track['Title']}")
+                keywords = st.text_input("Keywords (12–18, comma-separated)", key=f"manual_kw_{track_key(track)}")
             if st.button("Save", key="fix_manual_save", type="primary", disabled=not text.strip()):
                 try:
                     with st.spinner("Saving and writing keywords…"):
@@ -935,6 +969,7 @@ def render_fix_panel(track: dict):
 def render_review():
     album = ss.album
     catalog = album["catalog"]
+    restore_results(album)
     eng.refresh_statuses(album, catalog)
     tracks = album["tracks"]
     counts = eng.status_counts(tracks)
@@ -958,32 +993,35 @@ def render_review():
     if not shown:
         st.caption("Nothing here.")
     else:
-        titles = [t["Title"] for t in shown]
+        ids = [track_key(t) for t in shown]
         df = pd.DataFrame([{
             "Open": False,
             "Status": status_label(t),
             "Track": t["Title"],
-            "Description": (" · ".join(gate.summary(f) for f in gate.normalize(t.get("PFD_Block_Reasons")))
-                            if t.get("PFD_Status") == gate.BLOCKED else t.get("Track Description", "")),
+            "Description": t.get("Track Description", ""),   # never replaced by a reason
+            "Why blocked": (" · ".join(gate.summary(f) for f in gate.normalize(t.get("PFD_Block_Reasons")))
+                            if t.get("PFD_Status") == gate.BLOCKED else ""),
             "Keywords": t.get("Keywords", ""),
             "Ending": t.get("Ending Type", ""),
         } for t in shown])
         editor_key = f"review_editor_{ss.editor_nonce}"
         st.data_editor(
             df, key=editor_key, hide_index=True, use_container_width=True, num_rows="fixed",
-            disabled=["Status", "Track", "Ending"],
+            disabled=["Status", "Track", "Why blocked", "Ending"],
             column_config={
                 "Open": st.column_config.CheckboxColumn("Open", width="small", help="Open this track below"),
                 "Status": st.column_config.TextColumn("Status", width="small"),
                 "Track": st.column_config.TextColumn("Track", width="medium"),
-                "Description": st.column_config.TextColumn("Description", width="large",
-                                                           help="Blocked rows show why instead"),
+                "Description": st.column_config.TextColumn("Description", width="large"),
+                "Why blocked": st.column_config.TextColumn("Why blocked", width="medium",
+                                                           help="Open the track for the full reason"),
                 "Keywords": st.column_config.TextColumn("Keywords", width="medium"),
                 "Ending": st.column_config.TextColumn("Ending", width="small"),
             },
-            on_change=apply_table_edits, args=(editor_key, titles),
+            on_change=apply_table_edits, args=(editor_key, ids),
         )
-        st.caption("Tick Open to see a track below. Blocked rows can't be edited in the table.")
+        st.caption("Tick Open to see a track below. Your text stays in the Description column; "
+                   "the reason a track is blocked sits beside it.")
 
     selected = find_track(ss.selected) if ss.selected else None
     if selected:

@@ -9,6 +9,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
+import engine
 import gate
 import rules
 from analysis_schema import Analysis, Writing
@@ -328,6 +329,38 @@ class TestFixActions(ListenCase):
         self.engine.skip(track)
         self.engine.refresh_status(track, "rC")
         self.assertEqual(track["PFD_Status"], "SKIPPED")
+
+
+class TestTrackIdentity(ListenCase):
+    def test_a_row_gets_a_stable_id(self):
+        self.replies(analysis_dict(), writing_dict())
+        track = self.process()
+        self.assertTrue(track["track_id"].startswith("t"))
+        self.assertEqual(engine.track_key(track), track["track_id"])
+
+    def test_a_rerun_keeps_the_same_id(self):
+        """The new result has to replace the row it came from, not one with the same title."""
+        self.replies(analysis_dict(), writing_dict(), analysis_dict(), writing_dict())
+        first = self.process()
+        again = self.engine.process_track(first["Title"], "full", AUDIO, ".mp3", "rC", "g", "",
+                                          track_id=first["track_id"])
+        self.assertEqual(again["track_id"], first["track_id"])
+
+    def test_two_files_with_the_same_title_stay_separate(self):
+        self.replies(analysis_dict(), writing_dict(), analysis_dict(), writing_dict())
+        one = self.process()
+        two = self.process()
+        self.assertEqual(one["Title"], two["Title"])
+        self.assertNotEqual(engine.track_key(one), engine.track_key(two))
+
+    def test_rows_written_before_v4_still_have_a_key(self):
+        self.assertEqual(engine.track_key({"Title": "Glass Hours"}), "Glass Hours")
+        self.assertEqual(engine.track_key({"Title": "Glass Hours", "Source Path": "/a/b.mp3"}), "/a/b.mp3")
+
+    def test_a_blocked_row_keeps_the_id_it_was_given(self):
+        track = self.engine.blocked_record("Glass Hours", "full", gate.failure("API", error="x"), "rC",
+                                           track_id="t-known")
+        self.assertEqual(track["track_id"], "t-known")
 
 
 class TestConfigs(unittest.TestCase):

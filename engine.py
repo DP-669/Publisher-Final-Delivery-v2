@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -159,6 +160,19 @@ def recent_album_descriptions(catalog: str) -> List[Dict]:
         return []
     data = json.loads(RECENT_ALBUMS_PATH.read_text(encoding="utf-8"))
     return (data.get(rules.catalog_code(catalog)) or [])[:10]
+
+
+def new_track_id() -> str:
+    """A row's identity for the life of the album. Titles repeat; ids don't."""
+    return "t" + uuid.uuid4().hex[:12]
+
+
+def track_key(track: Dict) -> str:
+    """
+    The stable key a row is stored and looked up under. Rows written before
+    v4 carry no id, so they fall back to their source path, then their title.
+    """
+    return track.get("track_id") or track.get("Source Path") or track.get("Title", "")
 
 
 def is_alt_or_cutdown(track: Dict) -> bool:
@@ -463,10 +477,11 @@ class IngestionEngine:
     # ── One track, end to end ──────────────────────────────────────────────────
     def process_track(self, title: str, mix_type: str, data: bytes, ext: str, catalog: str,
                       gemini_api_key: str, claude_api_key: str, lane: Optional[str] = None,
-                      source_path: str = "", parent_track: str = "", correction: str = "") -> Dict:
+                      source_path: str = "", parent_track: str = "", correction: str = "",
+                      track_id: str = "") -> Dict:
         """Listen, gate, write. Quota errors raise so the run can stop; other write failures land on the row."""
         result = self.listen(data, ext, mix_type, gemini_api_key, correction=correction)
-        track = self.track_record(title, mix_type, result, catalog, source_path, parent_track)
+        track = self.track_record(title, mix_type, result, catalog, source_path, parent_track, track_id)
         if track.get("analysis") and (track["PFD_Gate"]["status"] in gate.READY):
             self.try_write(track, catalog, gemini_api_key, claude_api_key, lane)
         self.refresh_status(track, catalog, lane)
@@ -486,8 +501,12 @@ class IngestionEngine:
 
     # ── Track rows ─────────────────────────────────────────────────────────────
     def track_record(self, title: str, mix_type: str, result: Dict, catalog: str,
-                     source_path: str = "", parent_track: str = "") -> Dict:
-        """Join the title to a listen result. This is the only place the two meet."""
+                     source_path: str = "", parent_track: str = "", track_id: str = "") -> Dict:
+        """
+        Join the title to a listen result. This is the only place the two meet.
+        `track_id` carries a row's identity through a re-run, so a fresh result
+        replaces the right row instead of one that happens to share a title.
+        """
         a = result.get("analysis") or {}
         simple = result.get("simple") or {}
         measured = result.get("measured") or {}
@@ -503,6 +522,7 @@ class IngestionEngine:
             gate_state["override_note"] = f"Corrected by editor: {result['correction']}"
             gate_state["status"] = gate.PASSED
         track = {
+            "track_id": track_id or new_track_id(),
             "Title": title,
             "Mix Type": mix_type,
             "Parent Track": parent_track or base_title(title),
@@ -532,10 +552,10 @@ class IngestionEngine:
         return track
 
     def blocked_record(self, title: str, mix_type: str, fail: Dict, catalog: str,
-                       source_path: str = "", parent_track: str = "") -> Dict:
+                       source_path: str = "", parent_track: str = "", track_id: str = "") -> Dict:
         """A row for a track whose listen could not complete (decode failure, API error)."""
         return self.track_record(title, mix_type, {"failures": [fail], "status": gate.BLOCKED},
-                                 catalog, source_path, parent_track)
+                                 catalog, source_path, parent_track, track_id)
 
     def refresh_status(self, track: Dict, catalog: str, lane: Optional[str] = None,
                        final: bool = False, parent: Optional[Dict] = None) -> Dict:
