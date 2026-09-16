@@ -30,9 +30,9 @@ from dropbox_pipeline import (
     loose_audio_entries, resolve_shared_link, send_ntfy, single_file_entry,
 )
 from engine import (
-    CLAUDE_PIN_EXPLICIT, CLAUDE_WRITING_MODEL, GEMINI_AUDIO_MODEL, GEMINI_PIN_EXPLICIT, SECONDS_PER_TRACK,
-    SKIPPED, WRITER_MODES, ClaudeError, IngestionEngine, _secret_value, base_title, is_alt_or_cutdown,
-    new_track_id, remaining_uncertain, track_key,
+    CLAUDE_PIN_EXPLICIT, CLAUDE_WRITING_MODEL, GEMINI_AUDIO_MODEL, GEMINI_PIN_EXPLICIT, OVERRIDE,
+    SECONDS_PER_TRACK, SKIPPED, WRITER_MODES, ClaudeError, IngestionEngine, _secret_value, base_title,
+    is_alt_or_cutdown, new_track_id, override_reason, remaining_uncertain, track_key,
 )
 from pfd_errors import report
 
@@ -56,9 +56,9 @@ CATALOGS = [("rC", "redCola"), ("SSC", "Short Story Collective"), ("EPP", "Ekono
 CATALOG_NAMES = dict(CATALOGS)
 LOGOS = {"rC": ("redCola", "redCola logo 200x2001934x751.jpg"), "SSC": ("SSC", "SSC 200x200 8.27.08#U202fPM.jpg"),
          "EPP": ("EPP", "EPP 200x200.jpg")}
-DOT = {gate.PASSED: "🟢", gate.PASSED_WITH_UNCERTAINTY: "🟠", gate.BLOCKED: "🔴", SKIPPED: "⚪"}
+DOT = {gate.PASSED: "🟢", gate.PASSED_WITH_UNCERTAINTY: "🟠", gate.BLOCKED: "🔴", SKIPPED: "⚪", OVERRIDE: "🔵"}
 LABEL = {gate.PASSED: "Ready", gate.PASSED_WITH_UNCERTAINTY: "Ready with note", gate.BLOCKED: "Blocked",
-         SKIPPED: "Skipped"}
+         SKIPPED: "Skipped", OVERRIDE: "Override"}
 AUDIO_FORMATS = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".aif": "audio/aiff", ".aiff": "audio/aiff",
                  ".flac": "audio/flac"}
 
@@ -867,8 +867,8 @@ def render_fix_panel(track: dict):
         if c[2].button("I'll write it", key="fix_manual", disabled=is_alt_or_cutdown(track)):
             ss.fix_mode = "manual"
         if c[3].button("Override", key="fix_override",
-                       disabled=track.get("PFD_Reason_Kind") != "listen" or is_alt_or_cutdown(track),
-                       help="You listened and the analysis is right. The track passes with a note in the export."):
+                       help="You listened and you accept this track. It passes with your reason, "
+                            "the time, and the block it overrode, all recorded in the export."):
             ss.fix_mode = "override"
         if c[4].button("Skip this track", key="fix_skip", type="tertiary"):
             eng.skip(track)
@@ -878,16 +878,23 @@ def render_fix_panel(track: dict):
             st.rerun()
 
         if ss.fix_mode == "override":
-            st.caption("The track passes and the export records that you overrode it. Say why, in a few words.")
-            why = st.text_input("Why is the analysis right?", key=f"override_{track_key(track)}",
+            why = st.text_input("Reason for override (required)", key=f"override_{track_key(track)}",
                                 placeholder="e.g. free time, no steady tempo — librosa has it wrong")
-            if st.button("Override and continue", key="fix_override_go", type="primary"):
-                with st.spinner("Writing the description…"):
-                    eng.override_track(track, catalog, gemini_api_key, claude_api_key, why, album_lane())
-                eng.refresh_statuses(album, catalog)
-                save_album()
-                ss.fix_mode = ""
-                st.rerun()
+            st.caption("The track passes. Your reason, the time, and the block you overrode are kept on the "
+                       "row and written into the export. The original reason is never deleted.")
+            if st.button("Override and continue", key="fix_override_go", type="primary",
+                         disabled=not why.strip()):
+                try:
+                    with st.spinner("Recording the override and writing the description…"):
+                        eng.override_track(track, catalog, gemini_api_key, claude_api_key, why, album_lane())
+                    put_track(track)
+                except Exception as exc:
+                    report(f"Couldn't override {track['Title']}", exc)
+                else:
+                    eng.refresh_statuses(album, catalog)
+                    save_album()
+                    ss.fix_mode = ""
+                    st.rerun()
         elif ss.fix_mode == "correct":
             correction = st.text_input("What's true about this track?", key=f"correction_{track_key(track)}",
                                        placeholder="e.g. There are no drums — the hits are timpani. It fades out.")
@@ -946,8 +953,14 @@ def render_fix_panel(track: dict):
                 save_album()
                 st.rerun()
 
-    if track.get("PFD_Override"):
-        st.caption(f"Overridden by an editor: {track['PFD_Override']} — the export says so.")
+    override = track.get("PFD_Override")
+    if override:
+        at = override.get("at", "")[:16].replace("T", " ") if isinstance(override, dict) else ""
+        st.markdown(f'<div class="pfd-note"><b>Override</b> — {html.escape(override_reason(track))}'
+                    + (f"<br>Recorded {at} UTC" if at else "")
+                    + (("<br>It overrode: " + html.escape(" · ".join(override.get("overrode") or [])))
+                       if isinstance(override, dict) and override.get("overrode") else "")
+                    + "</div>", unsafe_allow_html=True)
     note = (track.get("PFD_Gate") or {}).get("override_note")
     if note:
         st.caption(note)
@@ -982,13 +995,14 @@ def render_review():
 
     if "review_filter" not in ss:
         ss.review_filter = "needs" if needs else "all"
-    options = {"all": f"All ({len(tracks)})", "needs": f"Needs a look ({needs})", "ready": f"Ready ({counts['ready']})"}
+    ready_n = counts["ready"] + counts["override"]
+    options = {"all": f"All ({len(tracks)})", "needs": f"Needs a look ({needs})", "ready": f"Ready ({ready_n})"}
     choice = st.segmented_control("Show", list(options), format_func=lambda k: options[k], key="review_filter",
                                   label_visibility="collapsed")
     choice = choice or "all"
     shown = [t for t in tracks if choice == "all"
              or (choice == "needs" and t.get("PFD_Status") in (gate.BLOCKED, gate.PASSED_WITH_UNCERTAINTY))
-             or (choice == "ready" and t.get("PFD_Status") == gate.PASSED)]
+             or (choice == "ready" and t.get("PFD_Status") in (gate.PASSED, OVERRIDE))]
 
     if not shown:
         st.caption("Nothing here.")
@@ -1000,7 +1014,8 @@ def render_review():
             "Track": t["Title"],
             "Description": t.get("Track Description", ""),   # never replaced by a reason
             "Why blocked": (" · ".join(gate.summary(f) for f in gate.normalize(t.get("PFD_Block_Reasons")))
-                            if t.get("PFD_Status") == gate.BLOCKED else ""),
+                            if t.get("PFD_Status") == gate.BLOCKED
+                            else (f"Override: {override_reason(t)}" if t.get("PFD_Status") == OVERRIDE else "")),
             "Keywords": t.get("Keywords", ""),
             "Ending": t.get("Ending Type", ""),
         } for t in shown])
@@ -1039,11 +1054,12 @@ def render_export():
     lane_missing = catalog == "EPP" and not album.get("lane")
 
     st.markdown(f"#### {album['album_code']} · {CATALOG_NAMES.get(catalog, catalog)}")
-    c = st.columns(4)
+    c = st.columns(5)
     c[0].metric("Ready", counts["ready"])
     c[1].metric("Ready with note", counts["uncertain"])
-    c[2].metric("Blocked", counts["blocked"])
-    c[3].metric("Skipped", counts["skipped"])
+    c[2].metric("Override", counts["override"])
+    c[3].metric("Blocked", counts["blocked"])
+    c[4].metric("Skipped", counts["skipped"])
 
     if counts["blocked"]:
         st.warning(f"{counts['blocked']} track(s) are still blocked. Fix or skip them in Review.")

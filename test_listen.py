@@ -270,10 +270,31 @@ class TestProcessTrack(ListenCase):
         self.replies(bad, bad, writing_dict())
         track = self.process()
         self.assertEqual(track["PFD_Status"], gate.BLOCKED)
+        blocked_by = [gate.summary(f) for f in track["PFD_Block_Reasons"]]
         self.engine.override_track(track, "rC", "gemini-key", "", "free time — librosa has the beat wrong")
-        self.assertEqual(track["PFD_Status"], gate.PASSED, track["PFD_Block_Reasons"])
-        self.assertEqual(track["PFD_Override"], "free time — librosa has the beat wrong")
+        self.assertEqual(track["PFD_Status"], engine.OVERRIDE, track["PFD_Block_Reasons"])
+        record = track["PFD_Override"]
+        self.assertEqual(record["reason"], "free time — librosa has the beat wrong")
+        self.assertTrue(record["at"])                       # stamped with the time
+        self.assertEqual(record["overrode"], blocked_by)    # the original block is kept, not deleted
+        self.assertEqual(track["PFD_Log"][-1]["action"], "override")
         self.assertEqual(track["Track Description"], DESCRIPTION)  # written after the override
+
+    def test_an_override_needs_a_reason(self):
+        self.replies(analysis_dict(), writing_dict())
+        track = self.process()
+        with self.assertRaises(ValueError):
+            self.engine.override_track(track, "rC", "g", "", "   ")
+        self.assertNotIn("PFD_Override", track)
+
+    def test_a_text_block_can_be_overridden_too(self):
+        """Override is offered on every blocked track, not only listen failures."""
+        self.replies(analysis_dict(), writing_dict(description="Epic strings. It rings out. Fits: Trailer, Film"))
+        track = self.process()
+        self.assertEqual((track["PFD_Status"], track["PFD_Reason_Kind"]), (gate.BLOCKED, "text"))
+        self.engine.override_track(track, "rC", "g", "", "house style, signed off by Damir")
+        self.assertEqual(track["PFD_Status"], engine.OVERRIDE)
+        self.assertTrue(track["PFD_Override"]["overrode"])
 
     def test_quota_error_while_writing_stops_the_run(self):
         self.replies(analysis_dict(), RuntimeError("429 RESOURCE_EXHAUSTED"))

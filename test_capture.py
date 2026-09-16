@@ -90,10 +90,21 @@ class TestV4Rows(unittest.TestCase):
         data["tracks"][0]["PFD_Block_Reasons"] = ["duration mismatch"]   # written by an older version
         self.assertIn("Duration mismatch", capture.track_rows(data, "EPP").loc[0, "PFD_Block_Reasons"])
 
-    def test_an_override_is_recorded_in_the_export(self):
+    def test_an_override_is_recorded_in_the_export_with_what_it_overrode(self):
         data = _app_data()
-        data["tracks"][0]["PFD_Override"] = "free time — librosa has the beat wrong"
-        self.assertIn("Overridden by an editor: free time", capture.track_rows(data, "EPP").loc[0, "PFD_Block_Reasons"])
+        data["tracks"][0]["PFD_Override"] = {
+            "reason": "free time — librosa has the beat wrong",
+            "at": "2026-09-16T11:30:00+00:00",
+            "overrode": ["G10 · Tempo: Gemini: 120 BPM · librosa: 68 BPM"],
+        }
+        exported = capture.track_rows(data, "EPP").loc[0, "PFD_Block_Reasons"]
+        self.assertIn("OVERRIDE 2026-09-16T11:30:00+00:00: free time", exported)
+        self.assertIn("Overrode — G10 · Tempo", exported)   # the original block travels with it
+
+    def test_an_override_written_by_an_older_version_still_exports(self):
+        data = _app_data()
+        data["tracks"][0]["PFD_Override"] = "free time"
+        self.assertIn("OVERRIDE: free time", capture.track_rows(data, "EPP").loc[0, "PFD_Block_Reasons"])
 
     def test_uncertainty_and_corrections_travel_as_notes(self):
         data = _app_data(gate.PASSED_WITH_UNCERTAINTY)

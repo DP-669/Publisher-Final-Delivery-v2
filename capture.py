@@ -93,8 +93,14 @@ def _block_reasons(track: Dict) -> str:
         return " | ".join(gate.export_line(f) for f in reasons) or "No status recorded."
     notes = []
     g = track.get("PFD_Gate") or {}
-    if track.get("PFD_Override"):
-        notes.append(f"Overridden by an editor: {track['PFD_Override']}")
+    override = track.get("PFD_Override")
+    if override:
+        if isinstance(override, dict):
+            notes.append(f"OVERRIDE {override.get('at', '')}: {override.get('reason', '')}")
+            if override.get("overrode"):
+                notes.append("Overrode — " + " | ".join(override["overrode"]))
+        else:
+            notes.append(f"OVERRIDE: {override}")
     if g.get("override_note"):
         notes.append(g["override_note"])
     if track.get("PFD_Manual"):

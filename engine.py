@@ -12,6 +12,7 @@ Publisher Final Delivery — engine (v4).
   names, lane proposal, MailChimp, cover-art prompts.
 - Dropbox: folder access, album state and capture. Nothing writes to Google Drive.
 """
+import datetime
 import io
 import json
 import logging
@@ -119,7 +120,16 @@ MIX_SUFFIX_PATTERNS = [
 ]
 
 SKIPPED = "SKIPPED"
+OVERRIDE = "OVERRIDE"
 ANALYSED_MIXES = ("full", "full_mix", "sparse", "sound_design", "sde", "unknown")
+
+
+def override_reason(track: Dict) -> str:
+    """The typed reason, whatever shape the record was written in."""
+    o = track.get("PFD_Override")
+    if isinstance(o, dict):
+        return o.get("reason", "")
+    return o or ""
 
 
 class ClaudeError(RuntimeError):
@@ -581,7 +591,12 @@ class IngestionEngine:
             manual = bool(track.get("PFD_Manual"))
             overridden = bool(track.get("PFD_Override"))
             reasons = []
-            if not manual and not overridden and g.get("status") == gate.BLOCKED:
+            if overridden:
+                # An editor listened and accepted this track. Nothing re-blocks it;
+                # the reasons it overrode stay on the row and in the export.
+                kind = ""
+                reasons = []
+            elif not manual and g.get("status") == gate.BLOCKED:
                 kind = "listen"
                 reasons = list(g.get("failures") or []) or [gate.failure("NO_ANALYSIS")]
             else:
@@ -599,6 +614,8 @@ class IngestionEngine:
                     reasons.append(gate.failure("NO_ANALYSIS"))
             if reasons:
                 status = gate.BLOCKED
+            elif overridden:
+                status = OVERRIDE          # passed by a human, and the row says so
             elif not manual and not g.get("override_note") and remaining_uncertain(track):
                 status = gate.PASSED_WITH_UNCERTAINTY
             else:
@@ -626,11 +643,11 @@ class IngestionEngine:
 
     @staticmethod
     def status_counts(tracks: List[Dict]) -> Dict[str, int]:
-        c = {"ready": 0, "uncertain": 0, "blocked": 0, "skipped": 0}
+        c = {"ready": 0, "uncertain": 0, "blocked": 0, "skipped": 0, "override": 0}
         for t in tracks:
             s = t.get("PFD_Status")
             c["ready" if s == gate.PASSED else "uncertain" if s == gate.PASSED_WITH_UNCERTAINTY
-              else "skipped" if s == SKIPPED else "blocked"] += 1
+              else "skipped" if s == SKIPPED else "override" if s == OVERRIDE else "blocked"] += 1
         return c
 
     # ── Fix actions (Review screen) ────────────────────────────────────────────
@@ -654,13 +671,24 @@ class IngestionEngine:
         self.refresh_status(track, catalog, lane)
 
     def override_track(self, track: Dict, catalog: str, gemini_api_key: str, claude_api_key: str,
-                       note: str = "", lane: Optional[str] = None) -> bool:
+                       note: str, lane: Optional[str] = None) -> bool:
         """
-        The editor listened and accepts the analysis. Recorded on the row and in
-        the export — never a silent pass. The description is written afterwards
-        if the block stopped it from being written at all.
+        The editor listened and accepts the analysis. The reason is required, it is
+        stamped with the time, and the reasons it overrode are kept alongside it —
+        an override never deletes the original block. The description is written
+        afterwards if the block had stopped it being written at all.
         """
-        track["PFD_Override"] = (note or "").strip() or "An editor listened and accepted the analysis."
+        reason = (note or "").strip()
+        if not reason:
+            raise ValueError("An override needs a reason.")
+        overrode = [gate.summary(f) for f in gate.normalize(track.get("PFD_Block_Reasons"))]
+        track["PFD_Override"] = {
+            "reason": reason,
+            "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+            "overrode": overrode,
+        }
+        track.setdefault("PFD_Log", []).append(
+            {"action": "override", "at": track["PFD_Override"]["at"], "reason": reason, "overrode": overrode})
         wrote = True
         if track.get("analysis") and not track.get("Track Description"):
             wrote = self.try_write(track, catalog, gemini_api_key, claude_api_key, lane)
@@ -813,7 +841,7 @@ class IngestionEngine:
         clean. The Export button stays grey while any track is BLOCKED; album-level
         issues are listed but do not stop the export.
         """
-        errors = []
+        errors: List[str] = []
         tracks = [t for t in data.get("tracks", []) if not t.get("PFD_Skipped")]
         if not tracks:
             errors.append("No tracks to export.")
