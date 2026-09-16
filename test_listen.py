@@ -156,10 +156,21 @@ class TestListen(ListenCase):
         self.assertEqual(track["call_a_mode"], "prompt-fallback")
         self.assertEqual(track["PFD_Gate"]["attempts"], 1)  # the re-issue is the same attempt
         self.assertEqual(track["PFD_Status"], gate.PASSED)
-        self.assertTrue(any("rejected the Call A schema" in m for m in logs.output))
+        self.assertTrue(any("rejected the Call A request (400 INVALID_ARGUMENT)" in m for m in logs.output))
 
-    def test_other_400s_are_not_treated_as_schema_rejections(self):
-        self.replies(RuntimeError("400 INVALID_ARGUMENT. Request contains an invalid argument."))
+    def test_any_400_invalid_argument_falls_back(self):
+        """The 2026-09-14 rejections carried no hint of a schema: "Request contains an invalid argument.\""""
+        self.replies(RuntimeError("400 INVALID_ARGUMENT. {'error': {'code': 400, 'message': "
+                                  "'Request contains an invalid argument.', 'status': 'INVALID_ARGUMENT'}}"),
+                     analysis_dict())
+        with patch("engine.CALL_A_MODE", "schema"):
+            result = self.engine.listen(AUDIO, ".mp3", "full", "k")
+        self.assertIsNone(self.calls()[1].kwargs["config"].response_schema)
+        self.assertEqual(result["call_a_mode"], "prompt-fallback")
+        self.assertEqual(result["status"], gate.PASSED)
+
+    def test_other_api_errors_still_raise(self):
+        self.replies(RuntimeError("503 UNAVAILABLE. The model is overloaded."))
         with patch("engine.CALL_A_MODE", "schema"), self.assertRaises(RuntimeError):
             self.engine.listen(AUDIO, ".mp3", "full", "k")
         self.assertEqual(len(self.calls()), 1)

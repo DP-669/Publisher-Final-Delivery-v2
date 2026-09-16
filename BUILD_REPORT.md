@@ -2,7 +2,7 @@
 
 **Shipped: the schema path** (`engine.CALL_A_MODE = "schema"`, `response_schema=Analysis`). It went live after the list caps above 7 moved from the schema into Python: sections ≤ 10 via G2, edit points trimmed to 8, instrumentation unbounded and logged over 20.
 
-- **Fallback:** a `400 INVALID_ARGUMENT` mentioning "schema" re-issues Call A in prompt mode. The track is marked `call_a_mode="prompt-fallback"` and the sidebar shows a warning.
+- **Fallback:** any `400 INVALID_ARGUMENT` on Call A re-issues it in prompt mode (widened 2026-09-16). The track is marked `call_a_mode="prompt-fallback"` and the sidebar shows a warning. Every other error raises.
 - **Verified** on three real tracks, one per catalog, with zero 400s and all `call_a_mode="schema"`:
   - rC Loaded Gun: BLOCKED, legitimate (G5, G10)
   - SSC Frozen In Motion: PASSED_WITH_UNCERTAINTY

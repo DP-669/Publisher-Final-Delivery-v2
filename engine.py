@@ -80,9 +80,9 @@ CALL_B_CONFIG = types.GenerateContentConfig(
 #   "prompt": JSON mode only, the JSON Schema pasted into the system instruction,
 #             same Pydantic validation (a violation is G4).
 # 2026-09-15: schema mode, after list caps above 7 moved out of the schema into
-# Python. If Gemini still rejects the schema (400 INVALID_ARGUMENT mentioning
-# "schema"), listen() re-issues the request in prompt mode and marks the track
-# call_a_mode="prompt-fallback" — never silently.
+# Python. If Gemini returns any 400 INVALID_ARGUMENT, listen() re-issues the
+# request in prompt mode and marks the track call_a_mode="prompt-fallback" —
+# never silently (widened 2026-09-16: the message text is not dependable).
 CALL_A_MODE = "schema"
 CALL_A_PROMPT_CONFIG = CALL_A_CONFIG.model_copy(update={"response_schema": None})
 
@@ -143,11 +143,14 @@ def _is_quota_error(exc: Exception) -> bool:
     ])
 
 
-def _is_schema_rejection(exc: Exception) -> bool:
-    """Gemini's 400 INVALID_ARGUMENT for a response_schema it will not accept."""
+def _is_invalid_argument(exc: Exception) -> bool:
+    """
+    Gemini's 400 INVALID_ARGUMENT on a Call A request. Any wording counts: the
+    2026-09-14 schema rejections said only "Request contains an invalid argument.",
+    so the message text cannot be relied on to spot a rejected schema.
+    """
     msg = str(exc)
-    return ((getattr(exc, "code", None) == 400 or "400" in msg) and "INVALID_ARGUMENT" in msg
-            and "schema" in msg.lower())
+    return (getattr(exc, "code", None) == 400 or "400" in msg) and "INVALID_ARGUMENT" in msg
 
 
 def recent_album_descriptions(catalog: str) -> List[Dict]:
@@ -322,17 +325,18 @@ class IngestionEngine:
     # ── Call A + gate ──────────────────────────────────────────────────────────
     def _call_a(self, client, audio, user: str, duration: float, result: Dict) -> str:
         """
-        One Call A request in the track's current mode. If Gemini rejects the schema,
-        the same request is re-issued in prompt mode and the record says so:
-        result["call_a_mode"] = "prompt-fallback". Other errors raise.
+        One Call A request in the track's current mode. Any 400 INVALID_ARGUMENT
+        re-issues the same request in prompt mode, and the record says so:
+        result["call_a_mode"] = "prompt-fallback". Every other error raises.
         """
         if result["call_a_mode"] == "schema":
             try:
                 return self._generate(client, [audio, user], CALL_A_CONFIG, self.prompts.call_a_system(duration))
             except Exception as exc:
-                if not _is_schema_rejection(exc):
+                if not _is_invalid_argument(exc):
                     raise
-                log.warning("Gemini rejected the Call A schema; re-issuing in prompt mode: %s", str(exc)[:300])
+                log.warning("Gemini rejected the Call A request (400 INVALID_ARGUMENT); "
+                            "re-issuing in prompt mode: %s", str(exc)[:300])
                 result["call_a_mode"] = "prompt-fallback"
                 result["schema_error"] = str(exc)[:300]
         return self._generate(client, [audio, user], CALL_A_PROMPT_CONFIG,

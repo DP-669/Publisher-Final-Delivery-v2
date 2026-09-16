@@ -48,10 +48,9 @@ v4 replaces "two listens must agree" with "one listen must agree with the decode
 - more than 20 observations is logged (the instrumentation cap was removed in `a65017c`)
 
 **Automatic fallback:**
-- **Trigger:** a `400 INVALID_ARGUMENT` whose message mentions "schema".
+- **Trigger:** any `400 INVALID_ARGUMENT` on Call A. Widened 2026-09-16: the message text is not dependable, since the 2026-09-14 schema rejections said only "Request contains an invalid argument."
 - **What happens:** the same request is re-issued in prompt mode (JSON Schema in the system instruction, same Pydantic validation). The track is marked `call_a_mode="prompt-fallback"`, a warning is logged, and the sidebar shows "Schema rejected by Gemini — ran in prompt mode; check DECISIONS.md."
-- **Other 400s** still raise.
-- **Caveat:** the 400s seen on 2026-09-14 said only "Request contains an invalid argument.", so a rejection worded like that would not fall back. It would show as an analysis error on the row.
+- **Every other error** (429, 5xx, network) still raises, so a run stops instead of quietly degrading.
 
 **Verification, 2026-09-15, `gemini-3.1-pro-preview`:** three real tracks, zero 400s, all recorded `call_a_mode="schema"`, no fallback warnings.
 
