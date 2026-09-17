@@ -123,9 +123,12 @@ class TestParsedLists(unittest.TestCase):
             self.assertEqual(gate.banned_found(text), [], text)
         import prompts
         from pfd_fixtures import analysis_dict
-        prompt = prompts.PromptEngine().call_b_prompt({"analysis": analysis_dict(), "simple": {}}, "rC")
+        prompt = prompts.PromptEngine().track_synth_prompt({"analysis": analysis_dict(), "simple": {}}, "rC")
         self.assertIn(rc[0], prompt)
         self.assertNotIn(epp[0], prompt)
+        call_b = prompts.PromptEngine().call_b_prompt({"analysis": analysis_dict(), "simple": {}}, "rC")
+        self.assertIn(prompts.CALL_B_EXEMPLAR["rC"], call_b)
+        self.assertNotIn(prompts.CALL_B_EXEMPLAR["EPP"], call_b)
         listen = prompts.PromptEngine().call_a_system(30.0) + prompts.PromptEngine().call_a_user("full", 30.0)
         self.assertNotIn(rc[0], listen)  # the listen never sees catalog examples
 

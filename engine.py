@@ -6,8 +6,9 @@ Publisher Final Delivery — engine (v4).
   catalog or a previous track. The title is joined afterwards, here.
 - Gate (gate.py): the analysis is checked against the decoded waveform
   (waveform.py) and against itself. One re-run; a second failure blocks.
-- Write (Call B, Gemini, text only): the analysis without its scratchpad, the
-  do_not_claim list, the catalog rules and few-shot examples.
+- Write (Call B, Gemini, text only): the sonic map, lead/supporting actors and
+  do_not_claim (prompts.call_b_input), the supervisor brief, the catalog voice and
+  one exemplar, plus the LOCKED rules.
 - Claude: description gating/editing per `track_writer`, album description,
   names, lane proposal, MailChimp, cover-art prompts.
 - Dropbox: folder access, album state and capture. Nothing writes to Google Drive.
@@ -68,8 +69,10 @@ CALL_A_CONFIG = types.GenerateContentConfig(
     response_mime_type="application/json",
     response_schema=Analysis,
     temperature=0.0, top_p=1.0, top_k=1,
-    candidate_count=1, max_output_tokens=6000,
+    candidate_count=1, max_output_tokens=16384,
 )
+# 2026-09-16: 6000 cut the sonic-map brief's JSON off at 846 characters on a live SSC
+# track (thinking tokens count against the cap), on both attempts.
 CALL_B_CONFIG = types.GenerateContentConfig(
     response_mime_type="application/json",
     response_schema=Writing,
@@ -451,6 +454,9 @@ class IngestionEngine:
             if duplicates:
                 log.warning("Call A listed a family twice; kept the higher confidence: %s", ", ".join(duplicates))
             result["duplicates"] = duplicates
+            result["sonic_map_warnings"] = gate.sonic_map_warnings(analysis, duration)
+            for warning in result["sonic_map_warnings"]:
+                log.warning("Call A sonic map (attempt %s): %s", attempt, warning)
             result["analysis"] = analysis.model_dump(mode="json")
             result["simple"] = simplify(analysis)
             result["uncertain"] = gate.uncertain_families(analysis)
@@ -470,7 +476,7 @@ class IngestionEngine:
             raise ValueError(f"'{track.get('Title')}' has no analysis to write from.")
         client = self._client(gemini_api_key)
         prompt = self.prompts.call_b_prompt(track, catalog, is_redo, guidance)
-        system = rules.system_instruction(catalog)
+        system = self.prompts.call_b_system(catalog)
         text = self._generate(client, prompt, CALL_B_CONFIG, system)
         try:
             json.loads(text or "")
@@ -486,11 +492,14 @@ class IngestionEngine:
             gate.apply_lane(track, lane)
         if keywords_only:
             return track
-        track[capture.context_label(catalog)] = writing.trailer_or_campaign_voice
-        track["Editor Description"] = writing.editor_voice
-        track["Supervisor Description"] = writing.supervisor_voice
-        track["Tip"] = writing.tip
-        track["Gemini Description"] = writing.description
+        # The three voices are gone (2026-09-16 redesign): the scene goes in the context
+        # column, the editor note in Tip; Editor/Supervisor Description stay empty.
+        track[capture.context_label(catalog)] = writing.scene_named
+        track["Editor Description"] = ""
+        track["Supervisor Description"] = ""
+        track["Tip"] = writing.editor_note
+        body, tags = gate.split_fits(writing.description)
+        track["Gemini Description"] = writing.description.strip() if tags else gate.join_fits(body, writing.fits)
         track["Track Description"] = self.finish_description(track, catalog, claude_api_key, lane, mode)
         # The baseline a later human edit is measured against.
         track["PFD_Generated"] = {"Track Description": track["Track Description"],

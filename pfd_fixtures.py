@@ -44,12 +44,37 @@ def with_family(a: dict, path: str, fam) -> dict:
     return a
 
 
+def sonic_map_dict(**over):
+    m = {
+        "opening_statement": "Bowed strings hold a low chord alone for twenty seconds.",
+        "events": [
+            {"t": 0.0, "kind": "statement", "spotlight": "strings", "what_happens": "strings hold a low chord",
+             "tension": "seeds"},
+            {"t": 20.0, "kind": "answer", "spotlight": "drum kit", "what_happens": "kit answers with a groove",
+             "tension": "compounds"},
+            {"t": 40.0, "kind": "escalation", "spotlight": "full ensemble", "what_happens": "ensemble peaks",
+             "tension": "releases"},
+            {"t": 57.0, "kind": "ending", "spotlight": "strings", "what_happens": "strings ring out",
+             "tension": "resets"},
+        ],
+        "motif": {"exists": False, "first_heard_t": None, "described": None, "travels": [], "behaviour": "none"},
+        "arc_shape": "build_to_release",
+        "dialogue_room": [{"t_start": 0.0, "t_end": 20.0, "quality": "clear"}],
+        "edit_points": [{"t": 20.0, "kind": "cut_in", "why": "kit enters on the downbeat"}],
+        "what_it_makes_possible": ["the moment the chase begins", "a title card on the peak"],
+        "composer_intent": "The kit waits twenty seconds before it answers.",
+    }
+    m.update(copy.deepcopy(over))
+    return m
+
+
 def analysis_dict(**over):
     a = {
         "analysis_scratchpad": "0:00 soft strings. 0:30 kit groove. 0:59 strings ring out. Ambiguity: pad vs strings.",
         "mix_type": "FULL",
         "grounding": {"first_sound_t": 0.5, "loudest_moment_t": 41.0, "quietest_stretch_t": 5.0,
                       "ends_with_silence_seconds": 1.0},
+        "sonic_map": sonic_map_dict(),
         "tempo": {"band": "mid", "bpm_estimate": 120, "pulse_confidence": 0.8},
         "energy_arc": "build",
         "sections": [
@@ -85,12 +110,11 @@ DESCRIPTION = "Bowed strings swell under a tight kit groove. It builds to a full
 
 def writing_dict(**over):
     w = {
-        "trailer_or_campaign_voice": "Act-two escalation for a reveal.",
-        "editor_voice": "Clean cut points at 0:20 and 0:40.",
-        "supervisor_voice": "Thriller campaigns and prestige drama.",
         "description": DESCRIPTION,
+        "editor_note": "Hit the 0:40 peak on the title card.",
         "keywords": list(KEYWORDS),
-        "tip": "Hit the 0:40 peak on the title card.",
+        "fits": ["Trailer", "Film"],
+        "scene_named": "the moment the chase begins",
     }
     w.update(over)
     return w

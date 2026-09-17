@@ -25,10 +25,25 @@ FILM_STOCK = {
     "EPP": "Kodachrome 64",
 }
 
-CALL_A_SYSTEM = """You are an audio analyst for a production-music publisher. You will hear one MP3.
-Report only what is audible. Nothing about this file except its duration is known to you.
+CALL_A_SYSTEM = """You are an audio analyst for a production-music publisher. You will hear one MP3. Report only what is audible. Nothing about this file except its duration and mix type is known to you; do not infer from genre expectations.
 
-Duration of this file: {duration_seconds:.1f} seconds. Every timestamp must be between 0 and {duration_seconds:.1f}.
+Duration: {duration_seconds:.1f} seconds. Every timestamp must be between 0 and {duration_seconds:.1f}.
+
+Listen twice in your mind before you write. First as an editor, then as an auditor.
+
+AS AN EDITOR, answer these in order, with timestamps:
+1. What speaks first? One element, over what, for how long. Could a voice-over sit on it?
+2. What answers it, and when? A reply, a counter-line, or nothing. "Nothing" is a real answer and often the point.
+3. Where does the spotlight move? At any moment one element commands attention; name it at each turn. If two fight for it, say so.
+4. Does the opening idea travel — to another instrument, up or down a register — or does it repeat unchanged?
+5. Where does tension seed, hold, compound, release, or reset? Say which, at each event.
+6. Where can an editor cut, loop, land a title card, or ride a hit? Confirmed timestamps only.
+7. What one choice did the composer plainly make on purpose?
+8. What does this track make possible, in an editor's words — moments, not genres. "The beat where the plan falls apart", not "thriller".
+
+Write these as the sonic map: at most seven events, in time order, verbs and nouns only. "Cello states a falling three-note figure over a held bass" — not "a haunting cello melody". No adjectives of feeling anywhere in the map; the events carry the feeling.
+
+AS AN AUDITOR, fill the instrumentation, grounding, tempo, sections and ending exactly as defined in the schema.
 
 Definitions decide ambiguity:
 - drum_kit: kit playing a groove (kick/snare/hat pattern). Timpani = orchestral_percussion. Taiko = hand_and_world_percussion. Programmed trap = electronic_beats.
@@ -43,9 +58,49 @@ Never present with confidence < 0.6. Never present without evidence.
 List every family you hear as present or uncertain. Do not list absent families. Never list a family twice.
 Grounding fields will be checked against the waveform. Answer from listening.
 Energy in sections: 1 = quietest in this track, 5 = loudest in this track.
-Fill scratchpad first (start/middle/end, 3 most prominent sources, each ambiguity and which definition resolves it). Then fill every field. JSON only."""
+
+Scratchpad first: what is audible at the start, at the midpoint, at the end; who speaks first and who answers; where the spotlight moves; each ambiguity. Then the map, then the audit. Output JSON only, matching the schema exactly."""
 
 CALL_A_USER = "Mix type: {mix_type}. Duration: {duration_seconds:.1f} s. Listen to the whole file. Report the analysis."
+
+CALL_B_SYSTEM = """You are a music supervisor who has just licensed this track and is writing the shortlist note that tells a director or editor why it works and how to use it. You are not describing music. You are handing someone a plan.
+
+You will receive a sonic map of one track: what speaks first, what answers, where the spotlight moves, where tension goes, where the cuts are. Write only from the map and the listed sources. If it is not in the map, it did not happen.
+
+THE DESCRIPTION — two or three sentences, then the Fits line.
+Sentence 1: the moment it serves, then what the music does first. Name the scene before any instrument. "For the beat where the plan falls apart: a lone cello states a falling figure over a held bass, and nothing answers it."
+Sentence 2: the conversation. Who answers, where the idea travels, where tension compounds or releases, and how it ends. One timestamp at least.
+Sentence 3 (optional; required for EPP): what an editor can do — cut points, voice-over room, loop, title-card gap, with timestamps as m:ss.
+Fits line: "Fits: A, B, C" — two or three tags from the catalog placement list.
+
+RULES
+- Instruments appear only as actors doing something. Never as a list of what is present.
+- One adjective per noun, maximum. Prefer none. Verbs carry the writing.
+- Every sentence must change what an editor would do. If it only sets a mood, cut it.
+- Timestamps come from the map only. Never invent one.
+- Anything in do_not_claim is never mentioned.
+- No artist, film, show or brand names.
+- Forbidden words (all catalogs): haunting, epic, huge, massive, driving, pulsing, atmospheric, lush, evocative, relentless, soaring, sweeping, ethereal, perfect, seamless, elevate, journey (noun about the listener), "builds tension", "sonic landscape", "sense of".
+- "Cinematic": never for SSC; at most once per album description elsewhere; never in a track description's first sentence.
+- Length: rC and SSC 45–80 words before the Fits line. EPP 35–60.
+
+KEYWORDS — 12 to 18, Title Case, three words or fewer: the moment it serves (2–3), the arc shape in plain words (1), lead actors (2–4), editor actions (3–5: e.g. VO Room Intro, Hard Cut 1:41, Loop Ready), tempo and ending (2), placement words (2–3). No bare instrument unless it leads.
+
+EDITOR NOTE — one line, under 20 words. The single most useful fact for a cut. Example: "Intro carries VO to 0:45; the 1:41 drop is a clean title-card gap."
+
+Before you answer, check: first clause names a moment; at least one timestamp; at least one editor action; no forbidden words; every instrument has a verb; nothing from do_not_claim; length in range. Fix, then output JSON only."""
+
+CALL_B_VOICE = {
+    "rC": "VOICE: a supervisor's shortlist note to a studio marketing team. Direct, confident, built around campaign moments: the reveal, the turn, the title card, the back end. Name campaign beats, not genres. Utility is mandatory: at least one of hit, drop, title-card gap, or VO room, with a timestamp. Placement list for Fits: Trailer, Teaser, TV Promo, Film, TV Drama, Documentary, Sizzle Reel, Network Promo.",
+    "SSC": "VOICE: a film programmer's note. Compositional story first: who poses the question, who answers, how long the answer takes, what the composer chose. Human, exact, unhurried. Instruments are players with intent. No production language; use 'accent', 'silence', 'return'. Never the word cinematic. Placement is the kind of scene before the media type. Placement list for Fits: Film, Prestige TV, Documentary, Drama, Period, Arthouse, Streaming Series.",
+    "EPP": "VOICE: an editor's bookmark. One word of mood, then function. Lead with what it is for and what it gives: cut points, the 30, the 15, VO room, loop. Modular structure stated outright with timestamps. The lane is the first Fits tag and the first keyword. Placement list for Fits: lane first, then two of: Advertising, Reality TV, TV Promo, Documentary, Corporate, Lifestyle, Sports, Gaming, Social.",
+}
+
+CALL_B_EXEMPLAR = {
+    "rC": "For the beat where the mission is finally named: a single treated piano note asks the question at 0:00 over clear air, and a sub pulse answers it at 0:22. The figure passes from piano to low brass by 0:58 and grows on each return until the 1:41 drop empties the mix for a title card; the back end lands at 2:05 and cuts hard at 2:31. Intro carries VO to 0:45; hits at 1:41, 2:05, 2:19. Fits: Trailer, TV Promo, Sizzle Reel.",
+    "SSC": "For the scene where the threat is real and the outcome isn't: a low string drone holds while a plucked figure marks time beneath it, and nothing answers for nearly a minute. The harp enters at 1:05 not to reply but to add a second line, so the tension compounds instead of peaking; the figure thins to a single voice and rings out from 2:58. The opening minute alone carries dialogue; the accent at 1:51 makes a cold reveal. Fits: Prestige TV, Film, Documentary.",
+    "EPP": "Bright. A two-bar guitar hook states itself at 0:00 and handclaps answer on the second pass; the hook never changes, the layers do. VO-safe to 0:14, clean loop 0:28–0:56, strong 30 at 0:14–0:44, button at 1:30. Fits: Sounds Carefree, Advertising, Lifestyle.",
+}
 
 WRITER_GROUNDING = ("You may only mention instruments present in the analysis. "
                     "Anything in do_not_claim is never mentioned.")
@@ -55,25 +110,40 @@ def _json_block(data) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
-def writer_analysis(analysis: Dict) -> Dict:
-    """The analysis a writer sees: everything except the scratchpad."""
-    return {k: v for k, v in (analysis or {}).items() if k != "analysis_scratchpad"}
-
-
-def _writer_context(track: Dict) -> str:
-    simple = track.get("simple") or {}
-    return (f"ANALYSIS:\n{_json_block(writer_analysis(track.get('analysis')))}\n\n"
-            f"do_not_claim: {_json_block(simple.get('do_not_claim') or [])}\n\n{WRITER_GROUNDING}")
-
-
-def _voices(track: Dict, catalog: str) -> Dict:
-    import capture
+def call_b_input(track: Dict, catalog: str) -> Dict:
+    """
+    What a writer sees: the sonic map and the actors, never the instrument inventory.
+    do_not_claim is every family not heard as present: uncertain ones (the v4 rule —
+    uncertainty is never written) and absent ones.
+    """
+    from analysis_schema import FAMILY_PATHS, Observation, build_family_map, walk_families
+    a = track.get("analysis") or {}
+    inst, _ = build_family_map([Observation.model_validate(o) for o in a.get("instrumentation") or []])
+    fams = dict(walk_families(inst))
+    sonic_map = a.get("sonic_map") or {}
+    duration = track.get("Duration Seconds")
     return {
-        "trailer_or_campaign_voice": track.get(capture.context_label(catalog), ""),
-        "editor_voice": track.get("Editor Description", ""),
-        "supervisor_voice": track.get("Supervisor Description", ""),
-        "tip": track.get("Tip", ""),
+        "catalog": rules.catalog_code(catalog),
+        "duration": gate.format_time(duration) if duration else track.get("Duration", ""),
+        "mix_type": a.get("mix_type"),
+        "sonic_map": sonic_map,
+        "tempo_band": (a.get("tempo") or {}).get("band"),
+        "lead_sources": [p for p in FAMILY_PATHS if fams[p].presence.value == "present"
+                         and fams[p].prominence and fams[p].prominence.value == "lead"],
+        "supporting_sources": [p for p in FAMILY_PATHS if fams[p].presence.value == "present"
+                               and fams[p].prominence and fams[p].prominence.value == "supporting"],
+        "do_not_claim": [p for p in FAMILY_PATHS if fams[p].presence.value != "present"],
+        "dialogue_friendly": any(r.get("quality") == "clear" for r in sonic_map.get("dialogue_room") or []),
     }
+
+
+def _writer_context(track: Dict, catalog: str) -> str:
+    return f"TRACK:\n{_json_block(call_b_input(track, catalog))}\n\n{WRITER_GROUNDING}"
+
+
+def _written(track: Dict, catalog: str) -> Dict:
+    import capture
+    return {"scene_named": track.get(capture.context_label(catalog), ""), "editor_note": track.get("Tip", "")}
 
 
 def _examples(catalog: str, kind: str) -> str:
@@ -115,22 +185,21 @@ class PromptEngine:
         return text
 
     # ── Call B: write (Gemini, text only) ─────────────────────────────────────
+    def call_b_system(self, catalog: str) -> str:
+        """The supervisor brief, the catalog voice, then the LOCKED rules and catalog DNA."""
+        return f"{CALL_B_SYSTEM}\n\n{CALL_B_VOICE[rules.catalog_code(catalog)]}\n\n{rules.system_instruction(catalog)}"
+
     def call_b_prompt(self, track: Dict, catalog: str, is_redo: bool = False, guidance: str = "") -> str:
-        prompt = f"""Write the metadata for one track from this analysis of its audio. Return one JSON object matching the response schema.
-- trailer_or_campaign_voice, editor_voice, supervisor_voice: 1–2 sentences each, catalog-specific.
-- description: the finished track description, fusing the three voices, written to the spec below.
-- keywords: written to the spec below.
-- tip: one line for the editor.
+        code = rules.catalog_code(catalog)
+        prompt = f"""EXAMPLE ({code}) — match its register, not its content:
+{CALL_B_EXEMPLAR[code]}
 
-TRACK DESCRIPTION SPEC:
-{rules.tunable("Track description")}
+TRACK:
+{_json_block(call_b_input(track, catalog))}
 
-KEYWORDS SPEC:
-{rules.tunable("Keywords")}
-{_examples(catalog, "Track")}
-{_writer_context(track)}
-
-For EPP, leave the lane out of keywords and Fits; code adds it once the album's lane is confirmed."""
+Return one JSON object matching the response schema: description (ending with the Fits line), editor_note, keywords, fits, scene_named."""
+        if code == "EPP":
+            prompt += "\n\nLeave the lane out of keywords and Fits; code adds it once the album's lane is confirmed."
         return _redo(prompt, is_redo, guidance)
 
     def keyword_shorten_prompt(self, keyword: str) -> str:
@@ -144,10 +213,10 @@ For EPP, leave the lane out of keywords and Fits; code adds it once the album's 
 TRACK DESCRIPTION SPEC:
 {rules.tunable("Track description")}
 {_examples(catalog, "Track")}
-{_writer_context(track)}
+{_writer_context(track, catalog)}
 
-VOICES:
-{_json_block(_voices(track, catalog))}
+CALL B NOTES:
+{_json_block(_written(track, catalog))}
 
 Return ONLY the description, ending with the Fits line. No preamble, no labels."""
         return _redo(prompt, is_redo, guidance)
@@ -160,7 +229,7 @@ Return ONLY the description, ending with the Fits line. No preamble, no labels."
 TRACK DESCRIPTION SPEC:
 {rules.tunable("Track description")}
 {_examples(catalog, "Track")}
-{_writer_context(track)}
+{_writer_context(track, catalog)}
 
 DESCRIPTION TO EDIT:
 {description}

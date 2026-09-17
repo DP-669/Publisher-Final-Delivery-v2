@@ -22,7 +22,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Dict, List, Literal, Optional, Tuple
 
-from pydantic import BaseModel, Field, conlist, confloat
+from pydantic import BaseModel, ConfigDict, Field, conlist, confloat
 
 
 class Presence(str, Enum):
@@ -221,6 +221,87 @@ class Grounding(BaseModel):
     ends_with_silence_seconds: confloat(ge=0)
 
 
+# ── Sonic map: the track as a conversation (2026-09-16 prompt redesign) ────────
+
+class EventKind(str, Enum):
+    statement = "statement"
+    answer = "answer"
+    counter_voice = "counter_voice"
+    handoff = "handoff"
+    escalation = "escalation"
+    drop = "drop"
+    hit = "hit"
+    breakdown = "breakdown"
+    release = "release"
+    return_ = "return"
+    ending = "ending"
+
+
+class TensionState(str, Enum):
+    seeds = "seeds"
+    holds = "holds"
+    compounds = "compounds"
+    releases = "releases"
+    resets = "resets"
+
+
+class MapEvent(BaseModel):
+    t: confloat(ge=0)
+    kind: EventKind
+    spotlight: str
+    what_happens: str = Field(max_length=140)
+    tension: TensionState
+
+
+class MotifTravel(BaseModel):
+    # "register" is the JSON key; as a plain attribute it would inherit ABCMeta.register as a default.
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    t: confloat(ge=0)
+    to_family: str
+    register_: Literal["up", "down", "same"] = Field(alias="register")
+
+
+class Motif(BaseModel):
+    exists: bool
+    first_heard_t: Optional[confloat(ge=0)] = None
+    described: Optional[str] = Field(default=None, max_length=120)
+    travels: List[MotifTravel] = Field(default_factory=list, max_length=5)
+    behaviour: Literal["evolves", "repeats_unchanged", "none"]
+
+
+class DialogueRoom(BaseModel):
+    t_start: confloat(ge=0)
+    t_end: confloat(ge=0)
+    quality: Literal["clear", "threatened"]
+
+
+class EditPoint(BaseModel):
+    t: confloat(ge=0)
+    kind: Literal["cut_in", "cut_out", "loop_start", "loop_end", "hit", "button", "title_card_gap"]
+    why: str = Field(max_length=100)
+
+
+class ArcShape(str, Enum):
+    question_unanswered = "question_unanswered"
+    question_answered = "question_answered"
+    build_to_release = "build_to_release"
+    compound_no_release = "compound_no_release"
+    static_bed = "static_bed"
+    waves = "waves"
+    collapse = "collapse"
+
+
+class SonicMap(BaseModel):
+    opening_statement: str = Field(max_length=160)
+    events: List[MapEvent] = Field(min_length=3, max_length=7)
+    motif: Motif
+    arc_shape: ArcShape
+    dialogue_room: List[DialogueRoom] = Field(max_length=5)
+    edit_points: List[EditPoint] = Field(min_length=1, max_length=7)
+    what_it_makes_possible: List[str] = Field(min_length=2, max_length=4)
+    composer_intent: str = Field(max_length=160)
+
+
 class Analysis(BaseModel):
     analysis_scratchpad: str = Field(max_length=900, description=(
         "Before answering: note what is audible at 0:00, at the midpoint, at the end; "
@@ -228,6 +309,7 @@ class Analysis(BaseModel):
         "definition decides it. Plain notes, no conclusions beyond the audio."))
     mix_type: MixType
     grounding: Grounding
+    sonic_map: SonicMap
     tempo: Tempo
     energy_arc: EnergyArc
     sections: conlist(Section, min_length=2)  # max 10 enforced in Python (gate G2): Gemini rejects maxItems > 7 here
@@ -244,17 +326,17 @@ class Analysis(BaseModel):
 
 
 class Writing(BaseModel):
-    """Call B. The three voices come first so the description can fuse them."""
-    trailer_or_campaign_voice: str = Field(max_length=300)
-    editor_voice: str = Field(max_length=300)
-    supervisor_voice: str = Field(max_length=300)
-    description: str = Field(max_length=700)
-    keywords: conlist(str, min_length=12, max_length=18)
-    tip: str = Field(max_length=200)
+    """Call B: the supervisor's shortlist note, written from the sonic map."""
+    description: str
+    editor_note: str
+    keywords: List[str] = Field(min_length=12, max_length=18)
+    fits: List[str] = Field(min_length=2, max_length=3)
+    scene_named: str
 
 
 for _model in (Evidence, Observation, Family, Percussion, Strings, KeysAndSynths, Bass, Winds, Voice, SoundDesign,
-               Instrumentation, Section, Ending, Tempo, Lyrics, Grounding, Analysis, Writing):
+               Instrumentation, Section, Ending, Tempo, Lyrics, Grounding, MapEvent, MotifTravel, Motif,
+               DialogueRoom, EditPoint, SonicMap, Analysis, Writing):
     _model.model_rebuild()
 
 FAMILY_PATHS = [f.value for f in FamilyName]

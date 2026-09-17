@@ -9,7 +9,7 @@ import unittest
 
 import gate
 from analysis_schema import Analysis, simplify
-from pfd_fixtures import MEASURED, absent, analysis, analysis_dict, present, uncertain, with_family
+from pfd_fixtures import MEASURED, absent, analysis, analysis_dict, present, sonic_map_dict, uncertain, with_family
 
 
 def check(a_dict, measured=None, mix="FULL"):
@@ -40,6 +40,28 @@ class TestCleanListen(unittest.TestCase):
     def test_status_values(self):
         self.assertEqual(gate.listen_status([], []), gate.PASSED)
         self.assertEqual(gate.listen_status([gate.failure("G5")], ["x.y"]), gate.BLOCKED)
+
+
+class TestSonicMap(unittest.TestCase):
+    def test_clean_map_has_no_warnings(self):
+        self.assertEqual(gate.sonic_map_warnings(analysis(), 60.0), [])
+
+    def test_late_timestamp_and_disorder_warn_but_never_block(self):
+        m = sonic_map_dict()
+        m["events"][1]["t"] = 70.0
+        m["edit_points"] = [{"t": 61.0, "kind": "hit", "why": "past the end"}]
+        a = analysis(sonic_map=m)
+        warnings = gate.sonic_map_warnings(a, 60.0)
+        self.assertEqual(len(warnings), 3, warnings)
+        self.assertTrue(any("event 2 (answer) at 70.0 s" in w for w in warnings))
+        self.assertIn("Sonic map events are not in time order.", warnings)
+        self.assertEqual(gate.check_analysis(a, MEASURED, "FULL"), [])
+
+    def test_map_needs_three_to_seven_events(self):
+        m = sonic_map_dict()
+        m["events"] = m["events"][:2]
+        with self.assertRaises(gate.SchemaViolation):
+            gate.parse_analysis(json.dumps(analysis_dict(sonic_map=m)))
 
 
 class TestFamilyMap(unittest.TestCase):

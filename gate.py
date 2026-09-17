@@ -336,6 +336,25 @@ def check_analysis(a: Analysis, measured: Dict, mix_code: str) -> List[Dict]:
             + check_waveform(a, measured) + check_consistency(a, mix_code) + check_observations(a))
 
 
+def sonic_map_warnings(a: Analysis, duration: float) -> List[str]:
+    """Sonic map timestamps outside [0, duration + 0.5] or events out of order. Warns; never blocks."""
+    m = a.sonic_map
+    limit = duration + TIMESTAMP_SLACK_S
+    stamps = [(f"event {i + 1} ({e.kind.value})", e.t) for i, e in enumerate(m.events)]
+    if m.motif.first_heard_t is not None:
+        stamps.append(("the motif's first appearance", m.motif.first_heard_t))
+    stamps += [(f"the motif's move to {tr.to_family}", tr.t) for tr in m.motif.travels]
+    for r in m.dialogue_room:
+        stamps += [("a dialogue-room start", r.t_start), ("a dialogue-room end", r.t_end)]
+    stamps += [(f"the {p.kind} edit point", p.t) for p in m.edit_points]
+    out = [f"Sonic map puts {what} at {float(t):.1f} s; the file is {duration:.1f} s long."
+           for what, t in stamps if t < 0 or t > limit]
+    times = [e.t for e in m.events]
+    if times != sorted(times):
+        out.append("Sonic map events are not in time order.")
+    return out
+
+
 def uncertain_families(a: Analysis) -> List[str]:
     return [path for path, fam in walk_families(families(a)) if fam.presence == Presence.uncertain]
 

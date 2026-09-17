@@ -16,7 +16,7 @@ from analysis_schema import Analysis, Writing
 from engine import CALL_A_CONFIG, CALL_B_CONFIG, IngestionEngine
 from pfd_fixtures import (DESCRIPTION, FILENAME, MEASURED, TITLE, analysis_dict, uncertain, with_family,
                           writing_dict)
-from prompts import WRITER_GROUNDING
+from prompts import CALL_B_EXEMPLAR, CALL_B_VOICE, WRITER_GROUNDING
 
 AUDIO = b"\xff\xfbaudio-bytes"
 
@@ -110,10 +110,12 @@ class TestListen(ListenCase):
         self.assertIs(config.response_schema, None if prompt_mode else Analysis)
         self.assertEqual(config.response_mime_type, "application/json")
         self.assertEqual((config.temperature, config.top_p, config.top_k, config.candidate_count,
-                          config.max_output_tokens), (0.0, 1.0, 1, 1, 6000))
+                          config.max_output_tokens), (0.0, 1.0, 1, 1, 16384))
         self.assertEqual(config.system_instruction,
                          self.engine.prompts.call_a_system(60.0, include_shape=prompt_mode))
-        self.assertIn("Duration of this file: 60.0 seconds", config.system_instruction)
+        self.assertIn("Duration: 60.0 seconds. Every timestamp must be between 0 and 60.0.", config.system_instruction)
+        self.assertIn("AS AN EDITOR, answer these in order", config.system_instruction)
+        self.assertIn("Definitions decide ambiguity:", config.system_instruction)
         self.assertIn("List every family you hear as present or uncertain. Do not list absent families. "
                       "Never list a family twice.", config.system_instruction)
         self.assertEqual(call.kwargs["contents"][1],
@@ -221,12 +223,31 @@ class TestProcessTrack(ListenCase):
         config, prompt = call.kwargs["config"], call.kwargs["contents"]
         self.assertIs(config.response_schema, Writing)
         self.assertEqual((config.temperature, config.top_p, config.max_output_tokens), (0.7, 0.95, 8192))
-        self.assertEqual(config.system_instruction, rules.system_instruction("SSC"))
-        self.assertIn(WRITER_GROUNDING, prompt)
-        self.assertIn("keys_and_synths.synth_pad", prompt.split("do_not_claim:")[1])
-        self.assertNotIn("analysis_scratchpad", prompt)
-        self.assertNotIn(analysis_dict()["analysis_scratchpad"], prompt)
+        self.assertTrue(config.system_instruction.startswith("You are a music supervisor who has just licensed"))
+        self.assertIn(CALL_B_VOICE["SSC"], config.system_instruction)
+        self.assertNotIn(CALL_B_VOICE["rC"], config.system_instruction)
+        self.assertTrue(config.system_instruction.endswith(rules.system_instruction("SSC")))
+        self.assertTrue(prompt.startswith(f"EXAMPLE (SSC) — match its register, not its content:\n{CALL_B_EXEMPLAR['SSC']}"))
+        sent = json.loads(prompt.split("TRACK:\n")[1].split("\n\nReturn one JSON")[0])
+        self.assertEqual(sent["sonic_map"], analysis_dict()["sonic_map"])
+        self.assertEqual((sent["catalog"], sent["duration"], sent["mix_type"], sent["tempo_band"]), ("SSC", "1:00", "FULL", "mid"))
+        self.assertEqual(sent["lead_sources"], ["percussion.drum_kit"])
+        self.assertEqual(sent["supporting_sources"], ["strings.orchestral_strings"])
+        self.assertIn("keys_and_synths.synth_pad", sent["do_not_claim"])  # uncertain is never claimed
+        self.assertIn("winds.orchestral_brass", sent["do_not_claim"])     # nor is absent
+        self.assertNotIn("strings.orchestral_strings", sent["do_not_claim"])
+        self.assertTrue(sent["dialogue_friendly"])
+        for leak in ("analysis_scratchpad", "instrumentation", "evidence", "genre_tags", analysis_dict()["analysis_scratchpad"]):
+            self.assertNotIn(leak, prompt)
+        self.assertEqual((track["Trailer Description"], track["Tip"]),
+                         ("the moment the chase begins", "Hit the 0:40 peak on the title card."))
         self.assertEqual(track["PFD_Status"], gate.PASSED_WITH_UNCERTAINTY)
+
+    def test_fits_come_from_the_fits_field_when_the_description_has_no_line(self):
+        self.replies(analysis_dict(), writing_dict(description="Bowed strings swell under a tight kit groove. It builds to a full peak and rings out."))
+        track = self.process()
+        self.assertEqual(track["Gemini Description"],
+                         "Bowed strings swell under a tight kit groove. It builds to a full peak and rings out. Fits: Trailer, Film")
 
     def test_blocked_listen_is_not_written(self):
         bad = analysis_dict(ending={"type": "hard_cut", "final_accent_t": 58.0, "tail_seconds": 0.0})

@@ -125,3 +125,10 @@ v3 entries above that mention tabs, the second listen or the writer test are sup
 ## Self-agreement runs
 Written by scripts/self_agreement.py.
 - 2026-09-14 · redcola trailer demo jaed.mp3 · gemini-3.1-pro-preview · a_temp0_topk1: 100.0% (3/5 valid) · b_temp1: 83.9% (4/5 valid)
+
+## 2026-09-16 — Prompt redesign: SonicMap + writing overhaul
+- Designed by Claude Fable, implemented by Claude Code
+- SonicMap added to Call A schema; captures musical events as narrative
+- Call B no longer receives instrument inventory; receives sonic map + actors only
+- Call B system instruction rewritten as music supervisor shortlist note
+- Forbidden words list added; per-catalog voice blocks and exemplars added
