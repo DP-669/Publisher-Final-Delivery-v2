@@ -25,7 +25,7 @@ class TestRevisionCapture(ListenCase):
 
     def test_an_edit_keeps_both_versions_with_the_catalog_and_the_track(self):
         track = self.written_track("SSC")
-        edited = "Bowed strings hold one line. They fade under dialogue. Fits: Film, Drama"
+        edited = "Bowed strings hold one line. They fade under dialogue. Fits: quiet grief, long goodbyes"
         entry = engine.record_revision(track, "Track Description", track["Track Description"], edited,
                                        "SSC", "SSC042")
         self.assertEqual(entry["action"], "edit")
@@ -41,7 +41,7 @@ class TestRevisionCapture(ListenCase):
 
     def test_the_generated_copy_survives_several_edits(self):
         track = self.written_track()
-        first, second = "First human go. It ends hard. Fits: Trailer, Film", "Second go. It ends hard. Fits: Trailer, Film"
+        first, second = "First human go. It ends hard. Fits: the chase begins, title card peak", "Second go. It ends hard. Fits: the chase begins, title card peak"
         engine.record_revision(track, "Track Description", track["Track Description"], first, "rC")
         track["Track Description"] = first
         engine.record_revision(track, "Track Description", first, second, "rC")
@@ -60,7 +60,7 @@ class TestRevisionCapture(ListenCase):
 
     def test_writing_it_by_hand_is_captured(self):
         track = self.written_track()
-        text = "Strings rise over a steady kit. They ring out at the end. Fits: Trailer, Film"
+        text = "Strings rise over a steady kit. They ring out at the end. Fits: the chase begins, title card peak"
         self.replies(writing_dict())
         self.assertEqual(self.engine.manual_description(track, text, "rC", "g", album_code="RC057"), [])
         entry = engine.revisions(track)[-1]
@@ -69,14 +69,14 @@ class TestRevisionCapture(ListenCase):
 
     def test_the_log_survives_state_json(self):
         track = self.written_track()
-        engine.record_revision(track, "Track Description", DESCRIPTION, "Edited. It ends. Fits: Trailer, Film", "rC")
+        engine.record_revision(track, "Track Description", DESCRIPTION, "Edited. It ends. Fits: the chase begins, title card peak", "rC")
         restored = json.loads(json.dumps(track, default=str))
         self.assertEqual(engine.revisions(restored)[0]["generated"], DESCRIPTION)
 
     def test_an_override_and_an_edit_share_one_log(self):
         track = self.written_track()
         self.engine.override_track(track, "rC", "g", "", "signed off by Damir")
-        engine.record_revision(track, "Track Description", DESCRIPTION, "Edited. It ends. Fits: Trailer, Film", "rC")
+        engine.record_revision(track, "Track Description", DESCRIPTION, "Edited. It ends. Fits: the chase begins, title card peak", "rC")
         self.assertEqual([e["action"] for e in track["PFD_Log"]], ["override", "edit"])
         self.assertEqual(len(engine.revisions(track)), 1)     # the override is not a revision
 

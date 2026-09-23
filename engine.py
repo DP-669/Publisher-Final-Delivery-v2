@@ -231,6 +231,12 @@ def track_key(track: Dict) -> str:
     return track.get("track_id") or track.get("Source Path") or track.get("Title", "")
 
 
+def alt_description(descriptor: str, full_description: str) -> str:
+    """ALT mixes (PFD_RULES.md): the fixed prefix, then the FULL mix's description unchanged."""
+    label = (descriptor or "").strip() or "Alt Mix"
+    return f"Alt Version Of the Full Mix ({label}) - {(full_description or '').strip()}"
+
+
 def is_alt_or_cutdown(track: Dict) -> bool:
     mix = (track.get("Mix Type") or "").lower()
     return mix == "alt" or mix.startswith("cutdown")
@@ -253,6 +259,9 @@ class IngestionEngine:
         self.keyword_warnings: List[Dict] = []
         self.gemini_model = GEMINI_AUDIO_MODEL
         self.claude_model = CLAUDE_WRITING_MODEL
+        # The open album's state (app.py sets it on every rerun). Call B reads the
+        # album concept, the album title and a sparse mix's FULL sibling from it.
+        self.album_state: Optional[Dict] = None
         if self.root_path.exists():
             self._resolve_subfolders()
 
@@ -468,6 +477,18 @@ class IngestionEngine:
         return result
 
     # ── Call B + writers ───────────────────────────────────────────────────────
+    def album_context(self, track: Dict) -> Dict:
+        """Call B's album inputs (§1): concept, title, and the FULL sibling's description."""
+        album = getattr(self, "album_state", None) or {}
+        parent = track.get("Parent Track") or base_title(track.get("Title", ""))
+        sibling = next((t.get("Track Description", "") for t in album.get("tracks") or []
+                        if t is not track and gate.mix_type_code(t.get("Mix Type", "")) == "FULL"
+                        and not is_alt_or_cutdown(t)
+                        and (t.get("Parent Track") or base_title(t.get("Title", ""))) == parent), "")
+        return {"album_concept": album.get("album_concept", ""),
+                "album_title": album.get("album_name_selected") or album.get("album_title", ""),
+                "sibling_full": sibling}
+
     def write(self, track: Dict, catalog: str, gemini_api_key: str, claude_api_key: str,
               lane: Optional[str] = None, mode: Optional[str] = None, is_redo: bool = False,
               guidance: str = "", keywords_only: bool = False) -> Dict:
@@ -475,7 +496,7 @@ class IngestionEngine:
         if not track.get("analysis"):
             raise ValueError(f"'{track.get('Title')}' has no analysis to write from.")
         client = self._client(gemini_api_key)
-        prompt = self.prompts.call_b_prompt(track, catalog, is_redo, guidance)
+        prompt = self.prompts.call_b_prompt(track, catalog, is_redo, guidance, self.album_context(track))
         system = self.prompts.call_b_system(catalog)
         text = self._generate(client, prompt, CALL_B_CONFIG, system)
         try:
@@ -701,7 +722,11 @@ class IngestionEngine:
                 self.refresh_status(t, catalog, lane, final)
         for t in tracks:
             if is_alt_or_cutdown(t):
-                self.refresh_status(t, catalog, lane, final, parents.get(t.get("Parent Track")))
+                parent = parents.get(t.get("Parent Track"))
+                if t.get("PFD_Alt_Auto") and parent and parent.get("Track Description"):
+                    t["Track Description"] = alt_description(t.get("Alt Descriptor", ""), parent["Track Description"])
+                    t["Keywords"] = t.get("Keywords") or parent.get("Keywords", "")
+                self.refresh_status(t, catalog, lane, final, parent)
         return sum(1 for t in tracks if t.get("PFD_Status") == gate.BLOCKED)
 
     @staticmethod

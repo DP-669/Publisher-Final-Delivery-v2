@@ -16,7 +16,7 @@ from analysis_schema import Analysis, Writing
 from engine import CALL_A_CONFIG, CALL_B_CONFIG, IngestionEngine
 from pfd_fixtures import (DESCRIPTION, FILENAME, MEASURED, TITLE, analysis_dict, uncertain, with_family,
                           writing_dict)
-from prompts import CALL_B_EXEMPLAR, CALL_B_VOICE, WRITER_GROUNDING
+from prompts import CALL_B_EXEMPLARS, CALL_B_VOICE, WRITER_GROUNDING
 
 AUDIO = b"\xff\xfbaudio-bytes"
 
@@ -215,7 +215,7 @@ class TestProcessTrack(ListenCase):
         self.assertEqual(len(self.calls()), 2)
 
     def test_call_b_config_and_prompt(self):
-        ssc_description = "Bowed strings swell over a steady kit. They build to a full peak and ring out. Fits: Film, Drama"
+        ssc_description = "Bowed strings swell over a steady kit. They build to a full peak and ring out. Fits: quiet grief, long goodbyes"
         self.replies(with_family(analysis_dict(), "keys_and_synths.synth_pad", uncertain()),
                      writing_dict(description=ssc_description))
         track = self.process(catalog="SSC")
@@ -223,12 +223,13 @@ class TestProcessTrack(ListenCase):
         config, prompt = call.kwargs["config"], call.kwargs["contents"]
         self.assertIs(config.response_schema, Writing)
         self.assertEqual((config.temperature, config.top_p, config.max_output_tokens), (0.7, 0.95, 8192))
-        self.assertTrue(config.system_instruction.startswith("You are a music supervisor who has just licensed"))
+        self.assertTrue(config.system_instruction.startswith("You are the music supervisor who has just licensed"))
         self.assertIn(CALL_B_VOICE["SSC"], config.system_instruction)
         self.assertNotIn(CALL_B_VOICE["rC"], config.system_instruction)
         self.assertTrue(config.system_instruction.endswith(rules.system_instruction("SSC")))
-        self.assertTrue(prompt.startswith(f"EXAMPLE (SSC) — match its register, not its content:\n{CALL_B_EXEMPLAR['SSC']}"))
-        sent = json.loads(prompt.split("TRACK:\n")[1].split("\n\nReturn one JSON")[0])
+        self.assertTrue(prompt.startswith(f"EXEMPLARS (SSC) — Damir's shipped finals: match their register and specificity, "
+                                        f"not their content:\n{CALL_B_EXEMPLARS['SSC']}"))
+        sent = json.loads(prompt.split("TRACK:\n")[1].split("\n\nBefore you write")[0])
         self.assertEqual(sent["sonic_map"], analysis_dict()["sonic_map"])
         self.assertEqual((sent["catalog"], sent["duration"], sent["mix_type"], sent["tempo_band"]), ("SSC", "1:00", "FULL", "mid"))
         self.assertEqual(sent["lead_sources"], ["percussion.drum_kit"])
@@ -247,7 +248,7 @@ class TestProcessTrack(ListenCase):
         self.replies(analysis_dict(), writing_dict(description="Bowed strings swell under a tight kit groove. It builds to a full peak and rings out."))
         track = self.process()
         self.assertEqual(track["Gemini Description"],
-                         "Bowed strings swell under a tight kit groove. It builds to a full peak and rings out. Fits: Trailer, Film")
+                         "Bowed strings swell under a tight kit groove. It builds to a full peak and rings out. Fits: the chase begins, title card peak")
 
     def test_blocked_listen_is_not_written(self):
         bad = analysis_dict(ending={"type": "hard_cut", "final_accent_t": 58.0, "tail_seconds": 0.0})
@@ -260,18 +261,22 @@ class TestProcessTrack(ListenCase):
         self.assertEqual(gate.summary(reason), "G8 · Ending: Analysis: Hard cut · file decays for 2.5 s")
         self.assertEqual(len(self.calls()), 2)
 
-    def test_title_never_reaches_a_model(self):
+    def test_title_never_reaches_the_listen(self):
+        """Call A stays blind. Call B gets the real title (2026-09-22), never the filename."""
         self.replies(analysis_dict(), writing_dict())
         track = self.process()
         self.assertEqual(track["Title"], TITLE)
-        for call in self.calls():
-            sent = repr(call.kwargs.get("contents")) + repr(call.kwargs.get("config"))
-            for leak in (TITLE, FILENAME, "Sunny", "Ukulele"):
-                self.assertNotIn(leak, sent)
+        listen, write = self.calls()
+        sent = repr(listen.kwargs.get("contents")) + repr(listen.kwargs.get("config"))
+        for leak in (TITLE, FILENAME, "Sunny", "Ukulele"):
+            self.assertNotIn(leak, sent)
+        sent_b = json.loads(write.kwargs["contents"].split("TRACK:\n")[1].split("\n\nBefore you write")[0])
+        self.assertEqual(sent_b["track_title"], TITLE)
+        self.assertNotIn(FILENAME, repr(write.kwargs.get("contents")))
 
     def test_claude_gates_when_available(self):
         self.replies(analysis_dict(), writing_dict())
-        gated = "Bowed strings swell under a tight kit. It builds and rings out. Fits: Trailer, Film"
+        gated = "Bowed strings swell under a tight kit. It builds and rings out. Fits: the chase begins, title card peak"
         with patch.object(IngestionEngine, "call_claude", return_value=gated) as claude:
             track = self.engine.process_track(TITLE, "full", AUDIO, ".mp3", "rC", "g", "c")
         self.assertEqual(track["Track Description"], gated)
@@ -279,7 +284,7 @@ class TestProcessTrack(ListenCase):
         self.assertEqual(track["PFD_Notes"], [])
 
     def test_text_rule_failure_is_red_with_a_text_reason(self):
-        self.replies(analysis_dict(), writing_dict(description="Epic strings. It rings out. Fits: Trailer, Film"))
+        self.replies(analysis_dict(), writing_dict(description="Epic strings. It rings out. Fits: the chase begins, title card peak"))
         track = self.process()
         self.assertEqual((track["PFD_Status"], track["PFD_Reason_Kind"]), (gate.BLOCKED, "text"))
         banned = next(r for r in track["PFD_Block_Reasons"] if r["rule"] == "BANNED")
@@ -310,7 +315,7 @@ class TestProcessTrack(ListenCase):
 
     def test_a_text_block_can_be_overridden_too(self):
         """Override is offered on every blocked track, not only listen failures."""
-        self.replies(analysis_dict(), writing_dict(description="Epic strings. It rings out. Fits: Trailer, Film"))
+        self.replies(analysis_dict(), writing_dict(description="Epic strings. It rings out. Fits: the chase begins, title card peak"))
         track = self.process()
         self.assertEqual((track["PFD_Status"], track["PFD_Reason_Kind"]), (gate.BLOCKED, "text"))
         self.engine.override_track(track, "rC", "g", "", "house style, signed off by Damir")
@@ -368,7 +373,7 @@ class TestFixActions(ListenCase):
         problems = self.engine.manual_description(track, "Too short. Fits: Trailer", "rC", "g")
         self.assertTrue(problems)
         self.assertFalse(track.get("PFD_Manual"))
-        text = "Strings rise over a steady kit. They ring out at the end. Fits: Trailer, Film"
+        text = "Strings rise over a steady kit. They ring out at the end. Fits: the chase begins, title card peak"
         self.assertEqual(self.engine.manual_description(track, text, "rC", "g"), [])
         self.assertEqual((track["Track Description"], track["PFD_Status"]), (text, gate.PASSED))
         self.assertTrue(track["PFD_Manual"])

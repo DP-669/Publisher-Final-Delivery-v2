@@ -548,24 +548,24 @@ def explain(f: Dict) -> Dict:
                  "Nothing was written for this track yet.", TEXT_ACTION)
     if r == "FITS_MISSING":
         return e("Fits line", "Description", "no 'Fits:' line at the end",
-                 "Every description ends with 2–3 placement tags from this catalog's list.",
+                 "Every description ends with 2–3 scene-level tags, lowercase — moments an editor would search.",
                  "Press Run again, or edit the description in the table and end it with, for example, "
-                 "\"Fits: Trailer, Film\".")
+                 "\"Fits: dialogue-heavy tension, isolation wards\".")
     if r == "FITS_COUNT":
         return e("Fits line", "Description", f"{f.get('count')} tags · needs 2–3",
-                 "The Fits line carries two or three placement tags.", TEXT_ACTION)
+                 "The Fits line carries two or three scene-level tags.", TEXT_ACTION)
     if r == "FITS_TAG":
         return e("Fits tag", "Description",
-                 f"'{f.get('tag')}' · legal tags: {', '.join(f.get('legal') or [])}",
-                 f"That tag isn't in the {f.get('catalog')} placement list.",
-                 "Edit the Fits line in the table to use a legal tag, or press Run again.")
+                 f"'{f.get('tag')}' · needs a lowercase scene, not a media type",
+                 "Fits tags name a moment or situation; media types (trailer, TV promo…) belong in keywords.",
+                 "Edit the Fits line in the table to name a scene, or press Run again.")
     if r == "FITS_LANE":
         return e("Fits tag", "EPP lane", f"first tag: '{f.get('first', '')}' · lane: '{f.get('lane')}'",
                  "On EPP the album's lane is always the first Fits tag.",
                  "Confirm the lane in Album details, or edit the Fits line so the lane comes first.")
     if r == "SENTENCES":
-        return e("Length", "Description", f"{f.get('count')} sentences before the Fits line · needs 2–3",
-                 "A track description is two or three sentences, then the Fits line.", TEXT_ACTION)
+        return e("Length", "Description", f"{f.get('count')} sentences before the Fits line · needs 2–4",
+                 "A track description is three moves in two to four sentences, then the Fits line.", TEXT_ACTION)
     if r == "BANNED":
         return e("Banned words", "Description", ", ".join(f.get("words") or []),
                  "These words are on the hard banned list in PFD_RULES.md.", TEXT_ACTION)
@@ -633,9 +633,9 @@ def reason_text(f) -> str:
         "DESC_EMPTY": "track description is empty",
         "FITS_MISSING": "description does not end with a 'Fits:' line",
         "FITS_COUNT": f"Fits line has {f.get('count')} tags (must be 2–3)",
-        "FITS_TAG": f"Fits tag '{f.get('tag')}' is not in the {f.get('catalog')} placement list",
+        "FITS_TAG": f"Fits tag '{f.get('tag')}' is not a lowercase scene tag (media types go in keywords)",
         "FITS_LANE": f"first Fits tag must be the lane '{f.get('lane')}'",
-        "SENTENCES": f"description has {f.get('count')} sentences before Fits (must be 2–3)",
+        "SENTENCES": f"description has {f.get('count')} sentences before Fits (must be 2–4)",
         "BANNED": f"description uses banned words: {', '.join(f.get('words') or [])}",
         "FORBIDDEN": f"description uses forbidden placement words for {f.get('catalog')}: "
                      f"{', '.join(f.get('words') or [])}",
@@ -743,12 +743,14 @@ def sentences(text: str) -> List[str]:
 
 
 def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = None) -> List[Dict]:
-    """Tags are compared case-insensitively (both sides lowercased); the text keeps its casing."""
+    """
+    Fits tags are scene-level (PFD_RULES.md LOCKED "Fits", 2026-09-22): 2–3, lowercase,
+    never a media type. On EPP the lane is the first tag and keeps its casing.
+    """
     if tags is None:
         return [failure("FITS_MISSING")]
     code = rules.catalog_code(catalog)
-    legal_list = rules.fits_list(catalog)
-    legal = {t.lower() for t in legal_list}
+    media = set(rules.media_types())
     is_epp = code == "EPP"
     lane_names = {n.lower() for n in rules.lane_names()}
     reasons = []
@@ -757,8 +759,8 @@ def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = 
     for i, tag in enumerate(tags):
         if is_epp and i == 0 and (tag.lower() == (lane or "").lower() or (not lane and tag.lower() in lane_names)):
             continue
-        if tag.lower() not in legal:
-            reasons.append(failure("FITS_TAG", tag=tag, catalog=code, legal=list(legal_list)))
+        if tag.lower() in media or tag != tag.lower():
+            reasons.append(failure("FITS_TAG", tag=tag, catalog=code))
     if is_epp and lane and (not tags or tags[0].lower() != lane.lower()):
         reasons.append(failure("FITS_LANE", lane=lane, first=tags[0] if tags else ""))
     return reasons
@@ -773,7 +775,7 @@ def description_reasons(description: str, catalog: str, title: str = "",
     body, tags = split_fits(desc)
     reasons = fits_reasons(tags, catalog, lane)
     sents = sentences(body)
-    if not 2 <= len(sents) <= 3:
+    if not 2 <= len(sents) <= 4:   # three moves; Move 2 may take two sentences
         reasons.append(failure("SENTENCES", count=len(sents)))
     bad = banned_found(desc)
     if bad:

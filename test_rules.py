@@ -25,7 +25,7 @@ class TestSections(unittest.TestCase):
         for code in ("rC", "SSC", "EPP"):
             block = rules.RULES.catalog_blocks[code]
             self.assertTrue(block.startswith(f"### {code}"))
-            self.assertIn("Placement list for Fits:", block)
+            self.assertIn("Placement keywords:", block)
 
     def test_other_catalogs_absent_from_rc_instruction(self):
         si = rules.system_instruction("rC")
@@ -100,12 +100,13 @@ class TestParsedLists(unittest.TestCase):
         self.assertEqual(ssc["trailer"], "as a lead placement")
         self.assertIn("underscore", ssc)  # SSC forbidden jargon
 
-    def test_fits_lists_parse(self):
-        self.assertEqual(rules.fits_list("rC")[0], "Trailer")
-        self.assertIn("Prestige TV", rules.fits_list("SSC"))
-        epp = rules.fits_list("EPP")
+    def test_placement_keywords_parse(self):
+        self.assertEqual(rules.placement_keywords("rC")[0], "Trailer")
+        self.assertIn("Prestige TV", rules.placement_keywords("SSC"))
+        epp = rules.placement_keywords("EPP")
         self.assertIn("Reality TV", epp)
         self.assertFalse(any("lane" in t.lower() for t in epp))
+        self.assertIn("documentary", rules.media_types())
 
     def test_lanes_active_first(self):
         lanes = rules.lanes()
@@ -127,8 +128,8 @@ class TestParsedLists(unittest.TestCase):
         self.assertIn(rc[0], prompt)
         self.assertNotIn(epp[0], prompt)
         call_b = prompts.PromptEngine().call_b_prompt({"analysis": analysis_dict(), "simple": {}}, "rC")
-        self.assertIn(prompts.CALL_B_EXEMPLAR["rC"], call_b)
-        self.assertNotIn(prompts.CALL_B_EXEMPLAR["EPP"], call_b)
+        self.assertIn(prompts.CALL_B_EXEMPLARS["rC"], call_b)
+        self.assertNotIn(prompts.CALL_B_EXEMPLARS["EPP"], call_b)
         listen = prompts.PromptEngine().call_a_system(30.0) + prompts.PromptEngine().call_a_user("full", 30.0)
         self.assertNotIn(rc[0], listen)  # the listen never sees catalog examples
 

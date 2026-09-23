@@ -12,7 +12,8 @@ at import and exposes what the rest of the app needs:
                                   templates ("Track description", "Keywords"...).
     banned_list()                 The LOCKED "Hard banned list", parsed.
     forbidden_placement_words(c)  A catalog's "Forbidden placement words", parsed.
-    fits_list(c)                  A catalog's "Placement list for Fits", parsed.
+    placement_keywords(c)         A catalog's "Placement keywords" (media types; keywords only).
+    media_types()                 Every catalog's media placements — never a Fits tag.
     lanes() / lane_words()        EPP lanes from EPP_LANES.md.
 
 Editing the markdown changes the app on the next deploy. Nothing here restates
@@ -174,12 +175,16 @@ class Rules:
     def allowed_placement_words(self, catalog: str) -> List[str]:
         return _comma_list(self._catalog_line(catalog, "Allowed placement words"))
 
-    def fits_list(self, catalog: str) -> List[str]:
-        """Legal Fits tags. For EPP the lane is also legal (first tag) — see lanes()."""
-        value = self._catalog_line(catalog, "Placement list for Fits")
-        if ":" in value:  # EPP: "the album's lane first, then two of: A, B, C"
-            value = value.split(":", 1)[1]
-        return _comma_list(value)
+    def placement_keywords(self, catalog: str) -> List[str]:
+        """A catalog's media placements. Keywords only: a Fits tag is never one of these."""
+        return _comma_list(self._catalog_line(catalog, "Placement keywords"))
+
+    def media_types(self) -> List[str]:
+        """Every catalog's placement keywords and allowed placement words, lowercased. Never a Fits tag."""
+        out = set()
+        for code in CATALOG_CODES:
+            out |= {w.lower() for w in self.placement_keywords(code) + self.allowed_placement_words(code)}
+        return sorted(out)
 
     # ── EPP lanes ─────────────────────────────────────────────────────────────
     def lanes(self) -> List[Dict[str, str]]:
@@ -276,8 +281,12 @@ def allowed_placement_words(catalog: str) -> List[str]:
     return RULES.allowed_placement_words(catalog)
 
 
-def fits_list(catalog: str) -> List[str]:
-    return RULES.fits_list(catalog)
+def placement_keywords(catalog: str) -> List[str]:
+    return RULES.placement_keywords(catalog)
+
+
+def media_types() -> List[str]:
+    return RULES.media_types()
 
 
 def few_shot(catalog: str, kind: str) -> List[str]:

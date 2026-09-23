@@ -132,3 +132,17 @@ Written by scripts/self_agreement.py.
 - Call B no longer receives instrument inventory; receives sonic map + actors only
 - Call B system instruction rewritten as music supervisor shortlist note
 - Forbidden words list added; per-catalog voice blocks and exemplars added
+
+## 2026-09-22 — Call B final form (docs/PFD_v4_CallB_Final_2026-09-22.md)
+- Call B system instruction, voice blocks and exemplar sets copied verbatim from §2–§4 into prompts.py · Damir's shipped Air Hunger finals are the target voice · `git revert` this commit.
+- SSC gets the two provisional exemplars only; the doc's instruction line ("Send these two… replace them") is not sent to the model · it is an instruction to the implementer · replace `CALL_B_EXEMPLARS["SSC"]` after the first app-shipped SSC album.
+- Call B input gains album_concept, album_title, track_title (the base title, "Parent Track"), alt_descriptor, sibling_full, ending, hybridity_electronic_pct · §1 · `prompts.call_b_input`. Call A is untouched and still blind.
+- Album concept: optional one-line field on Start, stored in album state as `album_concept`, editable in Review → Album details · §1 · remove the two `text_input`s in app.py.
+- Fits = 2–3 lowercase scene-level tags, never a media type (§5, from the Air Hunger sparse finals). "Placement list for Fits" became "Placement keywords" in each catalog block; `gate.fits_reasons` now fails a tag that is capitalised or is any catalog's placement keyword / allowed placement word (`rules.media_types`) · text checks only, the listen gate is unchanged · restore `rules.fits_list` and the legal-list check.
+- Description sentence check widened from 2–3 to 2–4 sentences before Fits · the three moves put Move 2 in one or two sentences (Sacrilege's shipped final has three plus a closer) · `gate.description_reasons`.
+- ALT mixes: description = `Alt Version Of the Full Mix (<descriptor>) - ` + the FULL mix's current description, filled in `refresh_statuses` while the ALT row is still auto (`PFD_Alt_Auto`); an editor's edit of the ALT row stops the inheritance · §5 · `engine.alt_description`.
+- Few-shot lines in PFD_RULES.md (Claude writers): Vessel examples removed; rC now Air Hunger only · §5 exemplars from shipped finals only.
+- PFD_RULES.md TUNABLE "Track description" rewritten to the three moves · the Claude gate quotes it; the old "scene first, 2–3 sentences" spec would have rewritten Call B's output back to the 09-16 shape.
+- §6 test scores Call B's own output (before the Claude gate): the local secrets file has no Claude key, and the test is "Call A + this Call B". Six of the 13 Air Hunger full mixes are Call B exemplars, so the held-out seven are reported separately.
+- `prompts.CALL_B_CHECKLIST` (user turn, not the system instruction) added after run 1: 45–60 words, exactly one timestamp, one-sentence Move 1, the concept's nouns never written as labels · run 1 outputs ran 64–106 words and wrote "contagion/quarantine" as labels · delete the constant and its line in `call_b_prompt`.
+- §6 not passed (BUILD_REPORT.md): distance reduction 2.4% (run 1) and 1.4% (run 2) against a 30% target; mechanical 100% on run 2. Kept on branch `callb-final`, not merged.

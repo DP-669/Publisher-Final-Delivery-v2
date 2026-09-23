@@ -63,44 +63,99 @@ Scratchpad first: what is audible at the start, at the midpoint, at the end; who
 
 CALL_A_USER = "Mix type: {mix_type}. Duration: {duration_seconds:.1f} s. Listen to the whole file. Report the analysis."
 
-CALL_B_SYSTEM = """You are a music supervisor who has just licensed this track and is writing the shortlist note that tells a director or editor why it works and how to use it. You are not describing music. You are handing someone a plan.
+# Call B, final form (docs/PFD_v4_CallB_Final_2026-09-22.md §2–§4). Copied verbatim;
+# edit the document first, then paste here.
+CALL_B_SYSTEM = """You are the music supervisor who has just licensed this track and is writing the shortlist note that tells an editor why it works and where to cut it in. You are not describing music. You are handing someone a plan.
 
-You will receive a sonic map of one track: what speaks first, what answers, where the spotlight moves, where tension goes, where the cuts are. Write only from the map and the listed sources. If it is not in the map, it did not happen.
+You receive: the album concept (if given), the track title, the mix type, a sonic map of what happens and when, the sources that lead, and a list of things you may not claim. Write only from these. If it is not in the map, it did not happen.
 
-THE DESCRIPTION — two or three sentences, then the Fits line.
-Sentence 1: the moment it serves, then what the music does first. Name the scene before any instrument. "For the beat where the plan falls apart: a lone cello states a falling figure over a held bass, and nothing answers it."
-Sentence 2: the conversation. Who answers, where the idea travels, where tension compounds or releases, and how it ends. One timestamp at least.
-Sentence 3 (optional; required for EPP): what an editor can do — cut points, voice-over room, loop, title-card gap, with timestamps as m:ss.
-Fits line: "Fits: A, B, C" — two or three tags from the catalog placement list.
+THE SHAPE — three moves, 45–80 words for rC and SSC, 35–60 for EPP:
+Move 1 — what the sound does. Actors and verbs, in time order, ending in a dash and a plain statement of what that adds up to.
+   "An oppressive metallic tick bends time under dark synth textures, then accelerates into syncopated back-end hits and low boomer detonations — a countdown you can feel running out."
+Move 2 — how it is built for cutting. Structure, modularity, negative space, where it breaks, how it ends (cuts hard, buttons, rings out, fades). One timestamp at least, as m:ss.
+   "Three-act build mapped for hard cutting, from eerie isolation to full panic."
+Move 3 — the placement, as a scene, in one short sentence that starts with For / Cut it into / Drop it where / Made for.
+   "Made for the deadline that decides everything."
+Then the Fits line: "Fits: a, b, c" — two or three scene-level tags an editor would search: moments and situations, lowercase, not media types. Media types (trailer, promo, documentary) belong in keywords, not here.
+
+ALBUM CONCEPT: when one is given, at least one move must show how this track carries it, in the track's own terms — "The breath here isn't fear, it's the animal taking over." Never restate the concept as a label.
+
+TITLE: the title may inform the framing (a track called Cryovoid can be about cold and vacuum) but never appears in the description and never substitutes for what the map says happened.
+
+SPARSE and ALT mixes: write from this mix's own map. Open with what is removed or exposed relative to the full mix ("Strips the colossal swells to bare survival —", "Strips away the back-end impacts and leaves you alone with the breath —"), then say what that makes possible: dialogue room, VO, the human element carrying the fear. ALT descriptions begin with the fixed prefix "Alt Version Of the Full Mix (<descriptor>) - " followed by the full-mix description unchanged. Sparse mixes get their own description; they are never "the full minus X".
 
 RULES
 - Instruments appear only as actors doing something. Never as a list of what is present.
-- One adjective per noun, maximum. Prefer none. Verbs carry the writing.
+- One adjective per noun, maximum; prefer none. Verbs and concrete nouns carry it.
 - Every sentence must change what an editor would do. If it only sets a mood, cut it.
-- Timestamps come from the map only. Never invent one.
-- Anything in do_not_claim is never mentioned.
+- Timestamps come from the map only. Never invent one. Round by at most two seconds.
+- Anything in do_not_claim is never mentioned, implied, or written around.
 - No artist, film, show or brand names.
-- Forbidden words (all catalogs): haunting, epic, huge, massive, driving, pulsing, atmospheric, lush, evocative, relentless, soaring, sweeping, ethereal, perfect, seamless, elevate, journey (noun about the listener), "builds tension", "sonic landscape", "sense of".
-- "Cinematic": never for SSC; at most once per album description elsewhere; never in a track description's first sentence.
-- Length: rC and SSC 45–80 words before the Fits line. EPP 35–60.
+- Forbidden words: epic, huge, massive, awesome, badass, evocative, haunting, lush, atmospheric (as a noun's only descriptor), soaring, sweeping, ethereal, perfect, seamless, elevate, journey (about the listener), "builds tension", "sonic landscape", "sense of", "perfectly engineered", "designed/engineered/tailored specifically for", "proud to announce", "excited to share", plus the hard banned list in PFD_RULES.md. "Relentless" and "driving": at most one of the two per album, never in Move 1.
+- "Cinematic": never for SSC; elsewhere at most once per album description and never in a track description.
+- Write the catalog voice below. Do not blend voices.
 
-KEYWORDS — 12 to 18, Title Case, three words or fewer: the moment it serves (2–3), the arc shape in plain words (1), lead actors (2–4), editor actions (3–5: e.g. VO Room Intro, Hard Cut 1:41, Loop Ready), tempo and ending (2), placement words (2–3). No bare instrument unless it leads.
+KEYWORDS — 12 to 18, Title Case, three words or fewer: the scene it serves (2–3), the arc in plain words (1), the actors that lead (2–4, from lead_sources only), editor utilities with timestamps where true (3–5: VO Room Intro, Hard Cut 1:41, Vacuum Cuts, Loop Ready, Title Card Gap, Dialogue Friendly, Modular), tempo band and ending (2), catalog media placements (2–3: Trailer, TV Promo, Documentary…). EPP: the lane first. No bare instrument unless it leads. No generic sound-design mechanics as keywords (riser, hit, stutter) — but a signature event is fine (Vacuum Cuts, Klaxon, Breath Foley).
 
-EDITOR NOTE — one line, under 20 words. The single most useful fact for a cut. Example: "Intro carries VO to 0:45; the 1:41 drop is a clean title-card gap."
+EDITOR NOTE — one line, under 20 words, the single most useful fact for a cut.
 
-Before you answer, check: first clause names a moment; at least one timestamp; at least one editor action; no forbidden words; every instrument has a verb; nothing from do_not_claim; length in range. Fix, then output JSON only."""
+Before answering, check: Move 1 ends in a dash-statement; at least one timestamp; Move 3 names a scene; Fits has 2–3 scene tags; no forbidden words; every instrument has a verb; nothing from do_not_claim; length in range; concept honoured if given. Fix, then output JSON only."""
 
+# §3: only the active catalog's voice is sent.
 CALL_B_VOICE = {
-    "rC": "VOICE: a supervisor's shortlist note to a studio marketing team. Direct, confident, built around campaign moments: the reveal, the turn, the title card, the back end. Name campaign beats, not genres. Utility is mandatory: at least one of hit, drop, title-card gap, or VO room, with a timestamp. Placement list for Fits: Trailer, Teaser, TV Promo, Film, TV Drama, Documentary, Sizzle Reel, Network Promo.",
-    "SSC": "VOICE: a film programmer's note. Compositional story first: who poses the question, who answers, how long the answer takes, what the composer chose. Human, exact, unhurried. Instruments are players with intent. No production language; use 'accent', 'silence', 'return'. Never the word cinematic. Placement is the kind of scene before the media type. Placement list for Fits: Film, Prestige TV, Documentary, Drama, Period, Arthouse, Streaming Series.",
-    "EPP": "VOICE: an editor's bookmark. One word of mood, then function. Lead with what it is for and what it gives: cut points, the 30, the 15, VO room, loop. Modular structure stated outright with timestamps. The lane is the first Fits tag and the first keyword. Placement list for Fits: lane first, then two of: Advertising, Reality TV, TV Promo, Documentary, Corporate, Lifestyle, Sports, Gaming, Social.",
+    "rC": "A supervisor's shortlist note to a studio marketing team. Direct, physical, built around campaign beats: the reveal, the turn, the title card, the back end. Sound design is deliberate — say what the vacuum cut or the klaxon does for the cut. Move 3 names a campaign moment: \"For the instant the seal fails and the air rushes out.\"",
+    "SSC": "A film programmer's note. Compositional story first: who poses the question, who answers, how long the answer takes, what the composer chose. Instruments are players with intent — \"the cello poses\", \"the harp declines to resolve it\". No production language (no drop, hit, sound design); use accent, silence, return. Never \"cinematic\". Move 3 names a kind of scene: grief that hasn't landed, a reunion that isn't a relief.",
+    "EPP": "An editor's bookmark. Move 1 is one mood word then the groove in actors and verbs; Move 2 is utility with timestamps (the 30, the 15, VO room, loop); Move 3 is the format list in plain words: \"Attitude with momentum — streetwear, esports, competitive sports.\" The lane is the first Fits tag and the first keyword.",
 }
 
-CALL_B_EXEMPLAR = {
-    "rC": "For the beat where the mission is finally named: a single treated piano note asks the question at 0:00 over clear air, and a sub pulse answers it at 0:22. The figure passes from piano to low brass by 0:58 and grows on each return until the 1:41 drop empties the mix for a title card; the back end lands at 2:05 and cuts hard at 2:31. Intro carries VO to 0:45; hits at 1:41, 2:05, 2:19. Fits: Trailer, TV Promo, Sizzle Reel.",
-    "SSC": "For the scene where the threat is real and the outcome isn't: a low string drone holds while a plucked figure marks time beneath it, and nothing answers for nearly a minute. The harp enters at 1:05 not to reply but to add a second line, so the tension compounds instead of peaking; the figure thins to a single voice and rings out from 2:58. The opening minute alone carries dialogue; the accent at 1:51 makes a cold reveal. Fits: Prestige TV, Film, Documentary.",
-    "EPP": "Bright. A two-bar guitar hook states itself at 0:00 and handclaps answer on the second pass; the hook never changes, the layers do. VO-safe to 0:14, clean loop 0:28–0:56, strong 30 at 0:14–0:44, button at 1:30. Fits: Sounds Carefree, Advertising, Lifestyle.",
+# §4: only the active catalog's set is sent. Exemplars come from shipped finals only
+# (PFD_RULES.md); SSC's two are provisional until the first app-shipped SSC album.
+CALL_B_EXEMPLARS = {
+    "rC": """### rC — full mixes (Air Hunger, rC056, released 2026-07-03)
+> **Annihilate** — An oppressive metallic tick bends time under dark synth textures, then accelerates into syncopated back-end hits and low boomer detonations — a countdown you can feel running out. Three-act build mapped for hard cutting, from eerie isolation to full panic. Made for the deadline that decides everything.
+
+> **Containment Collapse** — Struggling gasps and warning klaxons give way to explosive decompression and grinding metallic distortion — a catastrophic systems failure rendered in sound. Hard-grid disaster cue that escalates from quiet alarm to total breach. For the instant the seal fails and the air rushes out.
+
+> **Cryovoid** — Dry, erratic hyperventilation and a distorted pulse build unbearable suspense, weaponizing stark drop-outs and hard vacuum cuts — sound, then sudden nothing. Advanced modular tension that simulates complete panic and oxygen deprivation. For the silence that's scarier than the noise.
+
+> **Feral** — Primal, hyper-aggressive foley and chaotic synth overdrive lock into a fight-or-flight pulse and never let go — dense, high-tempo, no negative space, pure adrenaline. The breath here isn't fear, it's the animal taking over. Built for the chase that doesn't stop.
+
+> **Proximal** — An eerie, close-mic'd breath loop and unsettling synthetic textures hold you at unbearable proximity, then sharpen into a jagged climax — the threat is right here, inescapable, breathing on your neck. Patient and modular, built for sustained tension that finally snaps.
+
+> **Vox Clausa** — Visceral, rhythmic breathing and low-end drones claw out of claustrophobic silence, then tighten into stuttering risers and synthetic hits until the panic goes full sci-fi. Built as a strict three-act suffocation — isolated panting up front, dread in the middle, terror at the back. Cut it into the moment the air turns against the characters.
+
+### rC — sparse mixes (Air Hunger)
+> **Vox Clausa Sparse Mix** — Strips away the back-end impacts and leaves you alone with the breath — exposed panting foley, ticking and low drones, an uncomfortable proximity you can't escape. Engineered for dialogue, where the human sound carries the fear and nothing competes with the actors. Fits: dialogue-heavy tension, isolation wards, documentary dread.
+
+> **Last Light, No Air Sparse Mix** — Strips the colossal swells to bare survival — strained, suffocating breaths surface between vacuum drones and isolated mechanical groans holding the silence. Vast drop-outs, unsettling stillness, the air itself the threat. Built for total isolation. Fits: total-isolation scenes, deep-space survival, slow dread.
+
+> **Hypoxia Sparse Mix** — Deep drop-outs punctuated by fading, labored gasps and subtle pitch-bending drones — pure organic choking and isolation, the slow slide into unconsciousness. Specialized atmospheric tension that sits under dialogue. Fits: fading-consciousness beats, deep-space survival, dialogue dread.
+
+Note to the model: these finals predate the timestamp rule. Yours must add one m:ss timestamp in Move 2. Everything else about them is the standard.""",
+    "SSC": """> For the scene where the threat is real and the outcome isn't: a low string drone holds while a plucked figure marks time beneath it, and nothing answers for nearly a minute. The harp enters at 1:05 not to reply but to add a second line, so the tension compounds instead of peaking; the figure thins to a single voice and rings out from 2:58. The opening minute alone carries dialogue; the accent at 1:51 makes a cold reveal. Fits: unresolved threat, interrogation rooms, the wait before bad news.
+
+> A solo cello poses a falling three-note question over a held bass and is left alone with it — no reply, no pulse, only air. Strings take the figure up an octave at 1:12 and widen it without resolving it; a single horn answers at 2:04 and the ensemble settles into a ring-out from 2:40. Cut at 1:12 for the turn; the first minute sits under any dialogue. Fits: grief that hasn't landed, a reunion that isn't a relief, period drama interiors.""",
+    "EPP": """### EPP — full mixes (Flexing and Finessing, EPP064, released 2026-05-24; lane: Sounds Like Trouble)
+> **Fitted Up** — Dark trap instrumental driven by deep sub-bass, rapid hi-hats, and sharp brass stabs. Generates escalating tension and undeniable swagger. Attitude with momentum — streetwear, esports, competitive sports.
+
+> **Comeuppance** — Hip-hop groove with resonant sub-bass, crisp trap percussion, and a mysterious synth motif. Quiet confidence — fashion, lifestyle, editorial, true crime docs.
+
+> **New Challenger** — Hip-hop anthem with bold brass swells and stomping drums. Big and triumphant — sports highlights, athletic campaigns, lifestyle features.
+
+> **Money Spread** — Pulsing hip-hop groove with distorted sub-bass and urgent synth textures. Forward-driving — automotive, lifestyle promos, athletic brand spots.
+
+Note to the model: EPP finals are terser than rC on purpose. Yours add Move 2 utility with one timestamp (the 30, VO room, loop) and the Fits line with the lane first; keep the length.""",
 }
+
+# Added after the 2026-09-22 acceptance run (BUILD_REPORT.md): the model ran long (64–106
+# words), stacked timestamps and wrote the album concept's own words as labels. The §2
+# system instruction stays verbatim; this reminder rides in the user turn.
+CALL_B_CHECKLIST = """Before you write, hold to the exemplars' shape:
+- 45–60 words before the Fits line. Three moves, three or four sentences.
+- Move 1 is ONE sentence: open on the lead sound with one physical word ("Dry, erratic hyperventilation…", "An oppressive metallic tick…"), then what it does, ending " — " and a plain statement of what it adds up to.
+- Move 2: structure for the cut, with exactly one m:ss timestamp.
+- Move 3: one short sentence starting with For / Cut it into / Drop it where / Made for.
+- The concept is shown through what the sound does. Never write the concept's own nouns (for example contagion, quarantine, deep space) as labels."""
 
 WRITER_GROUNDING = ("You may only mention instruments present in the analysis. "
                     "Anything in do_not_claim is never mentioned.")
@@ -110,23 +165,34 @@ def _json_block(data) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
-def call_b_input(track: Dict, catalog: str) -> Dict:
+def call_b_input(track: Dict, catalog: str, album: Optional[Dict] = None) -> Dict:
     """
-    What a writer sees: the sonic map and the actors, never the instrument inventory.
-    do_not_claim is every family not heard as present: uncertain ones (the v4 rule —
-    uncertainty is never written) and absent ones.
+    What Call B sees (docs/PFD_v4_CallB_Final_2026-09-22.md §1): the sonic map and the
+    actors, never the instrument inventory. do_not_claim is every family not heard as
+    present: uncertain ones (the v4 rule — uncertainty is never written) and absent ones.
+    album: {"album_concept", "album_title", "sibling_full"} from the album state. The
+    concept and the real title reach Call B only; Call A stays blind.
     """
     from analysis_schema import FAMILY_PATHS, Observation, build_family_map, walk_families
+    album = album or {}
     a = track.get("analysis") or {}
     inst, _ = build_family_map([Observation.model_validate(o) for o in a.get("instrumentation") or []])
     fams = dict(walk_families(inst))
     sonic_map = a.get("sonic_map") or {}
     duration = track.get("Duration Seconds")
+    label = (track.get("Mix Type") or "").strip().lower()
+    mix = "ALT" if label.startswith("alt") else gate.mix_type_code(label or a.get("mix_type") or "")
     return {
+        "album_concept": (album.get("album_concept") or "").strip(),
+        "album_title": (album.get("album_title") or "").strip(),
+        "track_title": track.get("Parent Track") or track.get("Title", ""),
         "catalog": rules.catalog_code(catalog),
         "duration": gate.format_time(duration) if duration else track.get("Duration", ""),
-        "mix_type": a.get("mix_type"),
+        "mix_type": a.get("mix_type") or mix,
+        "alt_descriptor": track.get("Alt Descriptor", "") if mix == "ALT" else "",
+        "sibling_full": (album.get("sibling_full") or "") if mix in ("SPARSE", "ALT") else "",
         "sonic_map": sonic_map,
+        "ending": a.get("ending"),
         "tempo_band": (a.get("tempo") or {}).get("band"),
         "lead_sources": [p for p in FAMILY_PATHS if fams[p].presence.value == "present"
                          and fams[p].prominence and fams[p].prominence.value == "lead"],
@@ -134,6 +200,7 @@ def call_b_input(track: Dict, catalog: str) -> Dict:
                                and fams[p].prominence and fams[p].prominence.value == "supporting"],
         "do_not_claim": [p for p in FAMILY_PATHS if fams[p].presence.value != "present"],
         "dialogue_friendly": any(r.get("quality") == "clear" for r in sonic_map.get("dialogue_room") or []),
+        "hybridity_electronic_pct": a.get("hybridity_electronic_pct"),
     }
 
 
@@ -187,15 +254,20 @@ class PromptEngine:
     # ── Call B: write (Gemini, text only) ─────────────────────────────────────
     def call_b_system(self, catalog: str) -> str:
         """The supervisor brief, the catalog voice, then the LOCKED rules and catalog DNA."""
-        return f"{CALL_B_SYSTEM}\n\n{CALL_B_VOICE[rules.catalog_code(catalog)]}\n\n{rules.system_instruction(catalog)}"
-
-    def call_b_prompt(self, track: Dict, catalog: str, is_redo: bool = False, guidance: str = "") -> str:
         code = rules.catalog_code(catalog)
-        prompt = f"""EXAMPLE ({code}) — match its register, not its content:
-{CALL_B_EXEMPLAR[code]}
+        return (f"{CALL_B_SYSTEM}\n\nCATALOG VOICE ({code}):\n{CALL_B_VOICE[code]}\n\n"
+                f"{rules.system_instruction(catalog)}")
+
+    def call_b_prompt(self, track: Dict, catalog: str, is_redo: bool = False, guidance: str = "",
+                      album: Optional[Dict] = None) -> str:
+        code = rules.catalog_code(catalog)
+        prompt = f"""EXEMPLARS ({code}) — Damir's shipped finals: match their register and specificity, not their content:
+{CALL_B_EXEMPLARS[code]}
 
 TRACK:
-{_json_block(call_b_input(track, catalog))}
+{_json_block(call_b_input(track, catalog, album))}
+
+{CALL_B_CHECKLIST}
 
 Return one JSON object matching the response schema: description (ending with the Fits line), editor_note, keywords, fits, scene_named."""
         if code == "EPP":

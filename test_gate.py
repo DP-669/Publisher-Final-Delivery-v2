@@ -411,9 +411,11 @@ class TestSimplify(unittest.TestCase):
 
 
 class TestTextRules(unittest.TestCase):
-    def test_fits_tags_are_case_insensitive(self):
-        self.assertEqual(gate.fits_reasons(["documentary", "TRAILER"], "rC"), [])
-        self.assertTrue(gate.fits_reasons(["Documentary", "Advertising"], "rC"))
+    def test_fits_tags_are_lowercase_scenes_not_media_types(self):
+        self.assertEqual(gate.fits_reasons(["isolation wards", "documentary dread"], "rC"), [])
+        self.assertTrue(gate.fits_reasons(["documentary", "trailer"], "rC"))          # media types
+        self.assertTrue(gate.fits_reasons(["Isolation Wards", "slow dread"], "rC"))    # not lowercase
+        self.assertTrue(gate.fits_reasons(["the chase", "advertising"], "SSC"))       # another catalog's media type
         self.assertEqual(gate.split_fits("A. B. Fits: documentary, Film")[1], ["documentary", "Film"])
 
     def test_description_rules(self):
