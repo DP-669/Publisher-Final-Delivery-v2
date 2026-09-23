@@ -73,6 +73,7 @@ for _k, _v in {"step": "start", "album": None, "running": False, "dirty": False,
                "uploads": {}, "results": {}}.items():
     if _k not in ss:
         ss[_k] = _v
+eng.album_state = ss.album
 
 # ── Secrets, models, Dropbox ───────────────────────────────────────────────────
 gemini_api_key = _secret_value("GEMINI_API_KEY")
@@ -446,6 +447,7 @@ def start_album(catalog: str, code: str, entries: list, auto: list, check: dict,
         "album_code": code, "catalog": catalog, "shared_link": ss.get("link_input", ""),
         "album_path": check.get("album_path", ""),
         "album_folder_name": check.get("folder_name") or code, "created": now, "updated": now,
+        "album_concept": (ss.get("album_concept_input") or "").strip(),
         "run_status": "analyzing", "input": "upload" if uploads else (check.get("kind") or "album"),
         "pending": list(entries), "total": len(entries), "tracks": [],
         "lane": None, "lane_proposed": None, "album_description": "", "album_name_candidates": [],
@@ -458,7 +460,8 @@ def start_album(catalog: str, code: str, entries: list, auto: list, check: dict,
                 else generate_cutdown_description(e["parent_track"], e["notes"]))
         put_track({"track_id": new_track_id(), "Title": e["display_name"], "Mix Type": e["mix_type"],
                    "Parent Track": e["parent_track"], "Source Path": e["dropbox_path"],
-                   "Track Description": desc, "Keywords": ""})
+                   "Track Description": desc, "Keywords": "",
+                   **({"Alt Descriptor": e["notes"], "PFD_Alt_Auto": True} if e["category"] == "alt_mix" else {})})
     ss.running = True
     ss.export_result = None
     save_album()
@@ -613,6 +616,10 @@ def render_start():
     if not gemini_api_key:
         st.caption("The Gemini API key is missing from the app's secrets.")
 
+    st.text_input("Album concept (one line)", key="album_concept_input",
+                  placeholder="Breath and voice as the instrument: contagion, deep space, quarantine.",
+                  help="Optional. The writer uses it to show how each track carries the idea; the listen never sees it.")
+
     ready = bool(ss.catalog_choice and entries and code and not problem and gemini_api_key)
     label = "Analyze" if len(entries) == 1 else "Analyze album"
     if st.button(label, type="primary", disabled=not ready, key="analyze_album"):
@@ -651,6 +658,7 @@ def apply_table_edits(editor_key: str, ids: list):
             eng.record_revision(track, "Track Description", track.get("Track Description", ""),
                                 change["Description"], album["catalog"], code)
             track["Track Description"] = change["Description"]
+            track.pop("PFD_Alt_Auto", None)   # an edited ALT no longer follows its full mix
             changed = True
         if ("Keywords" in change and not is_alt_or_cutdown(track)
                 and change["Keywords"] != track.get("Keywords", "")):
@@ -718,6 +726,15 @@ def render_album_details(album: dict):
                 save_album()
                 st.rerun()
             st.divider()
+
+        st.markdown("**Album concept**")
+        concept = st.text_input("Album concept (one line)", value=album.get("album_concept", ""),
+                                label_visibility="collapsed", key=f"album_concept_{ver}",
+                                help="Sent to the writer only, never to the listen. Empty is allowed.")
+        if concept.strip() != album.get("album_concept", ""):
+            album["album_concept"] = concept.strip()
+            save_album()
+        st.divider()
 
         st.markdown("**Album description**")
         text = st.text_area("Album description", value=album.get("album_description", ""), height=80,
@@ -990,6 +1007,13 @@ def render_fix_panel(track: dict):
                 eng.refresh_statuses(album, catalog)
                 save_album()
                 st.rerun()
+
+    warnings = (track.get("PFD_Gate") or {}).get("warnings") or []
+    if warnings:
+        st.markdown('<div class="pfd-note">The listen disagreed with the file on these timing checks. '
+                    'They are warnings for now, not blocks: listen to that part if it matters for the cut.<br>'
+                    + "<br>".join(html.escape(gate.summary(w)) for w in warnings) + "</div>",
+                    unsafe_allow_html=True)
 
     override = track.get("PFD_Override")
     if override:

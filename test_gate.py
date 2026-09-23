@@ -70,7 +70,7 @@ class TestFamilyMap(unittest.TestCase):
         inst, dups = build_family_map(analysis().instrumentation)
         paths = dict(walk_families(inst))
         self.assertEqual(sorted(paths), sorted(FAMILY_PATHS))
-        self.assertEqual(len(paths), 31)
+        self.assertEqual(len(paths), 32)
         self.assertEqual(paths["percussion.drum_kit"].presence, Presence.present)
         self.assertEqual(paths["voice.choir"].presence, Presence.absent)
         self.assertEqual(dups, [])
@@ -411,9 +411,11 @@ class TestSimplify(unittest.TestCase):
 
 
 class TestTextRules(unittest.TestCase):
-    def test_fits_tags_are_case_insensitive(self):
-        self.assertEqual(gate.fits_reasons(["documentary", "TRAILER"], "rC"), [])
-        self.assertTrue(gate.fits_reasons(["Documentary", "Advertising"], "rC"))
+    def test_fits_tags_are_lowercase_scenes_not_media_types(self):
+        self.assertEqual(gate.fits_reasons(["isolation wards", "documentary dread"], "rC"), [])
+        self.assertTrue(gate.fits_reasons(["documentary", "trailer"], "rC"))          # media types
+        self.assertTrue(gate.fits_reasons(["Isolation Wards", "slow dread"], "rC"))    # not lowercase
+        self.assertTrue(gate.fits_reasons(["the chase", "advertising"], "SSC"))       # another catalog's media type
         self.assertEqual(gate.split_fits("A. B. Fits: documentary, Film")[1], ["documentary", "Film"])
 
     def test_description_rules(self):
@@ -442,3 +444,21 @@ class TestTextRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestLongStrings(unittest.TestCase):
+    def test_over_long_prose_is_trimmed_not_rejected(self):
+        """Annihilate, 2026-09-22: a 300+ character narrative_map was G4 twice."""
+        import json as _json
+        from pfd_fixtures import analysis_dict
+        d = analysis_dict(narrative_map="word " * 120)
+        a = gate.parse_analysis(_json.dumps(d))
+        self.assertLessEqual(len(a.narrative_map), 300)
+        self.assertTrue(a.narrative_map.endswith("…"))
+
+    def test_other_violations_still_fail(self):
+        import json as _json
+        from pfd_fixtures import analysis_dict
+        d = analysis_dict(narrative_map="word " * 120, hybridity_electronic_pct=400)
+        with self.assertRaises(gate.SchemaViolation):
+            gate.parse_analysis(_json.dumps(d))

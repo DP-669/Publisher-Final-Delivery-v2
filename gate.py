@@ -18,6 +18,7 @@ four things the team needs: the check that failed (G1…G17 or a named text
 check), the values that disagreed, what that means, and what to do next.
 summary() is the one-line form for the table, export_line() the one for the CSV.
 """
+import json
 import logging
 import re
 from functools import lru_cache
@@ -91,13 +92,44 @@ def _parse(model, text: str, what: str):
         raise SchemaViolation(f"{what}: {problems}. First 200 chars: {str(text)[:200]!r}")
 
 
+def _trim_long_strings(text: str) -> str:
+    """
+    Gemini does not enforce string max_length in schema mode: Air Hunger's Annihilate
+    came back twice with a narrative_map over 300 characters and was thrown away as
+    G4 (2026-09-22). Over-long prose fields are cut at a word boundary here and
+    logged. Only string_too_long is repaired; every other violation is still G4.
+    """
+    try:
+        Analysis.model_validate_json(text or "")
+        return text
+    except ValidationError as exc:
+        errors = exc.errors()
+    if not errors or any(e["type"] != "string_too_long" for e in errors):
+        return text
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    for e in errors:
+        node = data
+        for key in e["loc"][:-1]:
+            node = node[key]
+        limit = e["ctx"]["max_length"]
+        value = node[e["loc"][-1]]
+        cut = value[:limit - 1].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+        node[e["loc"][-1]] = cut[:limit]
+        log.warning("Call A %s was %d characters (cap %d); trimmed", ".".join(map(str, e["loc"])), len(value), limit)
+    return json.dumps(data)
+
+
 def parse_analysis(text: str) -> Analysis:
     """
     Validate Call A. List caps above 7 are not in the schema (Gemini rejects them);
     they are enforced here and in G2: edit points are trimmed to 8, more than 10
-    sections fails G2, more than 20 observations is logged.
+    sections fails G2, more than 20 observations is logged. Over-long prose fields
+    are trimmed (_trim_long_strings).
     """
-    a = _parse(Analysis, text, "analysis")
+    a = _parse(Analysis, _trim_long_strings(text), "analysis")
     if len(a.modular_edit_points_t) > MAX_EDIT_POINTS:
         log.warning("Call A returned %d edit points; kept the first %d", len(a.modular_edit_points_t), MAX_EDIT_POINTS)
         a.modular_edit_points_t = a.modular_edit_points_t[:MAX_EDIT_POINTS]
@@ -359,10 +391,21 @@ def uncertain_families(a: Analysis) -> List[str]:
     return [path for path, fam in walk_families(families(a)) if fam.presence == Presence.uncertain]
 
 
-def listen_status(failures: List[Dict], uncertain: List[str]) -> str:
+# Damir, 2026-09-23 (DECISIONS.md): the waveform timing checks warn instead of block
+# until five albums have DIFF files. Air Hunger blocked 11 of 13 full mixes, mostly here.
+WARN_RULES = ("G5", "G6", "G7", "G8")
+
+
+def split_warnings(failures: List[Dict]):
+    """(blocking, warnings): G5–G8 are warnings, every other rule still blocks."""
+    return ([f for f in failures if f.get("rule") not in WARN_RULES],
+            [f for f in failures if f.get("rule") in WARN_RULES])
+
+
+def listen_status(failures: List[Dict], uncertain: List[str], warnings: Optional[List[Dict]] = None) -> str:
     if failures:
         return BLOCKED
-    return PASSED_WITH_UNCERTAINTY if uncertain else PASSED
+    return PASSED_WITH_UNCERTAINTY if uncertain or warnings else PASSED
 
 
 # ── Retry hints (to the model) ─────────────────────────────────────────────────
@@ -548,24 +591,24 @@ def explain(f: Dict) -> Dict:
                  "Nothing was written for this track yet.", TEXT_ACTION)
     if r == "FITS_MISSING":
         return e("Fits line", "Description", "no 'Fits:' line at the end",
-                 "Every description ends with 2–3 placement tags from this catalog's list.",
+                 "Every description ends with 2–3 scene-level tags, lowercase — moments an editor would search.",
                  "Press Run again, or edit the description in the table and end it with, for example, "
-                 "\"Fits: Trailer, Film\".")
+                 "\"Fits: dialogue-heavy tension, isolation wards\".")
     if r == "FITS_COUNT":
         return e("Fits line", "Description", f"{f.get('count')} tags · needs 2–3",
-                 "The Fits line carries two or three placement tags.", TEXT_ACTION)
+                 "The Fits line carries two or three scene-level tags.", TEXT_ACTION)
     if r == "FITS_TAG":
         return e("Fits tag", "Description",
-                 f"'{f.get('tag')}' · legal tags: {', '.join(f.get('legal') or [])}",
-                 f"That tag isn't in the {f.get('catalog')} placement list.",
-                 "Edit the Fits line in the table to use a legal tag, or press Run again.")
+                 f"'{f.get('tag')}' · needs a lowercase scene, not a media type",
+                 "Fits tags name a moment or situation; media types (trailer, TV promo…) belong in keywords.",
+                 "Edit the Fits line in the table to name a scene, or press Run again.")
     if r == "FITS_LANE":
         return e("Fits tag", "EPP lane", f"first tag: '{f.get('first', '')}' · lane: '{f.get('lane')}'",
                  "On EPP the album's lane is always the first Fits tag.",
                  "Confirm the lane in Album details, or edit the Fits line so the lane comes first.")
     if r == "SENTENCES":
-        return e("Length", "Description", f"{f.get('count')} sentences before the Fits line · needs 2–3",
-                 "A track description is two or three sentences, then the Fits line.", TEXT_ACTION)
+        return e("Length", "Description", f"{f.get('count')} sentences before the Fits line · needs 2–4",
+                 "A track description is three moves in two to four sentences, then the Fits line.", TEXT_ACTION)
     if r == "BANNED":
         return e("Banned words", "Description", ", ".join(f.get("words") or []),
                  "These words are on the hard banned list in PFD_RULES.md.", TEXT_ACTION)
@@ -633,9 +676,9 @@ def reason_text(f) -> str:
         "DESC_EMPTY": "track description is empty",
         "FITS_MISSING": "description does not end with a 'Fits:' line",
         "FITS_COUNT": f"Fits line has {f.get('count')} tags (must be 2–3)",
-        "FITS_TAG": f"Fits tag '{f.get('tag')}' is not in the {f.get('catalog')} placement list",
+        "FITS_TAG": f"Fits tag '{f.get('tag')}' is not a lowercase scene tag (media types go in keywords)",
         "FITS_LANE": f"first Fits tag must be the lane '{f.get('lane')}'",
-        "SENTENCES": f"description has {f.get('count')} sentences before Fits (must be 2–3)",
+        "SENTENCES": f"description has {f.get('count')} sentences before Fits (must be 2–4)",
         "BANNED": f"description uses banned words: {', '.join(f.get('words') or [])}",
         "FORBIDDEN": f"description uses forbidden placement words for {f.get('catalog')}: "
                      f"{', '.join(f.get('words') or [])}",
@@ -743,12 +786,14 @@ def sentences(text: str) -> List[str]:
 
 
 def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = None) -> List[Dict]:
-    """Tags are compared case-insensitively (both sides lowercased); the text keeps its casing."""
+    """
+    Fits tags are scene-level (PFD_RULES.md LOCKED "Fits", 2026-09-22): 2–3, lowercase,
+    never a media type. On EPP the lane is the first tag and keeps its casing.
+    """
     if tags is None:
         return [failure("FITS_MISSING")]
     code = rules.catalog_code(catalog)
-    legal_list = rules.fits_list(catalog)
-    legal = {t.lower() for t in legal_list}
+    media = set(rules.media_types())
     is_epp = code == "EPP"
     lane_names = {n.lower() for n in rules.lane_names()}
     reasons = []
@@ -757,8 +802,8 @@ def fits_reasons(tags: Optional[List[str]], catalog: str, lane: Optional[str] = 
     for i, tag in enumerate(tags):
         if is_epp and i == 0 and (tag.lower() == (lane or "").lower() or (not lane and tag.lower() in lane_names)):
             continue
-        if tag.lower() not in legal:
-            reasons.append(failure("FITS_TAG", tag=tag, catalog=code, legal=list(legal_list)))
+        if tag.lower() in media or tag != tag.lower():
+            reasons.append(failure("FITS_TAG", tag=tag, catalog=code))
     if is_epp and lane and (not tags or tags[0].lower() != lane.lower()):
         reasons.append(failure("FITS_LANE", lane=lane, first=tags[0] if tags else ""))
     return reasons
@@ -773,7 +818,7 @@ def description_reasons(description: str, catalog: str, title: str = "",
     body, tags = split_fits(desc)
     reasons = fits_reasons(tags, catalog, lane)
     sents = sentences(body)
-    if not 2 <= len(sents) <= 3:
+    if not 2 <= len(sents) <= 4:   # three moves; Move 2 may take two sentences
         reasons.append(failure("SENTENCES", count=len(sents)))
     bad = banned_found(desc)
     if bad:

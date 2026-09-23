@@ -1,3 +1,66 @@
+# PFD v4 — Call B shipped (2026-09-23)
+
+**Damir's decision PFD-CALLB-SHIP:** the edit-distance criterion is withdrawn, so §6 passes on the mechanical checks (12/12). Merged to main.
+- Call A: `voice.breath_and_body_foley` family, the breath-vs-brass definition, and the rC catalog listen note.
+- Gate: G5–G8 are warnings ("Ready with note", measured vs claimed shown). G1–G4 and G9–G17 still block.
+- Annihilate: its over-long `narrative_map` was rejected as G4. It's now trimmed in Python (code fix).
+- Breath check (Sacrilege, Proximal, Feral): **1 of 3.** Sacrilege reports breath_and_body_foley as present and lead. Proximal and Feral still don't report it.
+- Tests: 218 OK.
+- The 2026-09-22 report below keeps the distance scores for the record.
+
+---
+
+# PFD v4 — Call B final form: §6 acceptance (2026-09-22) — distance criterion later withdrawn
+
+**Result: BLOCKED.** §1–§5 are implemented and audited (auditor PASS; 213 tests OK). §6 failed on the distance criterion on both runs. Per the fail-fast rule, no third prompt variation was tried. Nothing was merged to `main` and no success ntfy was sent.
+
+## Pass criteria vs result (run 2, the final prompt)
+- Median word-level edit distance, new vs shipped final: **0.934**. Slop baseline (09-16 prompts at e9f5ca0, same Call A maps): **0.948**. Reduction **1.4%**; the target is ≥30%, which would need a median ≤ 0.664. **FAIL**
+- Mechanical checks: **100%** of outputs (12/12). Target ≥90%. **PASS**
+- Held-out tracks (the 7 not used as exemplars): new 0.934 vs baseline 0.950, 1.7%.
+- Only 12 of 13 tracks were scored. Annihilate's listen returned invalid JSON twice (G4), so there was no map to write from.
+
+Run 1 (the §2–§4 prompt exactly as specified): median 0.925 vs 0.948 (2.4%); mechanical 8%. Most run-1 mechanical failures came from the checker: plain "brass" was counted as orchestral brass, but the maps had synth brass as a lead source. The checker was narrowed for run 2. The real prompt faults were outputs of 64–106 words, extra timestamps, three missing Move 1 dashes and one wrong Move 3 opener. For run 2 a user-turn checklist was added (`prompts.CALL_B_CHECKLIST`: 45–60 words, one timestamp, one-sentence Move 1, the concept not written as labels). The §2 system instruction is still verbatim.
+
+## Per track (normalised word-level edit distance vs the shipped final; Fits line excluded, since shipped full-mix finals have none)
+| Track | Listen gate | Baseline (09-16) | Run 1 | Run 2 | Mechanical (run 2) |
+|---|---|---|---|---|---|
+| Vox Clausa ¹ | BLOCKED | 0.953 | 0.957 | 0.925 | pass |
+| Last Light, No Air | BLOCKED | 0.938 | 0.928 | 0.921 | pass |
+| Hypoxia | BLOCKED | 0.970 | 0.882 | 0.942 | pass |
+| Proximal ¹ | BLOCKED | 0.945 | 0.954 | 0.954 | pass |
+| Delicate Matter | BLOCKED | 0.960 | 0.929 | 0.934 | pass |
+| Containment Collapse ¹ | PASSED | 0.938 | 0.873 | 0.855 | pass |
+| Cryovoid ¹ | BLOCKED | 0.944 | 0.921 | 0.934 | pass |
+| Annihilate | — | — | — | — | no analysis (Call A schema error, G4, twice) |
+| Tremor | BLOCKED | 0.934 | 0.894 | 0.885 | pass |
+| Feral ¹ | BLOCKED | 0.952 | 0.890 | 0.948 | pass |
+| Sacrilege | BLOCKED | 0.934 | 0.914 | 0.983 | pass |
+| Unleashed | PASSED | 0.950 | 0.959 | 0.954 | pass |
+| Splintered Nerve | BLOCKED | 0.955 | 0.939 | 0.910 | pass |
+
+¹ This track's shipped final is one of the Call B exemplars (§4), so its answer leaks into the prompt. Even so, these tracks did not score closer.
+
+## Five furthest tracks (run 2) — for Damir to read in Review
+1. **Sacrilege** — 0.983
+2. **Proximal** — 0.954
+3. **Unleashed** — 0.954
+4. **Feral** — 0.948
+5. **Hypoxia** — 0.942
+
+## Why the distance barely moves
+1. **The listen hears different things from Damir.** The shipped finals are built on breath, foley, hyperventilation and sound design. On most tracks Call A reports brass, strings, choir, piano and synth, and Call B may only write what is in the map. Example: Hypoxia's final is "fading breath foley… organic choking"; its map has synth brass and impacts. A writing prompt can't recover sounds the listen never reported. That is a Call A problem, and Call A was out of scope.
+2. **The listen gate blocked 11 of 13 tracks** ({'BLOCKED': 11, 'PASSED': 2}) on G4–G7 and G13: duration, loudness shape and ending checks. The maps used here are the second attempt's. The gate was out of scope and untouched, but the block rate on a real album is now measured, and it is high.
+3. **The metric has a floor.** Two independently written 60-word notes about the same track share few words in order. Both prompts sit at 0.93–0.95. A 30% cut needs about a third of the words aligned with Damir's final, which in practice means copying phrasing. The new outputs are closer in shape (dash-statement, three moves, scene Fits, concept carried) but not in wording. A content-overlap measure (shared content words) would separate the two prompts better. That call is Damir's.
+
+## What shipped in this branch
+- §1: Call B input gains album_concept, album_title, track_title, alt_descriptor, sibling_full, ending and hybridity_electronic_pct. There is an "Album concept (one line)" field on Start, editable again in Review → Album details.
+- §2–§4: the system instruction, voice blocks and exemplar sets are verbatim (the auditor compared exact strings). Only the active catalog's voice and set are sent.
+- §5: PFD_RULES.md v0.5, with all five rulings. Fits tags are checked as lowercase scenes that are never a media type. ALT rows inherit `Alt Version Of the Full Mix (<descriptor>) - ` + the FULL mix's description.
+- `scripts/acceptance_callb.py` reruns §6. The Call A cache and both runs are in `reference/acceptance/`.
+
+---
+
 # PFD v4 — Call A schema path (updated 2026-09-15)
 
 **Shipped: the schema path** (`engine.CALL_A_MODE = "schema"`, `response_schema=Analysis`). It went live after the list caps above 7 moved from the schema into Python: sections ≤ 10 via G2, edit points trimmed to 8, instrumentation unbounded and logged over 20.

@@ -105,7 +105,7 @@ def analysis(**over) -> Analysis:
 
 
 KEYWORDS = [f"Tone {w}" for w in "Alpha Bravo Delta Echo Golf Hotel India Kilo Lima Mike Oscar Papa Romeo Sierra".split()]
-DESCRIPTION = "Bowed strings swell under a tight kit groove. It builds to a full peak and rings out. Fits: Trailer, Film"
+DESCRIPTION = "Bowed strings swell under a tight kit groove. It builds to a full peak and rings out. Fits: the chase begins, title card peak"
 
 
 def writing_dict(**over):
@@ -113,7 +113,7 @@ def writing_dict(**over):
         "description": DESCRIPTION,
         "editor_note": "Hit the 0:40 peak on the title card.",
         "keywords": list(KEYWORDS),
-        "fits": ["Trailer", "Film"],
+        "fits": ["the chase begins", "title card peak"],
         "scene_named": "the moment the chase begins",
     }
     w.update(over)

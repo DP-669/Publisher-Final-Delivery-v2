@@ -1,0 +1,885 @@
+{
+ "concept": "Breath and voice as the instrument: contagion, deep space, quarantine, the gasp for air.",
+ "baseline_ref": "e9f5ca0",
+ "all": {
+  "n": 12,
+  "median_new": 0.934,
+  "median_old": 0.948,
+  "reduction_pct": 1.4
+ },
+ "held_out": {
+  "n": 7,
+  "median_new": 0.934,
+  "median_old": 0.95,
+  "reduction_pct": 1.7
+ },
+ "mechanical_pass_rate": 1.0,
+ "per_check_pass": {
+  "move1_dash": 12,
+  "timestamp": 12,
+  "move3_opener": 12,
+  "fits_scene_tags": 12,
+  "no_forbidden": 12,
+  "no_do_not_claim": 12
+ },
+ "passed": false,
+ "furthest": [
+  "Sacrilege",
+  "Proximal",
+  "Unleashed",
+  "Feral",
+  "Hypoxia"
+ ],
+ "tracks": [
+  {
+   "title": "Vox Clausa",
+   "held_out": false,
+   "gate": "BLOCKED",
+   "final": "Visceral, rhythmic breathing and low-end drones claw out of claustrophobic silence, then tighten into stuttering risers and synthetic hits until the panic goes full sci-fi. Built as a strict three-act suffocation — isolated panting up front, dread in the middle, terror at the back. Cut it into the moment the air turns against the characters.",
+   "new": {
+    "description": "A solitary wordless vocal drifts over a low drone until a sharp intake of air ignites a ticking pulse and jagged brass hits — a biological countdown turning against the characters. Built with wide dialogue zones and sudden dynamic shifts, dropping into sparse echoes at 1:22 before accelerating into a choral climax that cuts dead at 2:34. Drop it where the infection takes hold and panic sets in. Fits: viral outbreaks, desperate final stands, sci-fi dread.",
+    "keywords": [
+     "Viral Outbreak",
+     "Desperate Stand",
+     "Sci-Fi Dread",
+     "Build To Release",
+     "Solo Vocal",
+     "Trailer Impacts",
+     "Hybrid Brass",
+     "Breath Foley",
+     "Dialogue Room",
+     "Title Card Gap",
+     "Hard Cut 2:34",
+     "Modular Build",
+     "Mid Tempo",
+     "Ring Out Ending",
+     "Trailer",
+     "TV Promo",
+     "Sci-Fi Feature"
+    ],
+    "editor_note": "A sudden cut to silence at 2:34 provides a ready-made title card gap before the final vocal tail."
+   },
+   "old": {
+    "description": "For the moment a terrifying truth is revealed: a solo female voice sings a falling melody over a low drone. A sharp breath at 0:31 starts a ticking pulse, forcing a heavy brass impact at 1:06 before the melody transfers to a full choir at 2:14. The 1:22 breakdown clears space for dialogue, and an abrupt stop at 2:34 leaves a clean title-card gap. Fits: Trailer, TV Promo, Film.",
+    "keywords": [
+     "Terrifying Truth Revealed",
+     "Desperate Final Stand",
+     "Build To Release",
+     "Solo Female Voice",
+     "Aggressive Brass",
+     "Trailer Impacts",
+     "Full Choir",
+     "VO Room 1:22",
+     "Hard Cut 1:06",
+     "Title Card Gap",
+     "Mid Tempo",
+     "Vocal Ending",
+     "Theatrical Trailer"
+    ],
+    "editor_note": "The 1:22 breakdown provides clear dialogue room, and the 2:34 drop to silence leaves a clean title-card gap."
+   },
+   "d_new": 0.925,
+   "d_old": 0.953,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "viral outbreaks",
+     "desperate final stands",
+     "sci-fi dread"
+    ],
+    "words": 68,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Last Light, No Air",
+   "held_out": true,
+   "gate": "BLOCKED",
+   "final": "Suffocating, anxious breaths and vocal foley drift beneath massive overdriven synth swells, metallic groans and abyssal impacts — terrifying scale and crushing pressure, the human sound tiny against the void. Modular and structure-driven, built on vast negative space and isolated hits. For absolute isolation and impending destruction.",
+   "new": {
+    "description": "Visceral human panting and a low sub drone lock into a ticking pulse, then accelerate into a distorted bass groove and a hybrid brass climax — a mechanical countdown driven by the gasp for air. Mapped in waves for hard cutting, dropping back to isolated breathing at 1:32 before the final sprint to a ringing impact. Made for the desperate sprint to the airlock. Fits: contagion thrillers, desperate escapes, countdown dread.",
+    "keywords": [
+     "Contagion Breach",
+     "Oxygen Depletion",
+     "Desperate Chase",
+     "Waves",
+     "Rhythmic Panting",
+     "Distorted Synth Bass",
+     "Hybrid Brass",
+     "Ticking Pulse",
+     "Hard Breakdown 1:32",
+     "Dialogue Room Intro",
+     "Hard Cut Points",
+     "Fast Tempo",
+     "Ring Out",
+     "Sci-Fi Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "The 1:32 breakdown clears the grid completely, returning to isolated panting for a hard dialogue or title beat."
+   },
+   "old": {
+    "description": "For the realization of being hunted: a sub drone and rhythmic breathing seed the panic at 0:00. A ticking pulse enters at 0:28 to compound the threat, dropping into a distorted bass groove at 1:01 before the beat cuts out at 1:32. The 1:32 breakdown clears space for dialogue before strings rebuild toward a brass climax at 2:35 and a final hit at 2:54.\nFits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Hunted Realization",
+     "Desperate Sprint",
+     "Wave Arc",
+     "Rhythmic Breathing",
+     "Ticking Pulse",
+     "Sub Drone",
+     "Distorted Synth Bass",
+     "Drop 1:01",
+     "Breakdown 1:32",
+     "Clear VO Room",
+     "Climax 2:35",
+     "Hard Out 2:54",
+     "Fast Tempo",
+     "Ring Out Ending",
+     "Thriller Trailer",
+     "Teaser Promo"
+    ],
+    "editor_note": "The 1:32 breakdown drops to isolated breathing, offering a clean 23-second gap for crucial dialogue."
+   },
+   "d_new": 0.921,
+   "d_old": 0.938,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "contagion thrillers",
+     "desperate escapes",
+     "countdown dread"
+    ],
+    "words": 64,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Hypoxia",
+   "held_out": true,
+   "gate": "BLOCKED",
+   "final": "Desperate, fading breath foley and crushing atmospheric pressure tip into a heavy, disorienting climax — oxygen deprivation and fading consciousness rendered as sound, organic choking fused with synthetic weight. Disorienting pacing built to simulate the body shutting down.",
+   "new": {
+    "description": "Rhythmic human breathing paces a dark sub drone, tightening into metallic synths and aggressive brass blasts — an escalation where the breath itself becomes the threat. Mapped for hard cutting, dropping into heavy impacts at 1:16 before a chaotic climax snaps back to isolated panting. Drop it where the oxygen levels hit zero. Fits: oxygen-depletion panic, claustrophobic dread, desperate escapes.",
+    "keywords": [
+     "Oxygen Depletion",
+     "Claustrophobia",
+     "Desperate Escape",
+     "Build To Release",
+     "Breath Foley",
+     "Synth Ostinato",
+     "Trailer Impacts",
+     "Synth Brass",
+     "Hard Cut 1:16",
+     "Title Card Gap",
+     "Dialogue Friendly",
+     "Modular",
+     "Fast Tempo",
+     "Ring Out Ending",
+     "Trailer",
+     "Sci-Fi Thriller",
+     "TV Promo"
+    ],
+    "editor_note": "The abrupt cut to silence at 2:54 leaves a clean breathing tail for title card reveals."
+   },
+   "old": {
+    "description": "For the realization that the target is being hunted: rhythmic breathing sets a tense pace over a dark drone at 0:00. A metallic synth sequence accelerates the pursuit at 0:48, compounding tension until heavy impacts and synth brass crash the foreground at the 1:16 drop. The arrangement doubles in speed at 1:49 before a hard cut at 2:54 leaves a clean title-card gap with only the breathing.\nFits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Target Being Hunted",
+     "Desperate Escape Sequence",
+     "Catastrophic Collision",
+     "Build To Release",
+     "Rhythmic Breathing",
+     "Synth Brass",
+     "Heavy Impacts",
+     "Sub Drone",
+     "VO Room Intro",
+     "Hard Cut 2:54",
+     "Title Card Gap",
+     "Drop 1:16",
+     "Fast Tempo",
+     "Abrupt Ending",
+     "Theatrical Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "Clear dialogue room holds until the 1:16 drop; the abrupt 2:54 cut leaves a clean title-card gap."
+   },
+   "d_new": 0.942,
+   "d_old": 0.97,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "oxygen-depletion panic",
+     "claustrophobic dread",
+     "desperate escapes"
+    ],
+    "words": 53,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Proximal",
+   "held_out": false,
+   "gate": "BLOCKED",
+   "final": "An eerie, close-mic'd breath loop and unsettling synthetic textures hold you at unbearable proximity, then sharpen into a jagged climax — the threat is right here, inescapable, breathing on your neck. Patient and modular, built for sustained tension that finally snaps.",
+   "new": {
+    "description": "A metallic ticking pulse infects a low synth drone, triggering a distorted riser that slams into a heavy, aggressive bass groove — a mechanical contagion taking over the system. Mapped for hard cuts around a sudden breakdown to isolated ticking at 1:24, before stuttering edits and a wailing synth escalate into a single ringing impact. Drop it where the containment fails and the threat floods in. Fits: system breaches, sci-fi action, cybernetic threats.",
+    "keywords": [
+     "System Breach",
+     "Sci-Fi Action",
+     "Cybernetic Threat",
+     "Build To Release",
+     "Electronic Beats",
+     "Heavy Synth Bass",
+     "Hard Cut 1:24",
+     "Breakdown Gap",
+     "Stutter Edits",
+     "Modular",
+     "Mid Tempo",
+     "Ring Out Ending",
+     "Trailer",
+     "TV Promo",
+     "Sizzle Reel"
+    ],
+    "editor_note": "The sudden breakdown to an isolated ticking pulse at 1:24 provides a stark gap for title cards."
+   },
+   "old": {
+    "description": "For the reveal of a mechanical threat: a high synth sits over clear air until a metallic ticking establishes a rhythm at 0:11. A distorted riser compounds the danger at 0:35, dropping into an aggressive bass groove at 0:47 that holds until a sudden breakdown isolates the ticking at 1:24. The beat returns with a fast string ostinato at 1:35, escalating into chaotic stutters before cutting hard to a final impact at 2:44. Fits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Mechanical Threat Reveal",
+     "System Overload",
+     "Build To Release",
+     "Electronic Beats",
+     "Synth Bass",
+     "Metallic Ticking",
+     "String Ostinato",
+     "VO Room Intro",
+     "Breakdown 1:24",
+     "Title Card Gap",
+     "Hard Cut 2:44",
+     "Mid Tempo",
+     "Hard Cut Ending",
+     "Trailer",
+     "Teaser",
+     "TV Promo"
+    ],
+    "editor_note": "Clear dialogue room lasts until the 0:47 drop; the 1:24 breakdown offers a clean title-card gap."
+   },
+   "d_new": 0.954,
+   "d_old": 0.945,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "system breaches",
+     "sci-fi action",
+     "cybernetic threats"
+    ],
+    "words": 66,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Delicate Matter",
+   "held_out": true,
+   "gate": "BLOCKED",
+   "final": "Eerie, disembodied vocal textures and fragile low swells stretch anticipation toward collapse, with labored breath surfacing underneath — crushing, patient dread that promises something terrible. A sustained Act-1/Act-2 build for the long sequences where doom keeps approaching.",
+   "new": {
+    "description": "Dry, wordless gasps loop over a ticking sub drone, then get crushed by jagged synth brass and heavy impacts — the human element swallowed by mechanical panic. Three-act structure that pivots from clear dialogue room into frantic string ostinatos, dropping into a hard cut at 2:47 before a final hit buttons the silence. Drop it where the unseen threat finally breaks through. Fits: sci-fi horror, escalating disaster, sudden title cards.",
+    "keywords": [
+     "Sci-Fi Horror",
+     "Escalating Disaster",
+     "Unseen Threat",
+     "Build To Release",
+     "Wordless Vocal Motif",
+     "Synth Brass",
+     "Trailer Impacts",
+     "Dialogue Room Intro",
+     "Hard Cut 2:47",
+     "Title Card Button",
+     "Mid Tempo",
+     "Button Ending",
+     "Trailer",
+     "TV Promo",
+     "Film"
+    ],
+    "editor_note": "The hard cut at 2:47 leaves a ringing tail built for a sudden title card drop."
+   },
+   "old": {
+    "description": "For the slow reveal of a terrifying truth: a wordless voice states a descending phrase over a sub drone. A low synth pulse answers at 0:34, leading to a 1:08 drop where heavy impacts and hybrid brass seize control. The rhythm accelerates through frantic strings until a sudden cut at 2:47 leaves an echoing tail, closing on the solo voice at 2:57. Clear VO room runs until 1:08; the 2:47 tail offers a title-card gap. Fits: Trailer, Teaser, TV Promo.",
+    "keywords": [
+     "Slow Reveal",
+     "Terrifying Truth",
+     "Build To Release",
+     "Wordless Female Voice",
+     "Hybrid Brass",
+     "Heavy Impacts",
+     "String Ostinatos",
+     "VO Room Intro",
+     "Hard Cut 2:47",
+     "Title Card Gap",
+     "Drop 1:08",
+     "Mid Tempo",
+     "Reverb Tail Ending",
+     "Trailer",
+     "Teaser"
+    ],
+    "editor_note": "Clear VO room runs until the 1:08 drop; the 2:47 tail provides a clean title-card gap."
+   },
+   "d_new": 0.934,
+   "d_old": 0.96,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "sci-fi horror",
+     "escalating disaster",
+     "sudden title cards"
+    ],
+    "words": 62,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Containment Collapse",
+   "held_out": false,
+   "gate": "PASSED",
+   "final": "Struggling gasps and warning klaxons give way to explosive decompression and grinding metallic distortion — a catastrophic systems failure rendered in sound. Hard-grid disaster cue that escalates from quiet alarm to total breach. For the instant the seal fails and the air rushes out.",
+   "new": {
+    "description": "A metallic ticking pulse and distorted synth brass impacts accelerate into stuttering electronic hits — a mechanical suffocation that slowly chokes out the room. Three-act escalation that drops into a chaotic electronic climax at 2:01 before abruptly cutting to dead silence. Cut it into the instant the hull breaches and the oxygen vents into the void. Fits: total systems failure, explosive decompression, sci-fi disaster.",
+    "keywords": [
+     "Systems Failure",
+     "Hull Breach",
+     "Cyber Chase",
+     "Escalation",
+     "Trailer Impacts",
+     "Synth Brass",
+     "Electronic Beats",
+     "Ticking Pulse",
+     "Hard Cut 2:38",
+     "Vacuum Cuts",
+     "Title Card Gap",
+     "Modular",
+     "Mid Tempo",
+     "Fade Out",
+     "Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "The hard cut to silence at 2:38 is built for a sudden vacuum or title card reveal."
+   },
+   "old": {
+    "description": "For the moment the monster is revealed: a low drone establishes the threat before a distorted synth impact drops at 0:14. A descending synth answers at 0:32, holding the frame until stuttering patterns accelerate the groove at 1:45 and an industrial beat shatters the climax at 2:01. Clear dialogue room lasts until 1:45, while the hard stop at 2:38 creates a clean title-card gap. Fits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Monster Revealed",
+     "Unstoppable Approach",
+     "Collapse Arc",
+     "Distorted Synth Braam",
+     "Descending Synth Motif",
+     "Industrial Drum Kit",
+     "Metallic Pulse",
+     "VO Room Intro",
+     "Hard Cut 2:38",
+     "Cut In 1:45",
+     "Title Card Gap",
+     "Mid Tempo",
+     "Fade Ending",
+     "Theatrical Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "Clear dialogue room holds until the 1:45 glitch pattern; the 2:38 hard stop provides a title-card gap."
+   },
+   "d_new": 0.855,
+   "d_old": 0.938,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "total systems failure",
+     "explosive decompression",
+     "sci-fi disaster"
+    ],
+    "words": 56,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Cryovoid",
+   "held_out": false,
+   "gate": "BLOCKED",
+   "final": "Dry, erratic hyperventilation and a distorted pulse build unbearable suspense, weaponizing stark drop-outs and hard vacuum cuts — sound, then sudden nothing. Advanced modular tension that simulates complete panic and oxygen deprivation. For the silence that's scarier than the noise.",
+   "new": {
+    "description": "Suffocating synth textures mimic a mechanical gasp before a rhythmic pulse and distorted braams accelerate into a driving rhythm — a synthetic respiration system failing in real time. The slow build leaves wide room for dialogue before the hard drop at 2:13 launches a frantic escape, terminating in a ringing decay. Cut it into the exact moment the oxygen levels hit zero. Fits: deep-space survival, critical systems failure, breathless tension.",
+    "keywords": [
+     "Deep Space Survival",
+     "Critical Systems Failure",
+     "Oxygen Depletion",
+     "Build To Release",
+     "Airy Synth Textures",
+     "Rhythmic Pulses",
+     "Distorted Braams",
+     "Dialogue Room Intro",
+     "Hard Drop 2:13",
+     "Ringing Decay",
+     "Mid Tempo",
+     "Ring Out",
+     "Sci-Fi Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "Drops hard into a fast, driving rhythm at 2:13 before cutting to a ringing decay."
+   },
+   "old": {
+    "description": "For the realization of an inescapable threat: a dark texture fades in from silence. A rhythmic pulse enters at 0:15, answering the void before a distorted braam blasts at 0:35; the motif shifts to an aggressive rhythm at 2:13, compounding dread until a hard cut at 2:22 leaves a ringing decay. Clear dialogue room lasts until the 2:13 drop, setting up a title-card gap at 2:22 before the final boom at 2:30. Fits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Inescapable Threat",
+     "Frantic Escape",
+     "Build To Release",
+     "Synth Pulse",
+     "Distorted Braam",
+     "Dark Texture",
+     "VO Room Intro",
+     "Hard Cut 2:22",
+     "Hit 0:35",
+     "Title Card Gap",
+     "Mid Tempo",
+     "Ringing Decay",
+     "Fade To Silence",
+     "Trailer",
+     "Teaser",
+     "TV Promo"
+    ],
+    "editor_note": "Intro carries VO to 2:13; the 2:22 hard cut leaves a ringing decay for a title card."
+   },
+   "d_new": 0.934,
+   "d_old": 0.944,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "deep-space survival",
+     "critical systems failure",
+     "breathless tension"
+    ],
+    "words": 62,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Annihilate",
+   "error": "no analysis"
+  },
+  {
+   "title": "Tremor",
+   "held_out": true,
+   "gate": "BLOCKED",
+   "final": "Sparse subterranean rumbles and metallic ticks accelerate from unsettling quiet into something hyper-kinetic and aggressively distorted — instability building to collapse. A dynamic structure that ramps from negative space to overwhelming density, simulating structural failure and rising panic.",
+   "new": {
+    "description": "A dark drone and metallic impacts establish a sterile quarantine zone, before rapid ticking and distorted brass blasts accelerate the panic — a mechanical suffocation that leaves no room to breathe. Three-act escalation mapped for hard cutting, shifting from eerie isolation to a heavy electronic rhythm at 1:44, before a final impact rings out. Drop it where the contagion breaches the perimeter. Fits: viral outbreak, quarantine breach, sci-fi panic.",
+    "keywords": [
+     "Viral Outbreak",
+     "Quarantine Zone",
+     "Escape Sequence",
+     "Build To Release",
+     "Electronic Beats",
+     "Trailer Impacts",
+     "Distorted Brass",
+     "Ticking Pulse",
+     "Hard Cut 1:44",
+     "Dialogue Friendly",
+     "Modular",
+     "Mid Tempo",
+     "Ring Out Ending",
+     "Trailer",
+     "TV Promo",
+     "Sizzle Reel"
+    ],
+    "editor_note": "The heavy electronic rhythm drops cleanly at 1:44 to drive an aggressive third-act chase."
+   },
+   "old": {
+    "description": "For the realization that they are trapped: a low texture establishes the space until a metallic impact strikes at 0:11. A solo string descends, holding the line before a ticking pulse begins at 0:54, compounding the threat until distorted brass blasts interrupt at 1:14 and a heavy rhythm pushes to a final hit at 2:23. Clear air carries dialogue to 0:54; the 1:44 drop offers a hard cut-in, and the 2:23 hit leaves a title-card gap. Fits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Trapped Realization",
+     "Monster Reveal",
+     "Build To Release",
+     "Metallic Impacts",
+     "Distorted Brass",
+     "Ticking Pulse",
+     "Electronic Beats",
+     "Hard Cut 2:23",
+     "Drop 1:44",
+     "VO Room Intro",
+     "Cut In 0:54",
+     "Mid Tempo",
+     "Hit Ending",
+     "Trailer",
+     "Teaser"
+    ],
+    "editor_note": "Clear air carries dialogue to 0:54, while the 2:23 hit leaves a clean title-card gap."
+   },
+   "d_new": 0.885,
+   "d_old": 0.934,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "viral outbreak",
+     "quarantine breach",
+     "sci-fi panic"
+    ],
+    "words": 62,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Feral",
+   "held_out": false,
+   "gate": "BLOCKED",
+   "final": "Primal, hyper-aggressive foley and chaotic synth overdrive lock into a fight-or-flight pulse and never let go — dense, high-tempo, no negative space, pure adrenaline. The breath here isn't fear, it's the animal taking over. Built for the chase that doesn't stop.",
+   "new": {
+    "description": "A suffocating sub drone and ticking percussion starve the room, while staccato strings push forward to meet heavy brass stabs — a slow asphyxiation that finally breaks. Built for hard cutting, the structure hinges on a dead-air drop at 0:58 before a full choir surges toward the final ring-out. Drop it where containment fails and the threat takes over. Fits: outbreak realization, final desperate stand, containment breach.",
+    "keywords": [
+     "Threat Revealed",
+     "Turning Point",
+     "Final Stand",
+     "Build To Release",
+     "Orchestral Percussion",
+     "Trailer Impacts",
+     "Synth Brass",
+     "Title Card Gap",
+     "Hard Cut 0:58",
+     "Dialogue Friendly",
+     "Mid Tempo",
+     "Ring Out Ending",
+     "Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "The sudden drop at 0:58 clears the deck for a title card before the back end hits."
+   },
+   "old": {
+    "description": "For the beat a high-stakes threat is revealed: a sub drone and ticking percussion establish a dark bed at 0:00. Staccato strings introduce a rising figure at 0:28, which drops to a sub boom at 0:58 before heavy percussion and brass stabs answer at 1:05. A full choir joins the climax at 1:56 until a final drum hit releases the sequence at 2:36. Fits: Trailer, TV Promo, Film",
+    "keywords": [
+     "High-Stakes Threat",
+     "Turning Point",
+     "Build To Release",
+     "Trailer Impacts",
+     "Synth Brass",
+     "Orchestral Strings",
+     "Full Choir",
+     "Title Card Gap",
+     "Clear VO Room",
+     "Hit 1:05",
+     "Hit 1:56",
+     "Button Ending",
+     "Mid Tempo",
+     "Theatrical Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "The 0:58 drop provides a clean title-card gap, and the intro carries clear dialogue to 0:28."
+   },
+   "d_new": 0.948,
+   "d_old": 0.952,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "outbreak realization",
+     "final desperate stand",
+     "containment breach"
+    ],
+    "words": 59,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Sacrilege",
+   "held_out": true,
+   "gate": "BLOCKED",
+   "final": "The breath concept at its most monumental — a cyclic, distorted breath loop and corrupted vocalizations swell over an oppressive drone until the whole thing detonates into colossal industrial sound design. A slow oppression that pays off in a wall-of-sound back end, built for the final beat of a dark sci-fi or horror campaign. Drop it where the threat stops hiding.",
+   "new": {
+    "description": "Processed, rhythmic breathing and low metallic drones set a suffocating pulse that shatters into a brutal brass impact — a mechanical contagion taking hold. Methodical escalation built for hard cuts, offering clean dialogue room before a ticking acceleration at 2:18 pushes into a driving climax and a final ringing hit. Drop it where the quarantine fails and the frantic escape begins. Fits: frantic escapes, hidden threats, sci-fi horror.",
+    "keywords": [
+     "Frantic Escape",
+     "Hidden Threat Reveal",
+     "Sci-Fi Horror",
+     "Build To Release",
+     "Processed Textures",
+     "Trailer Impacts",
+     "Hybrid Brass",
+     "Synth Lead",
+     "Dialogue Room Intro",
+     "Hard Cut 0:48",
+     "Title Card Gap",
+     "Mid Tempo",
+     "Ring Out Ending",
+     "Sci-Fi Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "The brutal brass impact at 0:48 provides a hard cut to black or a title card reveal."
+   },
+   "old": {
+    "description": "For the beat a hidden threat emerges: metallic textures settle over a low drone, and processed breathing starts a steady pulse at 0:11. A descending synth motif answers at 0:24, holding tension until a heavy brass blast cuts the bed at 0:48; the figure returns at 1:38, accelerating into fast ticking at 2:18 before a final strike rings out at 3:03. The front end carries dialogue to 2:18, and the 0:48 drop opens a title-card gap.\nFits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Hidden Threat Emerges",
+     "Frantic Escape Sequence",
+     "Build To Release",
+     "Processed Breathing",
+     "Descending Synth Motif",
+     "Heavy Synth Brass",
+     "VO Room Intro",
+     "Hard Drop 0:48",
+     "Title Card Gap",
+     "Cut In 2:18",
+     "Mid Tempo",
+     "Button Ending",
+     "Theatrical Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "The 0:48 brass blast opens a clean title-card gap, and the front end carries dialogue to 2:18."
+   },
+   "d_new": 0.983,
+   "d_old": 0.934,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "frantic escapes",
+     "hidden threats",
+     "sci-fi horror"
+    ],
+    "words": 61,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Unleashed",
+   "held_out": true,
+   "gate": "PASSED",
+   "final": "Raw, panicked hyperventilation and chaotic, hyper-kinetic sound design hit at maximum intensity — tension built not from anticipation but from sheer frantic breath, a fight-or-flight response under crushing pressure. Dense and high-BPM, chaotic impact over slow build. For the panic that explodes instead of creeping.",
+   "new": {
+    "description": "A low drone and sparse metallic textures simulate the cold isolation of quarantine, ticking into aggressive risers before detonating into heavy beats and blaring synth brass — a catastrophic systems breach. Structured for a slow realization of doom, it offers clear dialogue room before the hard drop at 2:00, snapping to a ringing metallic tail. Drop it where the airlock fails and the threat rushes in. Fits: deep-space isolation, quarantine breach, sudden ambush.",
+    "keywords": [
+     "Quarantine Breach",
+     "Sudden Ambush",
+     "Deep Space Dread",
+     "Collapse",
+     "Sub Drone",
+     "Electronic Beats",
+     "Synth Brass",
+     "Metallic Textures",
+     "Dialogue Friendly",
+     "Hard Drop 2:00",
+     "Mid Tempo",
+     "Ring Out Ending",
+     "Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "The hard drop at 2:00 pivots the scene from creeping isolation to violent action."
+   },
+   "old": {
+    "description": "For the reveal of a terrifying entity: a low synthetic drone holds the floor beneath metallic textures. A high tone answers at 0:32, and rhythmic pulses drive the momentum from 1:04 until aggressive textures accelerate into a 2:00 beat drop. Clear dialogue room lasts until 1:35, and the abrupt 2:45 cut leaves a ringing metallic tail for a title card. Fits: Trailer, Teaser, TV Promo",
+    "keywords": [
+     "Terrifying Reveal",
+     "Impending Doom",
+     "Violent Ambush",
+     "Collapse Arc",
+     "Synthetic Drone",
+     "Electronic Beats",
+     "Trailer Impacts",
+     "Synth Brass",
+     "VO Room Intro",
+     "Hard Cut 2:45",
+     "Beat Drop 2:00",
+     "Hit 2:00",
+     "Mid Tempo",
+     "Ringing Tail",
+     "Theatrical Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "Clear VO room runs to 1:35; the 2:00 beat drop hits hard before an abrupt 2:45 cut."
+   },
+   "d_new": 0.954,
+   "d_old": 0.95,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "deep-space isolation",
+     "quarantine breach",
+     "sudden ambush"
+    ],
+    "words": 66,
+    "sentences": 3
+   },
+   "mechanical_pass": true
+  },
+  {
+   "title": "Splintered Nerve",
+   "held_out": true,
+   "gate": "BLOCKED",
+   "final": "The breath fractures into sharp, involuntary gasps amid grinding industrial sound design — jagged, hyper-tense, a nervous system overloading. Modular tension that lurches from sparse gasping foley into technological breakdown. For neurological dread and systems coming apart.",
+   "new": {
+    "description": "A mechanical tick infects a sparse piano motif, then triggers heavy trailer impacts and jagged synth brass — a clinical countdown to total system failure. The gasp for air here isn't breath, it's the sudden breakdown at 2:04 that drops the driving beat for ticking tension. Built for hard cutting, ending on a final impact and piano ring-out. Drop it where the perimeter breaches and the clock starts. Fits: high-stakes countdowns, villain reveals, system failure.",
+    "keywords": [
+     "High Stakes Countdown",
+     "Villain Reveal",
+     "System Failure",
+     "Build To Release",
+     "Trailer Impacts",
+     "Synth Pulses",
+     "Synth Brass",
+     "Dialogue Friendly",
+     "Breakdown 2:04",
+     "Hard Cut 1:28",
+     "Ring Out Ending",
+     "Mid Tempo",
+     "Trailer",
+     "TV Promo",
+     "Sizzle Reel"
+    ],
+    "editor_note": "Breakdown at 2:04 provides a clean exit from the heavy beat, leaving ticking tension."
+   },
+   "old": {
+    "description": "For the moment the villain's master plan is revealed: a ticking pulse establishes a bed, and a falling piano motif answers it over a low drone. A distorted riser seeds the escalation at 0:24, pushing toward a 1:28 drop where heavy percussion and synth brass release the pressure. The 2:04 breakdown opens a clean dialogue window before the final 3:05 hit rings out, leaving the piano alone. Fits: Trailer, TV Promo, Sizzle Reel.",
+    "keywords": [
+     "Master Plan Revealed",
+     "High Stakes Countdown",
+     "Action Montage",
+     "Build To Release",
+     "Ticking Pulse",
+     "Falling Piano Motif",
+     "Synth Brass",
+     "Heavy Percussion",
+     "VO Room Intro",
+     "Hard Drop 1:28",
+     "Breakdown Exit 2:04",
+     "Final Hit 3:05",
+     "Mid Tempo",
+     "Ring Out Ending",
+     "Theatrical Trailer",
+     "TV Promo"
+    ],
+    "editor_note": "Clear dialogue room runs to the 1:28 drop; the 2:04 breakdown provides a clean exit point."
+   },
+   "d_new": 0.91,
+   "d_old": 0.955,
+   "checks": {
+    "move1_dash": true,
+    "timestamp": true,
+    "move3_opener": true,
+    "fits_scene_tags": true,
+    "no_forbidden": true,
+    "no_do_not_claim": true
+   },
+   "check_detail": {
+    "forbidden_hits": [],
+    "claim_hits": [],
+    "fits": [
+     "high-stakes countdowns",
+     "villain reveals",
+     "system failure"
+    ],
+    "words": 68,
+    "sentences": 4
+   },
+   "mechanical_pass": true
+  }
+ ]
+}

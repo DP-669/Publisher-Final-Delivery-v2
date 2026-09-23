@@ -1,0 +1,1679 @@
+{
+ "Sacrilege": {
+  "status": "PASSED",
+  "failures": [],
+  "warnings": [],
+  "breath": [
+   "present",
+   "lead"
+  ],
+  "vocal_chops": null,
+  "orch_brass": null,
+  "synth_brass": [
+   "present",
+   "lead"
+  ],
+  "orch_strings": null,
+  "choir": null,
+  "full": {
+   "status": "PASSED",
+   "failures": [],
+   "warnings": [],
+   "measured": {
+    "duration": 189.5321088435374,
+    "first_sound_t": 0.5108390022675737,
+    "loudest_t": 169.0877097505669,
+    "quietest_t": 136.02249433106576,
+    "tail_silence": 4.817369614512444,
+    "decay_seconds": 1.5325170068027212,
+    "per_sec_db": [
+     -77.77716827392578,
+     -39.538089752197266,
+     -40.26087951660156,
+     -37.429718017578125,
+     -37.593353271484375,
+     -39.37509536743164,
+     -39.85903549194336,
+     -38.90913391113281,
+     -36.551570892333984,
+     -35.647884368896484,
+     -37.22018814086914,
+     -24.11784553527832,
+     -25.065553665161133,
+     -25.718326568603516,
+     -26.671239852905273,
+     -26.943683624267578,
+     -27.399320602416992,
+     -30.633975982666016,
+     -33.206634521484375,
+     -35.59253692626953,
+     -37.265018463134766,
+     -36.72896194458008,
+     -36.43531799316406,
+     -37.452049255371094,
+     -25.79383087158203,
+     -24.023462295532227,
+     -23.272666931152344,
+     -25.13530731201172,
+     -24.405620574951172,
+     -25.730121612548828,
+     -28.758888244628906,
+     -31.66150665283203,
+     -28.65562629699707,
+     -24.1527099609375,
+     -25.873092651367188,
+     -35.192535400390625,
+     -34.062503814697266,
+     -31.279460906982422,
+     -26.101293563842773,
+     -27.3836612701416,
+     -32.20985412597656,
+     -22.590782165527344,
+     -21.349523544311523,
+     -24.7971134185791,
+     -26.142154693603516,
+     -25.556690216064453,
+     -47.64447021484375,
+     -65.85913848876953,
+     -45.179237365722656,
+     -24.54633903503418,
+     -22.85151481628418,
+     -22.031469345092773,
+     -22.05909538269043,
+     -43.677608489990234,
+     -37.34836959838867,
+     -32.04747772216797,
+     -28.507596969604492,
+     -52.005859375,
+     -37.45749282836914,
+     -20.200334548950195,
+     -19.402019500732422,
+     -15.957818031311035,
+     -15.086420059204102,
+     -16.07126808166504,
+     -15.204029083251953,
+     -16.141010284423828,
+     -15.226974487304688,
+     -15.871256828308105,
+     -26.872989654541016,
+     -18.047555923461914,
+     -15.052300453186035,
+     -14.926107406616211,
+     -16.26817512512207,
+     -14.927569389343262,
+     -16.039031982421875,
+     -15.36867618560791,
+     -16.347349166870117,
+     -23.36775016784668,
+     -14.168059349060059,
+     -15.41675090789795,
+     -16.411558151245117,
+     -15.487357139587402,
+     -15.510518074035645,
+     -16.128067016601562,
+     -15.568951606750488,
+     -17.88206672668457,
+     -20.521760940551758,
+     -15.225451469421387,
+     -15.20664119720459,
+     -15.282532691955566,
+     -15.179080963134766,
+     -15.516395568847656,
+     -15.460060119628906,
+     -15.621161460876465,
+     -15.038355827331543,
+     -15.514480590820312,
+     -15.148475646972656,
+     -24.304838180541992,
+     -50.256961822509766,
+     -34.962860107421875,
+     -14.265235900878906,
+     -22.652963638305664,
+     -48.1454963684082,
+     -57.18885803222656,
+     -20.06356430053711,
+     -11.578248023986816,
+     -22.355619430541992,
+     -46.40147018432617,
+     -33.37326431274414,
+     -23.19287109375,
+     -28.335203170776367,
+     -27.728294372558594,
+     -29.29200553894043,
+     -29.353151321411133,
+     -27.660812377929688,
+     -28.244609832763672,
+     -27.243919372558594,
+     -20.518596649169922,
+     -25.247106552124023,
+     -26.534826278686523,
+     -26.488927841186523,
+     -21.660097122192383,
+     -25.355504989624023,
+     -26.173704147338867,
+     -21.991750717163086,
+     -20.420095443725586,
+     -18.40934944152832,
+     -17.161468505859375,
+     -18.83987808227539,
+     -17.97892951965332,
+     -17.10253143310547,
+     -17.01753044128418,
+     -16.364253997802734,
+     -16.60707664489746,
+     -16.641284942626953,
+     -26.86516761779785,
+     -47.08425521850586,
+     -59.72809600830078,
+     -67.49203491210938,
+     -13.971400260925293,
+     -11.755675315856934,
+     -26.05241584777832,
+     -47.92185974121094,
+     -57.09506607055664,
+     -31.388153076171875,
+     -14.530633926391602,
+     -14.12424373626709,
+     -14.970708847045898,
+     -18.758865356445312,
+     -18.2283992767334,
+     -16.932411193847656,
+     -15.216382026672363,
+     -19.10435676574707,
+     -18.490131378173828,
+     -16.729145050048828,
+     -14.66031265258789,
+     -17.846864700317383,
+     -17.26648712158203,
+     -16.667314529418945,
+     -14.502711296081543,
+     -17.639293670654297,
+     -16.738367080688477,
+     -16.56100082397461,
+     -13.939090728759766,
+     -15.564773559570312,
+     -14.43471622467041,
+     -14.742484092712402,
+     -13.104940414428711,
+     -14.029668807983398,
+     -11.646722793579102,
+     -12.377365112304688,
+     -27.010265350341797,
+     -44.988365173339844,
+     -54.75474166870117,
+     -42.58605194091797,
+     -12.796110153198242,
+     -20.06024932861328,
+     -12.78964614868164,
+     -19.835058212280273,
+     -12.511934280395508,
+     -12.667896270751953,
+     -12.598398208618164,
+     -12.380559921264648,
+     -23.702943801879883,
+     -46.29461669921875,
+     -53.15363311767578,
+     -61.176292419433594,
+     -81.06350708007812,
+     -109.60342407226562
+    ],
+    "peaks_t": [
+     105.0,
+     169.0,
+     140.0
+    ],
+    "tempo_bpm": 60.09265988372093,
+    "tempo_candidates": [
+     60.09265988372093,
+     54.978390957446805,
+     117.45383522727273
+    ],
+    "tempo_confident": false
+   },
+   "analysis": {
+    "analysis_scratchpad": "At 0:00, a high synth pad establishes a sparse texture. At 0:11, a rhythmic, processed human breathing loop enters, acting as a primary motif. At the midpoint (around 1:35), the track builds tension with a low synth pulse, ticking percussion, and the breathing motif. At the end (2:25 onwards), the track explodes into a full trailer backend with massive impacts, aggressive synth brass (braams), and frantic breathing loops. Ambiguity: The rhythmic breathing could be mistaken for a synth pulse or percussion, but the irregular human envelope and inhale/exhale characteristics define it as voice.breath_and_body_foley per the prompt's instructions.",
+    "mix_type": "FULL",
+    "grounding": {
+     "first_sound_t": 0.0,
+     "loudest_moment_t": 145.0,
+     "quietest_stretch_t": 100.0,
+     "ends_with_silence_seconds": 5.5
+    },
+    "sonic_map": {
+     "opening_statement": "High synth texture plays, joined by a rhythmic breathing loop.",
+     "events": [
+      {
+       "t": 0.0,
+       "kind": "statement",
+       "spotlight": "synth pad",
+       "what_happens": "High synth texture plays",
+       "tension": "seeds"
+      },
+      {
+       "t": 11.0,
+       "kind": "counter_voice",
+       "spotlight": "breath foley",
+       "what_happens": "Rhythmic breathing loop enters over the pad",
+       "tension": "holds"
+      },
+      {
+       "t": 48.0,
+       "kind": "hit",
+       "spotlight": "synth brass",
+       "what_happens": "Braam and impact interrupt the texture",
+       "tension": "compounds"
+      },
+      {
+       "t": 58.0,
+       "kind": "statement",
+       "spotlight": "synth bass",
+       "what_happens": "Low pulse begins with ticking percussion",
+       "tension": "holds"
+      },
+      {
+       "t": 108.0,
+       "kind": "escalation",
+       "spotlight": "percussion and breath",
+       "what_happens": "Ticking and breathing loops accelerate",
+       "tension": "compounds"
+      },
+      {
+       "t": 145.0,
+       "kind": "hit",
+       "spotlight": "drum kit and brass",
+       "what_happens": "Drums and brass enter at full volume",
+       "tension": "compounds"
+      },
+      {
+       "t": 184.0,
+       "kind": "ending",
+       "spotlight": "trailer impacts",
+       "what_happens": "Final hit rings out",
+       "tension": "releases"
+      }
+     ],
+     "motif": {
+      "exists": true,
+      "first_heard_t": 11.0,
+      "described": "Rhythmic human breathing",
+      "travels": [
+       {
+        "t": 108.0,
+        "to_family": "voice.breath_and_body_foley",
+        "register": "same"
+       }
+      ],
+      "behaviour": "evolves"
+     },
+     "arc_shape": "build_to_release",
+     "dialogue_room": [
+      {
+       "t_start": 0.0,
+       "t_end": 48.0,
+       "quality": "clear"
+      },
+      {
+       "t_start": 58.0,
+       "t_end": 100.0,
+       "quality": "clear"
+      },
+      {
+       "t_start": 145.0,
+       "t_end": 184.0,
+       "quality": "threatened"
+      }
+     ],
+     "edit_points": [
+      {
+       "t": 48.0,
+       "kind": "hit",
+       "why": "Braam impact"
+      },
+      {
+       "t": 100.0,
+       "kind": "cut_out",
+       "why": "Drop to silence"
+      },
+      {
+       "t": 145.0,
+       "kind": "hit",
+       "why": "Full backend entry"
+      },
+      {
+       "t": 184.0,
+       "kind": "button",
+       "why": "Final hit"
+      }
+     ],
+     "what_it_makes_possible": [
+      "The moment the prey realizes they are being hunted",
+      "A frantic escape through a dark corridor"
+     ],
+     "composer_intent": "Using human breath as a rhythmic and textural instrument to drive the pacing."
+    },
+    "tempo": {
+     "band": "mid",
+     "bpm_estimate": 120,
+     "pulse_confidence": 0.8
+    },
+    "energy_arc": "build_drop_build",
+    "sections": [
+     {
+      "t_start": 0.0,
+      "t_end": 48.0,
+      "label": "Intro",
+      "energy": 1,
+      "what_changes": "High pad and breathing loop establish tension"
+     },
+     {
+      "t_start": 48.0,
+      "t_end": 100.0,
+      "label": "First Build",
+      "energy": 2,
+      "what_changes": "Braam hit introduces low pulse and ticking"
+     },
+     {
+      "t_start": 100.0,
+      "t_end": 145.0,
+      "label": "Escalation",
+      "energy": 3,
+      "what_changes": "Risers, faster ticking, and frantic breaths accelerate"
+     },
+     {
+      "t_start": 145.0,
+      "t_end": 184.0,
+      "label": "Climax",
+      "energy": 5,
+      "what_changes": "Full instrumentation with heavy drums and brass"
+     },
+     {
+      "t_start": 184.0,
+      "t_end": 189.5,
+      "label": "Outro",
+      "energy": 1,
+      "what_changes": "Final hit rings out"
+     }
+    ],
+    "ending": {
+     "type": "ring_out",
+     "final_accent_t": 184.0,
+     "tail_seconds": 5.5
+    },
+    "instrumentation": [
+     {
+      "family": "voice.breath_and_body_foley",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 11.0,
+        "t_end": 48.0,
+        "what": "Rhythmic breathing loop"
+       }
+      ],
+      "note": "Processed human breath acting as percussion"
+     },
+     {
+      "family": "keys_and_synths.synth_pad",
+      "presence": "present",
+      "prominence": "background",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 0.0,
+        "t_end": 48.0,
+        "what": "High sustained texture"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "winds.hybrid_or_synth_brass",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 48.0,
+        "t_end": 58.0,
+        "what": "Massive braam"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "bass.drone_or_sub",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 58.0,
+        "t_end": 100.0,
+        "what": "Low pulse"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "percussion.trailer_impacts",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 145.0,
+        "t_end": 184.0,
+        "what": "Heavy hits"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "percussion.electronic_beats",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 0.8,
+      "evidence": [
+       {
+        "t_start": 58.0,
+        "t_end": 100.0,
+        "what": "Ticking percussion"
+       }
+      ],
+      "note": null
+     }
+    ],
+    "lyrics": {
+     "has_intelligible_words": false,
+     "language": null,
+     "sample_phrase": null
+    },
+    "hybridity_electronic_pct": 80,
+    "dialogue_friendly": false,
+    "modular_edit_points_t": [
+     48.0,
+     100.0,
+     145.0,
+     184.0
+    ],
+    "the_job": "A horror/thriller trailer track that builds from eerie breathing to a massive, pounding climax.",
+    "narrative_map": "Starts in isolation with unsettling breaths. A sudden threat appears. The tension slowly mounts with a ticking pulse, accelerating into a frantic chase, culminating in a massive, overwhelming confrontation.",
+    "genre_tags": [
+     "Trailer",
+     "Horror",
+     "Thriller",
+     "Sound Design"
+    ],
+    "sounds_like_no_names": "A modern horror movie trailer, tense and aggressive."
+   },
+   "simple": {
+    "drums": true,
+    "vocals": false,
+    "choir": false,
+    "has_lyrics": false,
+    "orchestral": false,
+    "electronic": true,
+    "hybrid": false,
+    "tempo_band": "mid",
+    "bpm": 120,
+    "ending_type": "ring_out",
+    "energy_arc": "build_drop_build",
+    "dialogue_friendly": false,
+    "lead_sources": [
+     "percussion.trailer_impacts",
+     "winds.hybrid_or_synth_brass",
+     "voice.breath_and_body_foley"
+    ],
+    "do_not_claim": []
+   },
+   "uncertain": [],
+   "attempts": 1,
+   "correction": "",
+   "call_a_mode": "schema",
+   "duplicates": [],
+   "sonic_map_warnings": []
+  }
+ },
+ "Proximal": {
+  "status": "PASSED_WITH_UNCERTAINTY",
+  "failures": [],
+  "warnings": [
+   "G6",
+   "G7"
+  ],
+  "breath": null,
+  "vocal_chops": null,
+  "orch_brass": null,
+  "synth_brass": [
+   "present",
+   "lead"
+  ],
+  "orch_strings": [
+   "present",
+   "supporting"
+  ],
+  "choir": [
+   "present",
+   "supporting"
+  ],
+  "full": {
+   "status": "PASSED_WITH_UNCERTAINTY",
+   "failures": [],
+   "warnings": [
+    {
+     "rule": "G6",
+     "model": 160.0,
+     "measured": 139.55192743764172
+    },
+    {
+     "rule": "G7",
+     "model": 6.0,
+     "measured": 7.726530612244886
+    }
+   ],
+   "measured": {
+    "duration": 177.0,
+    "first_sound_t": 3.1811337868480725,
+    "loudest_t": 139.55192743764172,
+    "quietest_t": 8.428843537414966,
+    "tail_silence": 7.726530612244886,
+    "decay_seconds": 3.599092970521542,
+    "per_sec_db": [
+     -96.15729522705078,
+     -95.6875,
+     -87.49286651611328,
+     -49.49474334716797,
+     -49.00115203857422,
+     -52.07013702392578,
+     -54.34873580932617,
+     -54.601966857910156,
+     -55.532283782958984,
+     -55.58488082885742,
+     -54.95529556274414,
+     -52.1858024597168,
+     -19.830224990844727,
+     -24.515695571899414,
+     -29.097759246826172,
+     -37.214176177978516,
+     -41.155029296875,
+     -36.347747802734375,
+     -19.082347869873047,
+     -23.620887756347656,
+     -26.528348922729492,
+     -28.776582717895508,
+     -29.57990264892578,
+     -32.12539291381836,
+     -19.67268180847168,
+     -24.210025787353516,
+     -28.7146053314209,
+     -32.24783706665039,
+     -29.61103630065918,
+     -30.115053176879883,
+     -19.393007278442383,
+     -22.724754333496094,
+     -26.203737258911133,
+     -19.70616340637207,
+     -22.901628494262695,
+     -24.7326717376709,
+     -19.954944610595703,
+     -24.696619033813477,
+     -26.919967651367188,
+     -36.2747802734375,
+     -43.00100326538086,
+     -51.85811996459961,
+     -57.01427459716797,
+     -36.33658981323242,
+     -26.996213912963867,
+     -26.746990203857422,
+     -28.159685134887695,
+     -28.23966407775879,
+     -15.382193565368652,
+     -17.736711502075195,
+     -20.409923553466797,
+     -20.353179931640625,
+     -22.016321182250977,
+     -21.159687042236328,
+     -20.984577178955078,
+     -21.33799934387207,
+     -19.804546356201172,
+     -20.15978240966797,
+     -21.87572479248047,
+     -21.45677947998047,
+     -15.702513694763184,
+     -18.400354385375977,
+     -20.862932205200195,
+     -19.812847137451172,
+     -24.096139907836914,
+     -27.837182998657227,
+     -13.764185905456543,
+     -17.013179779052734,
+     -18.637332916259766,
+     -19.718124389648438,
+     -19.0218563079834,
+     -20.045665740966797,
+     -14.438192367553711,
+     -17.019630432128906,
+     -17.932222366333008,
+     -17.566450119018555,
+     -20.138153076171875,
+     -19.22181510925293,
+     -14.329944610595703,
+     -17.14365005493164,
+     -18.525941848754883,
+     -19.0062198638916,
+     -18.751495361328125,
+     -17.635631561279297,
+     -17.180152893066406,
+     -23.170761108398438,
+     -29.60432243347168,
+     -41.80366897583008,
+     -47.85496520996094,
+     -40.38466262817383,
+     -34.02973937988281,
+     -30.543554306030273,
+     -27.528860092163086,
+     -26.197799682617188,
+     -25.44743537902832,
+     -23.00505256652832,
+     -13.75235366821289,
+     -16.227235794067383,
+     -16.056140899658203,
+     -16.214269638061523,
+     -19.899822235107422,
+     -19.629520416259766,
+     -18.789525985717773,
+     -22.37175178527832,
+     -20.58656120300293,
+     -14.789388656616211,
+     -15.803223609924316,
+     -17.465036392211914,
+     -17.443626403808594,
+     -18.69587516784668,
+     -19.78169059753418,
+     -20.16826820373535,
+     -18.98634910583496,
+     -24.465913772583008,
+     -13.695862770080566,
+     -15.665987014770508,
+     -16.673982620239258,
+     -16.415014266967773,
+     -16.605560302734375,
+     -16.43632698059082,
+     -16.87146759033203,
+     -20.883686065673828,
+     -25.431854248046875,
+     -29.387996673583984,
+     -28.362003326416016,
+     -18.838302612304688,
+     -13.63687801361084,
+     -14.698983192443848,
+     -16.539737701416016,
+     -18.439050674438477,
+     -18.954343795776367,
+     -14.60530948638916,
+     -15.450509071350098,
+     -16.510009765625,
+     -18.94131851196289,
+     -13.123919486999512,
+     -14.348165512084961,
+     -14.257805824279785,
+     -14.743926048278809,
+     -13.161489486694336,
+     -13.638007164001465,
+     -13.603738784790039,
+     -13.704270362854004,
+     -14.388376235961914,
+     -21.12413215637207,
+     -28.48575782775879,
+     -38.70140075683594,
+     -38.768836975097656,
+     -35.71139144897461,
+     -30.995960235595703,
+     -27.06871223449707,
+     -23.758153915405273,
+     -21.680002212524414,
+     -13.239880561828613,
+     -14.681680679321289,
+     -13.934540748596191,
+     -13.750994682312012,
+     -13.952288627624512,
+     -14.408626556396484,
+     -17.55860137939453,
+     -23.319822311401367,
+     -29.031570434570312,
+     -44.978797912597656,
+     -51.74005126953125,
+     -39.80657196044922,
+     -20.774845123291016,
+     -37.5643196105957,
+     -46.909645080566406,
+     -52.75162887573242,
+     -59.51325225830078,
+     -65.44364929199219,
+     -71.62047576904297,
+     -78.62661743164062,
+     -86.16033935546875,
+     -93.9953842163086,
+     -105.00724792480469,
+     -119.0741958618164
+    ],
+    "peaks_t": [
+     135.0,
+     153.0,
+     141.0
+    ],
+    "tempo_bpm": 80.74951171875,
+    "tempo_candidates": [
+     80.74951171875,
+     161.4990234375,
+     53.8330078125
+    ],
+    "tempo_confident": false
+   },
+   "analysis": {
+    "analysis_scratchpad": "The track begins with near silence, followed by a low, ominous drone fading in around 0:02. A rhythmic, ticking synth pulse enters at 0:11, establishing a tense atmosphere. At 0:36, the music drops out for a resonant trailer impact. The rhythm rebuilds at 0:47 with a synth bassline. At 1:04, massive, descending hybrid brass braams introduce the main motif. The arrangement escalates at 1:35 with a driving electronic beat and string ostinatos. At 2:05, an epic choir joins, pushing the track to its chaotic climax. The final massive impact hits at 2:44 (164.5s), leaving a long reverb tail that fades to silence by 2:51 (171.0s), resulting in 6 seconds of silence at the end. The three most prominent sound sources are the hybrid brass braams, the electronic beats, and the trailer impacts. The mix is full and heavily electronic, typical of modern trailer music.",
+    "mix_type": "FULL",
+    "grounding": {
+     "first_sound_t": 2.0,
+     "loudest_moment_t": 160.0,
+     "quietest_stretch_t": 0.0,
+     "ends_with_silence_seconds": 6.0
+    },
+    "sonic_map": {
+     "opening_statement": "A low, ominous drone and a faint, rhythmic ticking establish a tense, sparse atmosphere.",
+     "events": [
+      {
+       "t": 11.0,
+       "kind": "statement",
+       "spotlight": "synth pulse",
+       "what_happens": "Synth pulse establishes a ticking rhythm over the low drone.",
+       "tension": "seeds"
+      },
+      {
+       "t": 36.0,
+       "kind": "drop",
+       "spotlight": "trailer impact",
+       "what_happens": "Music drops out, followed by a low, resonant impact.",
+       "tension": "holds"
+      },
+      {
+       "t": 47.0,
+       "kind": "escalation",
+       "spotlight": "synth bass",
+       "what_happens": "Rhythmic synth bass and ticking resume, increasing the pace.",
+       "tension": "compounds"
+      },
+      {
+       "t": 64.0,
+       "kind": "statement",
+       "spotlight": "hybrid brass",
+       "what_happens": "Massive, descending hybrid brass braams introduce the main motif.",
+       "tension": "compounds"
+      },
+      {
+       "t": 95.0,
+       "kind": "escalation",
+       "spotlight": "electronic beats",
+       "what_happens": "Full percussion groove and string ostinatos join the brass.",
+       "tension": "compounds"
+      },
+      {
+       "t": 125.0,
+       "kind": "escalation",
+       "spotlight": "choir",
+       "what_happens": "Epic choir and vocal textures push the arrangement to its climax.",
+       "tension": "compounds"
+      },
+      {
+       "t": 164.5,
+       "kind": "ending",
+       "spotlight": "trailer impact",
+       "what_happens": "Final massive impact hits, leaving a long reverb tail.",
+       "tension": "releases"
+      }
+     ],
+     "motif": {
+      "exists": true,
+      "first_heard_t": 64.0,
+      "described": "Descending heavy brass braam figure",
+      "travels": [
+       {
+        "t": 64.0,
+        "to_family": "winds.hybrid_or_synth_brass",
+        "register": "same"
+       }
+      ],
+      "behaviour": "repeats_unchanged"
+     },
+     "arc_shape": "build_to_release",
+     "dialogue_room": [
+      {
+       "t_start": 0.0,
+       "t_end": 64.0,
+       "quality": "clear"
+      },
+      {
+       "t_start": 64.0,
+       "t_end": 164.5,
+       "quality": "threatened"
+      }
+     ],
+     "edit_points": [
+      {
+       "t": 36.0,
+       "kind": "title_card_gap",
+       "why": "Music drops out, leaving space for a title card"
+      },
+      {
+       "t": 64.0,
+       "kind": "cut_in",
+       "why": "Main brass motif enters"
+      },
+      {
+       "t": 95.0,
+       "kind": "cut_in",
+       "why": "Full beat enters"
+      },
+      {
+       "t": 164.5,
+       "kind": "hit",
+       "why": "Final massive impact"
+      }
+     ],
+     "what_it_makes_possible": [
+      "The realization of a massive threat",
+      "A slow-burn reveal of a villain",
+      "The final countdown to destruction"
+     ],
+     "composer_intent": "To create a relentless, escalating sense of doom using hybrid orchestral and electronic elements."
+    },
+    "tempo": {
+     "band": "mid",
+     "bpm_estimate": 95,
+     "pulse_confidence": 0.8
+    },
+    "energy_arc": "build",
+    "sections": [
+     {
+      "t_start": 0.0,
+      "t_end": 36.0,
+      "label": "Intro",
+      "energy": 1,
+      "what_changes": "Low drone and ticking pulse establish a tense atmosphere."
+     },
+     {
+      "t_start": 36.0,
+      "t_end": 64.0,
+      "label": "Build 1",
+      "energy": 2,
+      "what_changes": "Drop followed by rhythmic synth bass and ticking."
+     },
+     {
+      "t_start": 64.0,
+      "t_end": 95.0,
+      "label": "Build 2",
+      "energy": 3,
+      "what_changes": "Heavy hybrid brass braams introduce the main motif."
+     },
+     {
+      "t_start": 95.0,
+      "t_end": 125.0,
+      "label": "Climax 1",
+      "energy": 4,
+      "what_changes": "Full percussion groove and string ostinatos enter."
+     },
+     {
+      "t_start": 125.0,
+      "t_end": 164.5,
+      "label": "Climax 2",
+      "energy": 5,
+      "what_changes": "Choir joins, pushing the track to maximum intensity."
+     },
+     {
+      "t_start": 164.5,
+      "t_end": 177.0,
+      "label": "Outro",
+      "energy": 1,
+      "what_changes": "Final impact and long reverb tail."
+     }
+    ],
+    "ending": {
+     "type": "ring_out",
+     "final_accent_t": 164.5,
+     "tail_seconds": 6.5
+    },
+    "instrumentation": [
+     {
+      "family": "bass.drone_or_sub",
+      "presence": "present",
+      "prominence": "background",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 2.0,
+        "t_end": 36.0,
+        "what": "Low rumble"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "keys_and_synths.pulses_and_ostinati",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 11.0,
+        "t_end": 36.0,
+        "what": "Ticking synth"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "percussion.trailer_impacts",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 36.0,
+        "t_end": 40.0,
+        "what": "Drop hit"
+       },
+       {
+        "t_start": 164.5,
+        "t_end": 170.0,
+        "what": "Final hit"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "bass.synth_bass",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 47.0,
+        "t_end": 64.0,
+        "what": "Rhythmic bassline"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "winds.hybrid_or_synth_brass",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 64.0,
+        "t_end": 95.0,
+        "what": "Massive braams"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "percussion.electronic_beats",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 95.0,
+        "t_end": 164.5,
+        "what": "Driving beat"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "strings.orchestral_strings",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 95.0,
+        "t_end": 125.0,
+        "what": "Ostinato"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "voice.choir",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 125.0,
+        "t_end": 164.5,
+        "what": "Epic choir"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "sound_design.processed_or_reversed",
+      "presence": "present",
+      "prominence": "background",
+      "confidence": 0.8,
+      "evidence": [
+       {
+        "t_start": 60.0,
+        "t_end": 64.0,
+        "what": "Riser"
+       }
+      ],
+      "note": null
+     }
+    ],
+    "lyrics": {
+     "has_intelligible_words": false,
+     "language": null,
+     "sample_phrase": null
+    },
+    "hybridity_electronic_pct": 70,
+    "dialogue_friendly": false,
+    "modular_edit_points_t": [
+     36.0,
+     64.0,
+     95.0,
+     125.0,
+     164.5
+    ],
+    "the_job": "Trailer or promo for a dark, sci-fi, or action thriller.",
+    "narrative_map": "Starts with an eerie, desolate atmosphere, introduces a ticking clock element, builds with massive, ominous brass, and culminates in a chaotic, overwhelming climax before a final, devastating impact.",
+    "genre_tags": [
+     "trailer",
+     "hybrid_orchestral",
+     "sci_fi",
+     "thriller",
+     "dark"
+    ],
+    "sounds_like_no_names": "A massive, modern trailer track with heavy braams and driving electronic beats."
+   },
+   "simple": {
+    "drums": true,
+    "vocals": true,
+    "choir": true,
+    "has_lyrics": false,
+    "orchestral": true,
+    "electronic": true,
+    "hybrid": true,
+    "tempo_band": "mid",
+    "bpm": 95,
+    "ending_type": "ring_out",
+    "energy_arc": "build",
+    "dialogue_friendly": false,
+    "lead_sources": [
+     "percussion.trailer_impacts",
+     "winds.hybrid_or_synth_brass"
+    ],
+    "do_not_claim": []
+   },
+   "uncertain": [],
+   "attempts": 2,
+   "correction": "",
+   "call_a_mode": "schema",
+   "duplicates": [],
+   "sonic_map_warnings": []
+  }
+ },
+ "Feral": {
+  "status": "PASSED_WITH_UNCERTAINTY",
+  "failures": [],
+  "warnings": [
+   "G5",
+   "G6",
+   "G7"
+  ],
+  "breath": null,
+  "vocal_chops": null,
+  "orch_brass": null,
+  "synth_brass": [
+   "present",
+   "lead"
+  ],
+  "orch_strings": [
+   "uncertain",
+   null
+  ],
+  "choir": null,
+  "full": {
+   "status": "PASSED_WITH_UNCERTAINTY",
+   "failures": [],
+   "warnings": [
+    {
+     "rule": "G5",
+     "model": 0.0,
+     "measured": 2.36843537414966
+    },
+    {
+     "rule": "G6",
+     "model": 120.0,
+     "measured": 65.99111111111111
+    },
+    {
+     "rule": "G7",
+     "model": 3.0,
+     "measured": 4.799002267573684
+    }
+   ],
+   "measured": {
+    "duration": 172.58639455782313,
+    "first_sound_t": 2.36843537414966,
+    "loudest_t": 65.99111111111111,
+    "quietest_t": 57.655147392290246,
+    "tail_silence": 4.799002267573684,
+    "decay_seconds": 3.1346938775510202,
+    "per_sec_db": [
+     -76.37965393066406,
+     -59.03341293334961,
+     -52.16160583496094,
+     -52.4631233215332,
+     -45.70427322387695,
+     -32.35917663574219,
+     -38.169246673583984,
+     -41.603599548339844,
+     -43.124759674072266,
+     -38.41597366333008,
+     -39.52023696899414,
+     -40.65230941772461,
+     -40.95224380493164,
+     -42.69123840332031,
+     -36.30732727050781,
+     -42.21000671386719,
+     -41.974586486816406,
+     -38.3577880859375,
+     -28.609167098999023,
+     -24.86736297607422,
+     -25.758325576782227,
+     -28.824281692504883,
+     -32.26548385620117,
+     -35.82048416137695,
+     -35.11762237548828,
+     -40.12171173095703,
+     -40.77708435058594,
+     -40.46774673461914,
+     -35.720245361328125,
+     -29.86897087097168,
+     -35.31111145019531,
+     -38.4261589050293,
+     -39.13719177246094,
+     -33.498695373535156,
+     -34.78620529174805,
+     -35.72102355957031,
+     -35.35899353027344,
+     -35.50920104980469,
+     -29.081262588500977,
+     -32.67076110839844,
+     -33.15986251831055,
+     -32.85560989379883,
+     -33.47637939453125,
+     -28.005067825317383,
+     -31.9207763671875,
+     -32.1287956237793,
+     -31.32600212097168,
+     -30.565309524536133,
+     -24.646604537963867,
+     -29.785079956054688,
+     -27.24909210205078,
+     -27.641969680786133,
+     -27.41413688659668,
+     -24.059476852416992,
+     -27.91221809387207,
+     -22.319883346557617,
+     -24.59566307067871,
+     -42.090614318847656,
+     -67.58870697021484,
+     -57.656166076660156,
+     -46.865989685058594,
+     -30.58492088317871,
+     -25.412410736083984,
+     -25.606203079223633,
+     -29.99039649963379,
+     -22.299123764038086,
+     -18.109811782836914,
+     -26.87259864807129,
+     -34.263492584228516,
+     -24.125959396362305,
+     -20.675552368164062,
+     -31.108606338500977,
+     -22.26807403564453,
+     -19.438907623291016,
+     -47.340187072753906,
+     -43.360450744628906,
+     -21.734743118286133,
+     -20.55066680908203,
+     -28.438016891479492,
+     -18.753093719482422,
+     -16.29246711730957,
+     -42.56538391113281,
+     -44.20650863647461,
+     -38.01018142700195,
+     -26.087066650390625,
+     -37.10703659057617,
+     -22.462907791137695,
+     -15.481222152709961,
+     -37.77708435058594,
+     -26.8562068939209,
+     -28.54277229309082,
+     -32.69939041137695,
+     -28.612119674682617,
+     -15.27820110321045,
+     -14.751571655273438,
+     -26.691720962524414,
+     -24.515565872192383,
+     -27.346446990966797,
+     -18.342132568359375,
+     -23.720788955688477,
+     -18.41856575012207,
+     -15.127917289733887,
+     -24.697067260742188,
+     -22.25937843322754,
+     -24.45170783996582,
+     -16.41877555847168,
+     -21.479158401489258,
+     -18.177064895629883,
+     -14.985657691955566,
+     -19.93207359313965,
+     -15.253266334533691,
+     -19.43540382385254,
+     -16.278167724609375,
+     -17.485559463500977,
+     -14.892132759094238,
+     -17.784692764282227,
+     -32.169734954833984,
+     -41.12034225463867,
+     -24.749103546142578,
+     -22.449947357177734,
+     -19.905977249145508,
+     -14.699884414672852,
+     -17.925586700439453,
+     -17.24281883239746,
+     -18.586008071899414,
+     -15.003087043762207,
+     -20.496986389160156,
+     -14.475916862487793,
+     -14.168899536132812,
+     -17.67755699157715,
+     -18.118061065673828,
+     -17.693443298339844,
+     -16.108320236206055,
+     -20.19806671142578,
+     -14.599051475524902,
+     -13.371658325195312,
+     -16.705829620361328,
+     -17.626220703125,
+     -18.19420623779297,
+     -16.1861629486084,
+     -18.355772018432617,
+     -14.791254043579102,
+     -14.361298561096191,
+     -15.3727445602417,
+     -14.706815719604492,
+     -13.047597885131836,
+     -14.110918998718262,
+     -13.886032104492188,
+     -13.405793190002441,
+     -13.655141830444336,
+     -22.076433181762695,
+     -33.15004348754883,
+     -39.76465606689453,
+     -48.873443603515625,
+     -57.47850036621094,
+     -40.23121643066406,
+     -21.625791549682617,
+     -14.082171440124512,
+     -14.35837459564209,
+     -14.387197494506836,
+     -11.617816925048828,
+     -14.1001558303833,
+     -14.037446975708008,
+     -12.2864351272583,
+     -13.351001739501953,
+     -28.79547691345215,
+     -36.70835494995117,
+     -47.32412338256836,
+     -59.294307708740234,
+     -70.93961334228516,
+     -88.53996276855469,
+     -116.12297821044922
+    ],
+    "peaks_t": [
+     160.0,
+     145.0,
+     135.0
+    ],
+    "tempo_bpm": 67.99958881578948,
+    "tempo_candidates": [
+     67.99958881578948,
+     135.99917763157896,
+     54.978390957446805
+    ],
+    "tempo_confident": false
+   },
+   "analysis": {
+    "analysis_scratchpad": "At 0:00, a low synth drone and metallic ticking begin immediately. At the midpoint (1:26), a heavy electronic beat and synth bass drive the track forward. At the end, a massive hybrid brass hit rings out, fading into silence. The three most prominent sources are the ticking pulse, the electronic beat, and the hybrid brass. Ambiguity: The fast rhythmic elements in the climax could be heavily processed strings or pure synth arpeggios; classified as uncertain orchestral_strings.",
+    "mix_type": "FULL",
+    "grounding": {
+     "first_sound_t": 0.0,
+     "loudest_moment_t": 120.0,
+     "quietest_stretch_t": 5.0,
+     "ends_with_silence_seconds": 3.0
+    },
+    "sonic_map": {
+     "opening_statement": "A low synth drone and metallic ticking pulse establish a tense, sparse atmosphere.",
+     "events": [
+      {
+       "t": 0.0,
+       "kind": "statement",
+       "spotlight": "synth drone and ticking pulse",
+       "what_happens": "A low drone and metallic ticking establish a tense atmosphere.",
+       "tension": "seeds"
+      },
+      {
+       "t": 30.0,
+       "kind": "escalation",
+       "spotlight": "rising synth pad",
+       "what_happens": "A rising synth pad joins the ticking, increasing the density.",
+       "tension": "compounds"
+      },
+      {
+       "t": 60.0,
+       "kind": "drop",
+       "spotlight": "electronic beat and synth bass",
+       "what_happens": "A heavy electronic beat and aggressive synth bass enter.",
+       "tension": "releases"
+      },
+      {
+       "t": 116.0,
+       "kind": "breakdown",
+       "spotlight": "ticking pulse",
+       "what_happens": "The beat drops out, leaving only the ticking pulse and a low drone.",
+       "tension": "holds"
+      },
+      {
+       "t": 120.0,
+       "kind": "escalation",
+       "spotlight": "hybrid brass and trailer impacts",
+       "what_happens": "Massive brass and cinematic impacts explode into a full climax.",
+       "tension": "compounds"
+      },
+      {
+       "t": 165.0,
+       "kind": "ending",
+       "spotlight": "final synth hit",
+       "what_happens": "A final massive hit strikes and rings out into silence.",
+       "tension": "resets"
+      }
+     ],
+     "motif": {
+      "exists": true,
+      "first_heard_t": 0.0,
+      "described": "Metallic ticking pulse",
+      "travels": [
+       {
+        "t": 0.0,
+        "to_family": "keys_and_synths.pulses_and_ostinati",
+        "register": "same"
+       }
+      ],
+      "behaviour": "repeats_unchanged"
+     },
+     "arc_shape": "build_to_release",
+     "dialogue_room": [
+      {
+       "t_start": 0.0,
+       "t_end": 60.0,
+       "quality": "clear"
+      },
+      {
+       "t_start": 60.0,
+       "t_end": 165.0,
+       "quality": "threatened"
+      }
+     ],
+     "edit_points": [
+      {
+       "t": 60.0,
+       "kind": "cut_in",
+       "why": "The beat drops, providing a strong entry point."
+      },
+      {
+       "t": 116.0,
+       "kind": "loop_end",
+       "why": "The groove ends, transitioning into a breakdown."
+      },
+      {
+       "t": 120.0,
+       "kind": "hit",
+       "why": "Massive climax begins with a huge impact."
+      },
+      {
+       "t": 165.0,
+       "kind": "button",
+       "why": "Final hit provides a definitive end."
+      }
+     ],
+     "what_it_makes_possible": [
+      "The moment the countdown reaches zero",
+      "A high-stakes tactical breach"
+     ],
+     "composer_intent": "To build relentless, ticking tension that explodes into a massive, aggressive hybrid climax."
+    },
+    "tempo": {
+     "band": "mid",
+     "bpm_estimate": 110,
+     "pulse_confidence": 0.9
+    },
+    "energy_arc": "build_drop_build",
+    "sections": [
+     {
+      "t_start": 0.0,
+      "t_end": 60.0,
+      "label": "Tense Intro",
+      "energy": 1,
+      "what_changes": "Sparse ticking and drones build slowly."
+     },
+     {
+      "t_start": 60.0,
+      "t_end": 116.0,
+      "label": "Industrial Groove",
+      "energy": 3,
+      "what_changes": "Heavy electronic beat and synth bass enter."
+     },
+     {
+      "t_start": 116.0,
+      "t_end": 120.0,
+      "label": "Breakdown",
+      "energy": 2,
+      "what_changes": "Beat drops out, ticking pulse remains."
+     },
+     {
+      "t_start": 120.0,
+      "t_end": 165.0,
+      "label": "Massive Climax",
+      "energy": 5,
+      "what_changes": "Huge brass, trailer impacts, and full arrangement."
+     },
+     {
+      "t_start": 165.0,
+      "t_end": 172.6,
+      "label": "Outro",
+      "energy": 1,
+      "what_changes": "Final hit rings out into silence."
+     }
+    ],
+    "ending": {
+     "type": "ring_out",
+     "final_accent_t": 165.0,
+     "tail_seconds": 4.6
+    },
+    "instrumentation": [
+     {
+      "family": "percussion.electronic_beats",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 60.0,
+        "t_end": 116.0,
+        "what": "Heavy trap/industrial beat"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "percussion.trailer_impacts",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 120.0,
+        "t_end": 165.0,
+        "what": "Massive cinematic hits"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "keys_and_synths.pulses_and_ostinati",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 0.0,
+        "t_end": 60.0,
+        "what": "Ticking synth pulse"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "bass.synth_bass",
+      "presence": "present",
+      "prominence": "supporting",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 60.0,
+        "t_end": 116.0,
+        "what": "Aggressive low end"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "winds.hybrid_or_synth_brass",
+      "presence": "present",
+      "prominence": "lead",
+      "confidence": 1.0,
+      "evidence": [
+       {
+        "t_start": 120.0,
+        "t_end": 165.0,
+        "what": "Huge braams"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "sound_design.textures_and_atmos",
+      "presence": "present",
+      "prominence": "background",
+      "confidence": 0.9,
+      "evidence": [
+       {
+        "t_start": 0.0,
+        "t_end": 30.0,
+        "what": "Eerie background drones"
+       }
+      ],
+      "note": null
+     },
+     {
+      "family": "strings.orchestral_strings",
+      "presence": "uncertain",
+      "prominence": null,
+      "confidence": 0.7,
+      "evidence": [
+       {
+        "t_start": 120.0,
+        "t_end": 165.0,
+        "what": "Fast ostinatos in the climax"
+       }
+      ],
+      "note": "Could be heavily processed strings or pure synth arps."
+     }
+    ],
+    "lyrics": {
+     "has_intelligible_words": false,
+     "language": null,
+     "sample_phrase": null
+    },
+    "hybridity_electronic_pct": 80,
+    "dialogue_friendly": false,
+    "modular_edit_points_t": [
+     60.0,
+     116.0,
+     120.0,
+     165.0
+    ],
+    "the_job": "Provide a tense, ticking underscore that explodes into a massive, aggressive hybrid trailer climax.",
+    "narrative_map": "The track begins with a sparse, ticking tension that slowly builds. A heavy electronic groove takes over, driving the momentum forward before dropping out for a brief breath. Finally, it explodes into a massive, cinematic climax with huge brass and impacts, ending on a definitive final hit.",
+    "genre_tags": [
+     "trailer",
+     "hybrid",
+     "cyberpunk",
+     "action"
+    ],
+    "sounds_like_no_names": "A high-stakes countdown sequence in a modern sci-fi or action thriller."
+   },
+   "simple": {
+    "drums": true,
+    "vocals": false,
+    "choir": false,
+    "has_lyrics": false,
+    "orchestral": false,
+    "electronic": true,
+    "hybrid": false,
+    "tempo_band": "mid",
+    "bpm": 110,
+    "ending_type": "ring_out",
+    "energy_arc": "build_drop_build",
+    "dialogue_friendly": false,
+    "lead_sources": [
+     "percussion.electronic_beats",
+     "percussion.trailer_impacts",
+     "keys_and_synths.pulses_and_ostinati",
+     "winds.hybrid_or_synth_brass"
+    ],
+    "do_not_claim": [
+     "strings.orchestral_strings"
+    ]
+   },
+   "uncertain": [
+    "strings.orchestral_strings"
+   ],
+   "attempts": 2,
+   "correction": "",
+   "call_a_mode": "schema",
+   "duplicates": [],
+   "sonic_map_warnings": []
+  }
+ }
+}

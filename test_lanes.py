@@ -56,7 +56,7 @@ class TestApplyLane(unittest.TestCase):
         kws = ", ".join(["Sounds Carefree"] + [f"Tone {i}" for i in range(17)])
         return {"catalog": "EPP", "tracks": [{
             "Title": "Glass Hours", "Mix Type": "full", "Keywords": kws,
-            "Track Description": "Brass swells over tape hiss. It ends on a button. Fits: Sounds Carefree, Documentary, Lifestyle",
+            "Track Description": "Brass swells over tape hiss. It ends on a button. Fits: Sounds Carefree, sunday markets, road trips",
         }]}
 
     def test_lane_is_first_keyword_and_first_fits_tag(self):
@@ -68,7 +68,7 @@ class TestApplyLane(unittest.TestCase):
         self.assertNotIn("Sounds Carefree", kws)  # a different lane never rides along
         self.assertLessEqual(len(kws), gate.KEYWORD_MAX)
         _, tags = gate.split_fits(track["Track Description"])
-        self.assertEqual(tags, ["Sounds Tender", "Documentary", "Lifestyle"])
+        self.assertEqual(tags, ["Sounds Tender", "sunday markets", "road trips"])
         self.assertEqual(data["lane"], "Sounds Tender")
         self.assertEqual(gate.keyword_reasons(track["Keywords"], "EPP", "Sounds Tender"), [])
         self.assertEqual(gate.fits_reasons(tags, "EPP", "Sounds Tender"), [])
