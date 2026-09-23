@@ -9,12 +9,13 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
+import capture
 import engine
 import gate
 import rules
 from analysis_schema import Analysis, Writing
 from engine import CALL_A_CONFIG, CALL_B_CONFIG, IngestionEngine
-from pfd_fixtures import (DESCRIPTION, FILENAME, MEASURED, TITLE, analysis_dict, uncertain, with_family,
+from pfd_fixtures import (present, DESCRIPTION, FILENAME, MEASURED, TITLE, analysis_dict, uncertain, with_family,
                           writing_dict)
 from prompts import CALL_B_EXEMPLARS, CALL_B_VOICE, WRITER_GROUNDING
 
@@ -68,12 +69,22 @@ class TestListen(ListenCase):
         first_user_text = self.calls()[0].kwargs["contents"][1]
         self.assertNotIn("rejected", first_user_text)
 
-    def test_second_failure_blocks_and_stops_at_two_calls(self):
+    def test_second_timing_miss_warns_and_stops_at_two_calls(self):
+        """G5–G8 warn instead of block (Damir, 2026-09-23): Ready with a note, values kept."""
         bad = analysis_dict(grounding=dict(analysis_dict()["grounding"], first_sound_t=5.0))
         self.replies(bad, bad, analysis_dict())
         result = self.engine.listen(AUDIO, ".mp3", "full", "k")
+        self.assertEqual(result["status"], gate.PASSED_WITH_UNCERTAINTY)
+        self.assertEqual(result["failures"], [])
+        self.assertEqual([f["rule"] for f in result["warnings"]], ["G5"])
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_second_failure_of_a_blocking_rule_blocks(self):
+        bad = with_family(analysis_dict(), "voice.choir", present(what="synth pad swell"))
+        self.replies(bad, bad, analysis_dict())
+        result = self.engine.listen(AUDIO, ".mp3", "full", "k")
         self.assertEqual(result["status"], gate.BLOCKED)
-        self.assertEqual([f["rule"] for f in result["failures"]], ["G5"])
+        self.assertIn("G13", [f["rule"] for f in result["failures"]])
         self.assertEqual(len(self.calls()), 2)
 
     def test_schema_violation_reruns_once_without_a_hint(self):
@@ -250,15 +261,23 @@ class TestProcessTrack(ListenCase):
         self.assertEqual(track["Gemini Description"],
                          "Bowed strings swell under a tight kit groove. It builds to a full peak and rings out. Fits: the chase begins, title card peak")
 
-    def test_blocked_listen_is_not_written(self):
+    def test_ending_mismatch_warns_and_is_written(self):
         bad = analysis_dict(ending={"type": "hard_cut", "final_accent_t": 58.0, "tail_seconds": 0.0})
+        self.replies(bad, bad, writing_dict())
+        track = self.process()
+        self.assertEqual(track["PFD_Status"], gate.PASSED_WITH_UNCERTAINTY)
+        (warning,) = track["PFD_Gate"]["warnings"]
+        self.assertEqual(gate.summary(warning), "G8 · Ending: Analysis: Hard cut · file decays for 2.5 s")
+        self.assertIn("G8 · Ending", capture._block_reasons(track))
+        self.assertEqual(len(self.calls()), 3)
+
+    def test_blocked_listen_is_not_written(self):
+        bad = with_family(analysis_dict(), "voice.choir", present(what="synth pad swell"))
         self.replies(bad, bad)
         track = self.process()
         self.assertEqual(track["PFD_Status"], gate.BLOCKED)
         self.assertEqual(track["PFD_Reason_Kind"], "listen")
-        (reason,) = track["PFD_Block_Reasons"]
-        self.assertEqual(reason["rule"], "G8")
-        self.assertEqual(gate.summary(reason), "G8 · Ending: Analysis: Hard cut · file decays for 2.5 s")
+        self.assertIn("G13", [r["rule"] for r in track["PFD_Block_Reasons"]])
         self.assertEqual(len(self.calls()), 2)
 
     def test_title_never_reaches_the_listen(self):
@@ -292,7 +311,7 @@ class TestProcessTrack(ListenCase):
         self.assertIn("What to do:", gate.export_line(banned))
 
     def test_override_passes_the_track_and_records_why(self):
-        bad = analysis_dict(ending={"type": "hard_cut", "final_accent_t": 58.0, "tail_seconds": 0.0})
+        bad = with_family(analysis_dict(), "voice.choir", present(what="synth pad swell"))  # G13 still blocks
         self.replies(bad, bad, writing_dict())
         track = self.process()
         self.assertEqual(track["PFD_Status"], gate.BLOCKED)
@@ -366,7 +385,7 @@ class TestFixActions(ListenCase):
         self.assertEqual(track["PFD_Status"], gate.PASSED)
 
     def test_ill_write_it(self):
-        bad = analysis_dict(grounding=dict(analysis_dict()["grounding"], first_sound_t=5.0))
+        bad = with_family(analysis_dict(), "voice.choir", present(what="synth pad swell"))  # G13 still blocks
         self.replies(bad, bad, writing_dict())
         track = self.process()
         self.assertEqual(track["PFD_Status"], gate.BLOCKED)

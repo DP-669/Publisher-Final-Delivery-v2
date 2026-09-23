@@ -7,9 +7,9 @@ notes before it commits to any answer. Writing is Call B (Gemini writes from
 the analysis, no audio).
 
 Instrumentation is sent to Gemini as a flat list of Observations — only the
-families heard as present or uncertain. The nested 31-family schema was too
+families heard as present or uncertain. The nested 32-family schema was too
 large for Gemini's structured output (400 INVALID_ARGUMENT, see GATE_FIX.md).
-build_family_map() turns the list back into the full 31-family map
+build_family_map() turns the list back into the full 32-family map
 (Instrumentation); every unlisted family is absent. simplify(), walk_families()
 and the gate read that map, never the raw list.
 
@@ -96,6 +96,7 @@ class FamilyName(str, Enum):
     voice_choir = "voice.choir"
     voice_vocal_chops_fx = "voice.vocal_chops_fx"
     voice_spoken_or_shouted = "voice.spoken_or_shouted"
+    voice_breath_and_body_foley = "voice.breath_and_body_foley"
     sound_design_textures_and_atmos = "sound_design.textures_and_atmos"
     sound_design_processed_or_reversed = "sound_design.processed_or_reversed"
 
@@ -115,7 +116,7 @@ class Observation(BaseModel):
     note: Optional[str] = Field(default=None, max_length=120)  # instrument name or uncertain reason
 
 
-# ── The full 31-family map (built in Python, never sent to Gemini) ─────────────
+# ── The full 32-family map (built in Python, never sent to Gemini) ─────────────
 
 class Family(BaseModel):
     presence: Presence
@@ -171,6 +172,7 @@ class Voice(BaseModel):
     choir: Family
     vocal_chops_fx: Family
     spoken_or_shouted: Family
+    breath_and_body_foley: Family  # panting, gasping, hyperventilation, breath loops, heartbeat, swallowing (2026-09-23)
 
 
 class SoundDesign(BaseModel):
@@ -346,7 +348,7 @@ FAMILY_PATHS = [f.value for f in FamilyName]
 
 def build_family_map(observations: List[Observation]) -> Tuple[Instrumentation, List[str]]:
     """
-    The full 31-family map. Listed families take their Observation; every unlisted
+    The full 32-family map. Listed families take their Observation; every unlisted
     family is absent. A family listed twice keeps the higher-confidence entry;
     those family names are returned so the caller can log them.
     """

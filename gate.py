@@ -18,6 +18,7 @@ four things the team needs: the check that failed (G1…G17 or a named text
 check), the values that disagreed, what that means, and what to do next.
 summary() is the one-line form for the table, export_line() the one for the CSV.
 """
+import json
 import logging
 import re
 from functools import lru_cache
@@ -91,13 +92,44 @@ def _parse(model, text: str, what: str):
         raise SchemaViolation(f"{what}: {problems}. First 200 chars: {str(text)[:200]!r}")
 
 
+def _trim_long_strings(text: str) -> str:
+    """
+    Gemini does not enforce string max_length in schema mode: Air Hunger's Annihilate
+    came back twice with a narrative_map over 300 characters and was thrown away as
+    G4 (2026-09-22). Over-long prose fields are cut at a word boundary here and
+    logged. Only string_too_long is repaired; every other violation is still G4.
+    """
+    try:
+        Analysis.model_validate_json(text or "")
+        return text
+    except ValidationError as exc:
+        errors = exc.errors()
+    if not errors or any(e["type"] != "string_too_long" for e in errors):
+        return text
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    for e in errors:
+        node = data
+        for key in e["loc"][:-1]:
+            node = node[key]
+        limit = e["ctx"]["max_length"]
+        value = node[e["loc"][-1]]
+        cut = value[:limit - 1].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+        node[e["loc"][-1]] = cut[:limit]
+        log.warning("Call A %s was %d characters (cap %d); trimmed", ".".join(map(str, e["loc"])), len(value), limit)
+    return json.dumps(data)
+
+
 def parse_analysis(text: str) -> Analysis:
     """
     Validate Call A. List caps above 7 are not in the schema (Gemini rejects them);
     they are enforced here and in G2: edit points are trimmed to 8, more than 10
-    sections fails G2, more than 20 observations is logged.
+    sections fails G2, more than 20 observations is logged. Over-long prose fields
+    are trimmed (_trim_long_strings).
     """
-    a = _parse(Analysis, text, "analysis")
+    a = _parse(Analysis, _trim_long_strings(text), "analysis")
     if len(a.modular_edit_points_t) > MAX_EDIT_POINTS:
         log.warning("Call A returned %d edit points; kept the first %d", len(a.modular_edit_points_t), MAX_EDIT_POINTS)
         a.modular_edit_points_t = a.modular_edit_points_t[:MAX_EDIT_POINTS]
@@ -359,10 +391,21 @@ def uncertain_families(a: Analysis) -> List[str]:
     return [path for path, fam in walk_families(families(a)) if fam.presence == Presence.uncertain]
 
 
-def listen_status(failures: List[Dict], uncertain: List[str]) -> str:
+# Damir, 2026-09-23 (DECISIONS.md): the waveform timing checks warn instead of block
+# until five albums have DIFF files. Air Hunger blocked 11 of 13 full mixes, mostly here.
+WARN_RULES = ("G5", "G6", "G7", "G8")
+
+
+def split_warnings(failures: List[Dict]):
+    """(blocking, warnings): G5–G8 are warnings, every other rule still blocks."""
+    return ([f for f in failures if f.get("rule") not in WARN_RULES],
+            [f for f in failures if f.get("rule") in WARN_RULES])
+
+
+def listen_status(failures: List[Dict], uncertain: List[str], warnings: Optional[List[Dict]] = None) -> str:
     if failures:
         return BLOCKED
-    return PASSED_WITH_UNCERTAINTY if uncertain else PASSED
+    return PASSED_WITH_UNCERTAINTY if uncertain or warnings else PASSED
 
 
 # ── Retry hints (to the model) ─────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 # PFD_RULES.md
-version: 0.5 (draft, 2026-09-22)
+version: 0.6 (draft, 2026-09-23)
 status: DRAFT — becomes v1.0 when Claude Code merges the M2 build and Damir runs the first real track.
 
 This file is the only place PFD rules live. The app reads it at startup and injects the LOCKED section plus the active catalog's block into every model call. Editing this file changes the app's behavior on the next deploy. Nothing in prompts.py may contradict it; if it does, prompts.py is wrong.
@@ -18,11 +18,11 @@ Every word describes a specific piece of music for a professional who has 90 sec
 A run is rC, SSC or EPP. Never mixed. The active catalog's DNA block is injected; the other two are not.
 
 ### The analysis must be real
-- The audio-analysis prompt never receives the track title, album name, composer, or filename. It receives audio and mix type only. The title is joined to the result afterwards, in code.
+- The audio-analysis prompt never receives the track title, album name, composer, filename or album concept. It receives audio, mix type and the catalog's one-line "Listen note" (catalog-level, never track-level). The title is joined to the result afterwards, in code.
 - The album concept (one optional line typed on the Start screen), the album title and the track title go to the writing call (Call B) only. The listen stays blind.
 - Every analysis must return: duration_seconds, ending_type, 3–6 timestamped events, and hard facts (drums present, vocals present, choir present, tempo band, energy arc).
 - Duration is checked against the real file. Timestamps past the real duration fail the track.
-- Every present claim carries timestamped evidence. Python verifies timing, ending, loudness shape and section ordering against the decoded waveform (librosa). Contradiction with the waveform or with itself blocks the track; uncertainty never does.
+- Every present claim carries timestamped evidence. Python verifies timing, ending, loudness shape and section ordering against the decoded waveform (librosa). Contradiction with the waveform or with itself blocks the track; uncertainty never does. Exception (Damir, 2026-09-23): G5–G8 (first sound, loudest moment, end silence, ending type) warn instead of block — "Ready with note", with the measured and claimed values — until five albums have DIFF files.
 - BLOCKED is a real state. It is shown in the app and carried into the export. It is never silently converted to a result.
 - No silent failure anywhere on the analysis or export path. If it failed, the user sees it.
 
@@ -63,6 +63,7 @@ Identity: cinematic trailer music and sound design. Theatrical marketing, TV and
 Allowed placement words: trailer, teaser, theatrical, TV promo, broadcast promo, film, feature, TV drama, prestige TV, documentary, streaming series, sizzle, network promo.
 Forbidden placement words: advertising, commercial, brand campaign, corporate, reality TV, unscripted, social, YouTube, lifestyle, esports.
 Mix vocabulary: full mix, sparse mix, sound design element (SDE). Sparse and SDE are described as independent listens, never as "the full minus X".
+Listen note: This catalog routinely uses processed human breath and voice as instruments.
 Placement keywords: Trailer, Teaser, TV Promo, Film, TV Drama, Documentary, Sizzle Reel, Network Promo.
 
 ### SSC — Short Story Collective
@@ -94,7 +95,7 @@ tempo: {band: rubato|slow|mid|fast|very_fast, bpm_estimate, pulse_confidence}
 energy_arc: static | build | build_drop_build | crest_then_decay | waves
 sections: [{t_start, t_end, label, energy 1–5, what_changes}]   # 2–10, ordered, covering ≥90% of the file
 ending: {type: hard_cut|button|ring_out|fade_out, final_accent_t, tail_seconds}
-instrumentation: [{family, presence: present|uncertain, prominence, confidence, evidence ≤2, note}]   # ≤20; only families heard; unlisted of the 31 = absent
+instrumentation: [{family, presence: present|uncertain, prominence, confidence, evidence ≤2, note}]   # ≤20; only families heard; unlisted of the 32 = absent
 lyrics: {has_intelligible_words, language, sample_phrase}
 hybridity_electronic_pct: 0–100
 dialogue_friendly: bool
@@ -166,6 +167,7 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
+- 0.6 — 2026-09-23 — Damir's PFD-CALLB-SHIP decision: voice.breath_and_body_foley family added to Call A; rC "Listen note" sent to Call A; G5–G8 warn instead of block until five albums have DIFF files; §6 edit-distance criterion withdrawn.
 - 0.5 — 2026-09-22 — Call B final form (docs/PFD_v4_CallB_Final_2026-09-22.md §5): Fits become 2–3 lowercase scene-level tags, never media types; each catalog's "Placement list for Fits" becomes "Placement keywords"; album concept and track title go to Call B only; ALT mixes = fixed prefix + FULL description; exemplars from shipped finals only (Vessel removed); three-voice output stays retired; Track description spec rewritten to the three moves.
 - 0.4 — 2026-09-16 — Prompt redesign (Fable): sonic_map added to the Analysis schema; Call B writes from the sonic map and actors only; Track description and Keywords specs rewritten to the shortlist-note brief.
 - 0.3 — 2026-09-14 — Analysis schema: instrumentation is a flat list of observed families (Damir's schema decision); unlisted families are absent.

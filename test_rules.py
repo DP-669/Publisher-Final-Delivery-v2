@@ -144,3 +144,15 @@ class TestParsedLists(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestListenNote(unittest.TestCase):
+    def test_rc_listen_note_reaches_call_a_only_for_rc(self):
+        import prompts
+        eng = prompts.PromptEngine()
+        note = "This catalog routinely uses processed human breath and voice as instruments."
+        self.assertEqual(rules.listen_note("rC"), note)
+        self.assertIn(note, eng.call_a_system(30.0, catalog="rC"))
+        self.assertNotIn(note, eng.call_a_system(30.0, catalog="SSC"))
+        self.assertNotIn(note, eng.call_a_system(30.0))
+        self.assertIn("breath_and_body_foley", eng.call_a_system(30.0))

@@ -1,4 +1,16 @@
-# PFD v4 — Call B final form: §6 acceptance (2026-09-22) — NOT PASSED
+# PFD v4 — Call B shipped (2026-09-23)
+
+**Damir's decision PFD-CALLB-SHIP:** the edit-distance criterion is withdrawn, so §6 passes on the mechanical checks (12/12). Merged to main.
+- Call A: `voice.breath_and_body_foley` family, the breath-vs-brass definition, and the rC catalog listen note.
+- Gate: G5–G8 are warnings ("Ready with note", measured vs claimed shown). G1–G4 and G9–G17 still block.
+- Annihilate: its over-long `narrative_map` was rejected as G4. It's now trimmed in Python (code fix).
+- Breath check (Sacrilege, Proximal, Feral): **1 of 3.** Sacrilege reports breath_and_body_foley as present and lead. Proximal and Feral still don't report it.
+- Tests: 218 OK.
+- The 2026-09-22 report below keeps the distance scores for the record.
+
+---
+
+# PFD v4 — Call B final form: §6 acceptance (2026-09-22) — distance criterion later withdrawn
 
 **Result: BLOCKED.** §1–§5 are implemented and audited (auditor PASS; 213 tests OK). §6 failed on the distance criterion on both runs. Per the fail-fast rule, no third prompt variation was tried. Nothing was merged to `main` and no success ntfy was sent.
 

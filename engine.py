@@ -402,7 +402,7 @@ class IngestionEngine:
         return response.text
 
     # ── Call A + gate ──────────────────────────────────────────────────────────
-    def _call_a(self, client, audio, user: str, duration: float, result: Dict) -> str:
+    def _call_a(self, client, audio, user: str, duration: float, result: Dict, catalog: str = "") -> str:
         """
         One Call A request in the track's current mode. Any 400 INVALID_ARGUMENT
         re-issues the same request in prompt mode, and the record says so:
@@ -410,7 +410,8 @@ class IngestionEngine:
         """
         if result["call_a_mode"] == "schema":
             try:
-                return self._generate(client, [audio, user], CALL_A_CONFIG, self.prompts.call_a_system(duration))
+                return self._generate(client, [audio, user], CALL_A_CONFIG,
+                                      self.prompts.call_a_system(duration, catalog=catalog))
             except Exception as exc:
                 if not _is_invalid_argument(exc):
                     raise
@@ -419,17 +420,17 @@ class IngestionEngine:
                 result["call_a_mode"] = "prompt-fallback"
                 result["schema_error"] = str(exc)[:300]
         return self._generate(client, [audio, user], CALL_A_PROMPT_CONFIG,
-                              self.prompts.call_a_system(duration, include_shape=True))
+                              self.prompts.call_a_system(duration, include_shape=True, catalog=catalog))
 
     def listen(self, file_bytes: bytes, ext: str, mix_type: str, gemini_api_key: str,
-               correction: str = "", measured: Optional[Dict] = None) -> Dict:
+               correction: str = "", measured: Optional[Dict] = None, catalog: str = "") -> Dict:
         """
         Waveform → Call A → gate, at most two Call A per track.
         Returns {status, failures, measured, analysis, simple, uncertain, attempts, correction, call_a_mode}.
         API errors raise; a file that cannot be decoded is BLOCKED without calling the model.
         """
         mix = gate.mix_type_code(mix_type)
-        result = {"status": gate.BLOCKED, "failures": [], "measured": None, "analysis": None,
+        result = {"status": gate.BLOCKED, "failures": [], "warnings": [], "measured": None, "analysis": None,
                   "simple": None, "uncertain": [], "attempts": 0, "correction": (correction or "").strip(),
                   "call_a_mode": CALL_A_MODE}
         if measured is None:
@@ -448,16 +449,17 @@ class IngestionEngine:
         client = self._client(gemini_api_key)
         audio = self._audio_part(client, file_bytes, ext)
         failures: List[Dict] = []
+        rejected: List[Dict] = []   # what the re-listen is told: blocks and warnings alike
         for attempt in (1, 2):
             result["attempts"] = attempt
-            user = self.prompts.call_a_user(mix, duration, hint=gate.retry_hint(failures),
+            user = self.prompts.call_a_user(mix, duration, hint=gate.retry_hint(rejected),
                                             correction=result["correction"])
-            text = self._call_a(client, audio, user, duration, result)
+            text = self._call_a(client, audio, user, duration, result, catalog)
             try:
                 analysis = gate.parse_analysis(text)
             except gate.SchemaViolation as exc:
                 log.warning("Call A schema violation (attempt %s): %s", attempt, exc)
-                failures = [gate.failure("G4", error=str(exc)[:400])]
+                failures = rejected = [gate.failure("G4", error=str(exc)[:400])]
                 continue
             _, duplicates = build_family_map(analysis.instrumentation)
             if duplicates:
@@ -469,11 +471,13 @@ class IngestionEngine:
             result["analysis"] = analysis.model_dump(mode="json")
             result["simple"] = simplify(analysis)
             result["uncertain"] = gate.uncertain_families(analysis)
-            failures = gate.check_analysis(analysis, measured, mix)
-            if not failures:
+            failures, warnings = gate.split_warnings(gate.check_analysis(analysis, measured, mix))
+            result["warnings"] = warnings
+            if not failures and not warnings:
                 break
+            rejected = failures + warnings   # G5–G8 still earn the one re-listen; only a second miss warns
         result["failures"] = failures
-        result["status"] = gate.listen_status(failures, result["uncertain"])
+        result["status"] = gate.listen_status(failures, result["uncertain"], result["warnings"])
         return result
 
     # ── Call B + writers ───────────────────────────────────────────────────────
@@ -574,7 +578,7 @@ class IngestionEngine:
                       source_path: str = "", parent_track: str = "", correction: str = "",
                       track_id: str = "") -> Dict:
         """Listen, gate, write. Quota errors raise so the run can stop; other write failures land on the row."""
-        result = self.listen(data, ext, mix_type, gemini_api_key, correction=correction)
+        result = self.listen(data, ext, mix_type, gemini_api_key, correction=correction, catalog=catalog)
         track = self.track_record(title, mix_type, result, catalog, source_path, parent_track, track_id)
         if track.get("analysis") and (track["PFD_Gate"]["status"] in gate.READY):
             self.try_write(track, catalog, gemini_api_key, claude_api_key, lane)
@@ -608,6 +612,7 @@ class IngestionEngine:
         gate_state = {
             "status": result.get("status", gate.BLOCKED),
             "failures": list(result.get("failures") or []),
+            "warnings": list(result.get("warnings") or []),
             "attempts": result.get("attempts", 0),
             "uncertain": list(result.get("uncertain") or []),
             "override_note": "",
@@ -700,7 +705,7 @@ class IngestionEngine:
                 status = gate.BLOCKED
             elif overridden:
                 status = OVERRIDE          # passed by a human, and the row says so
-            elif not manual and not g.get("override_note") and remaining_uncertain(track):
+            elif not manual and not g.get("override_note") and (remaining_uncertain(track) or g.get("warnings")):
                 status = gate.PASSED_WITH_UNCERTAINTY
             else:
                 status = gate.PASSED

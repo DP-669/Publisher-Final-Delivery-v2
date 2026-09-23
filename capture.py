@@ -110,6 +110,8 @@ def _block_reasons(track: Dict) -> str:
         unsure = [p.split(".")[-1].replace("_", " ") for p in g.get("uncertain") or [] if p not in done]
         if unsure:
             notes.append(f"Not sure about (not mentioned): {', '.join(unsure)}.")
+    for w in g.get("warnings") or []:
+        notes.append(f"Listen check (warning, not a block): {gate.summary(w)}.")
     notes += list(track.get("PFD_Notes") or [])
     return " ".join(notes)
 

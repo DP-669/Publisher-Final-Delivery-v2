@@ -1008,6 +1008,13 @@ def render_fix_panel(track: dict):
                 save_album()
                 st.rerun()
 
+    warnings = (track.get("PFD_Gate") or {}).get("warnings") or []
+    if warnings:
+        st.markdown('<div class="pfd-note">The listen disagreed with the file on these timing checks. '
+                    'They are warnings for now, not blocks: listen to that part if it matters for the cut.<br>'
+                    + "<br>".join(html.escape(gate.summary(w)) for w in warnings) + "</div>",
+                    unsafe_allow_html=True)
+
     override = track.get("PFD_Override")
     if override:
         at = override.get("at", "")[:16].replace("T", " ") if isinstance(override, dict) else ""

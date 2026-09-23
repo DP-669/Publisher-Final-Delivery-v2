@@ -175,6 +175,10 @@ class Rules:
     def allowed_placement_words(self, catalog: str) -> List[str]:
         return _comma_list(self._catalog_line(catalog, "Allowed placement words"))
 
+    def listen_note(self, catalog: str) -> str:
+        """The catalog's one-line "Listen note" for Call A, or "" when it has none."""
+        return _line_value(self.catalog_blocks[catalog_code(catalog)], "Listen note") or ""
+
     def placement_keywords(self, catalog: str) -> List[str]:
         """A catalog's media placements. Keywords only: a Fits tag is never one of these."""
         return _comma_list(self._catalog_line(catalog, "Placement keywords"))
@@ -283,6 +287,10 @@ def allowed_placement_words(catalog: str) -> List[str]:
 
 def placement_keywords(catalog: str) -> List[str]:
     return RULES.placement_keywords(catalog)
+
+
+def listen_note(catalog: str) -> str:
+    return RULES.listen_note(catalog)
 
 
 def media_types() -> List[str]:

@@ -1,9 +1,10 @@
 """
 Publisher Final Delivery — task templates (v4).
 
-Call A (listen) is deliberately rule-free and catalog-free: its system prompt is
-the analyst brief below, with the file's measured duration, and nothing else.
-No title, filename, catalog name or prior track ever reaches it.
+Call A (listen) is deliberately rule-free: its system prompt is the analyst brief
+below, the file's measured duration and, when the catalog has one, its one-line
+"Listen note" (PFD_RULES.md). No title, filename, album, concept or prior track
+ever reaches it.
 
 Every writing call (Call B and the Claude writers) receives
 rules.system_instruction(catalog) as its system prompt and quotes the TUNABLE
@@ -52,6 +53,8 @@ Definitions decide ambiguity:
 - live_bass: finger/pick articulation. synth_bass: electronic tone or 808. Static low sustain = drone_or_sub.
 - orchestral_brass: section blend and breath. Braams/synthetic = hybrid_or_synth_brass.
 - Ostinati also reported under pulses_and_ostinati plus their instrument family.
+- breath_and_body_foley: panting, gasping, hyperventilation, breath loops, heartbeat, swallowing.
+- Processed human breath and vocal textures are frequently mistaken for brass swells or string pads. If the envelope has irregular human timing — inhale/exhale, gasp, catch — it is breath_and_body_foley or vocal_chops_fx, not brass or strings. When unsure, mark the instrument family uncertain and the breath family present.
 
 Three states: present (point to it, 1-3 evidence items, confidence >= 0.6), absent (listened, not there), uncertain (give reason — this is correct, never a failure).
 Never present with confidence < 0.6. Never present without evidence.
@@ -232,9 +235,16 @@ def _redo(prompt: str, is_redo: bool, guidance: str) -> str:
 
 class PromptEngine:
     # ── Call A: listen (Gemini, audio) ────────────────────────────────────────
-    def call_a_system(self, duration_seconds: float, include_shape: bool = False) -> str:
-        """include_shape: the no-response_schema fallback pastes the JSON Schema into the brief."""
+    def call_a_system(self, duration_seconds: float, include_shape: bool = False, catalog: str = "") -> str:
+        """
+        include_shape: the no-response_schema fallback pastes the JSON Schema into the brief.
+        catalog: adds the catalog's one-line "Listen note" from PFD_RULES.md (catalog-level,
+        never a title, album or concept; Damir's decision 2026-09-23).
+        """
         text = CALL_A_SYSTEM.format(duration_seconds=duration_seconds)
+        note = rules.listen_note(catalog) if catalog else ""
+        if note:
+            text += f"\n\nCatalog note: {note}"
         if include_shape:
             from analysis_schema import Analysis
             shape = json.dumps(Analysis.model_json_schema(), separators=(",", ":"))
