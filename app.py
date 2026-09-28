@@ -451,7 +451,7 @@ def start_album(catalog: str, code: str, entries: list, auto: list, check: dict,
         "run_status": "analyzing", "input": "upload" if uploads else (check.get("kind") or "album"),
         "pending": list(entries), "total": len(entries), "tracks": [],
         "lane": None, "lane_proposed": None, "album_description": "", "album_name_candidates": [],
-        "album_name_rationales": {}, "album_name_selected": "", "mailchimp_intro": "", "cover_art": "",
+        "album_name_rationales": {}, "album_name_selected": "", "track_title_proposals": [], "mailchimp_intro": "", "cover_art": "",
         "writer_test": {}, "exported_at": None,
     }
     ss.results = {}
@@ -770,7 +770,7 @@ def render_album_details(album: dict):
             if pick != album.get("album_name_selected"):
                 album["album_name_selected"] = pick
                 save_album()
-        if st.button("Suggest five names", key="album_names_write",
+        if st.button("Suggest ten names", key="album_names_write",
                      disabled=not (claude_api_key and album.get("album_description"))):
             try:
                 with st.spinner("Thinking of names…"):
@@ -785,6 +785,24 @@ def render_album_details(album: dict):
             st.rerun()
 
         st.divider()
+        st.markdown("**Track titles** (composer's title → proposed; nothing changes until the composer agrees)")
+        proposals = album.get("track_title_proposals") or []
+        for row in proposals:
+            arrow = "keep" if row.get("keep") else f"→ {row.get('proposed')}"
+            st.caption(f"{row.get('original')}  {arrow}  — {row.get('rationale', '')}")
+        if st.button("Propose track titles", key="track_titles_write",
+                     disabled=not (claude_api_key and album.get("album_name_selected"))):
+            try:
+                with st.spinner("Reading the album…"):
+                    album["track_title_proposals"] = eng.generate_track_titles(
+                        album["tracks"], album["album_name_selected"], album.get("album_description", ""),
+                        catalog, claude_api_key)
+                save_album()
+            except ClaudeError as exc:
+                report("Track titles failed", exc)
+            st.rerun()
+
+        st.divider()
         st.markdown("**MailChimp intro**")
         intro = st.text_area("MailChimp intro", value=album.get("mailchimp_intro", ""), height=120,
                              label_visibility="collapsed", key=f"mailchimp_{ver}")
@@ -792,11 +810,13 @@ def render_album_details(album: dict):
             album["mailchimp_intro"] = intro
             save_album()
         if intro:
-            words = len(intro.split())
-            if not 40 <= words <= 70:
-                st.caption(f"⚠️ {words} words (the spec is 40–70).")
-            if "!" in intro or re.search(r"\bexcited\b", intro, re.IGNORECASE):
-                st.caption("⚠️ No exclamation marks and no \"excited\".")
+            lines = [ln.strip() for ln in intro.splitlines() if ln.strip()]
+            body = [ln for ln in lines if ln.lower() != "introducing" and ln != album.get("album_name_selected")]
+            long = [ln for ln in body if len(ln.split()) > 10]
+            if len(body) > 3 or long:
+                st.caption("⚠️ Poster copy: one to three lines of four to ten words, then Introducing and the title.")
+            if "!" in intro or re.search(r"\b(excited|cinematic)\b", intro, re.IGNORECASE):
+                st.caption("⚠️ No exclamation marks, no \"excited\", no \"cinematic\".")
         if st.button("Write intro", key="mailchimp_write",
                      disabled=not (claude_api_key and album.get("album_name_selected"))):
             try:
@@ -1013,6 +1033,13 @@ def render_fix_panel(track: dict):
         st.markdown('<div class="pfd-note">The listen disagreed with the file on these timing checks. '
                     'They are warnings for now, not blocks: listen to that part if it matters for the cut.<br>'
                     + "<br>".join(html.escape(gate.summary(w)) for w in warnings) + "</div>",
+                    unsafe_allow_html=True)
+
+    findings = track.get("PFD_Referee") or []
+    if findings:
+        st.markdown('<div class="pfd-note">The referee read this description against the measured file and the '
+                    'rest of the album:<br>'
+                    + "<br>".join(html.escape(f"{f['rule']}: {f['detail']}") for f in findings) + "</div>",
                     unsafe_allow_html=True)
 
     override = track.get("PFD_Override")

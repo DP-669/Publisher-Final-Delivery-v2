@@ -344,7 +344,9 @@ def check_consistency(a: Analysis, mix_code: str) -> List[Dict]:
         out.append(failure("G11"))
     if a.lyrics.has_intelligible_words and not (_present(v.solo_voice_lyrics) or _present(v.choir)):
         out.append(failure("G12"))
-    if _present(v.choir) and not any(re.search(r"voice|vocal|choir", e.what, flags=re.IGNORECASE)
+    # 2026-09-28: chanted, sung, hummed and breathed evidence describes voices too (Warriors Path, SSC022).
+    if _present(v.choir) and not any(re.search(r"voic|vocal|choi|chor|chant|sing|sung|hum|breath|pant|gasp",
+                                               e.what, flags=re.IGNORECASE)
                                      for e in v.choir.evidence):
         out.append(failure("G13"))
     if a.dialogue_friendly and _present(v.solo_voice_lyrics):

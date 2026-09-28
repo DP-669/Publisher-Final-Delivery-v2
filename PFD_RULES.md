@@ -1,5 +1,5 @@
 # PFD_RULES.md
-version: 0.6 (draft, 2026-09-23)
+version: 0.7 (draft, 2026-09-28)
 status: DRAFT — becomes v1.0 when Claude Code merges the M2 build and Damir runs the first real track.
 
 This file is the only place PFD rules live. The app reads it at startup and injects the LOCKED section plus the active catalog's block into every model call. Editing this file changes the app's behavior on the next deploy. Nothing in prompts.py may contradict it; if it does, prompts.py is wrong.
@@ -23,6 +23,8 @@ A run is rC, SSC or EPP. Never mixed. The active catalog's DNA block is injected
 - Every analysis must return: duration_seconds, ending_type, 3–6 timestamped events, and hard facts (drums present, vocals present, choir present, tempo band, energy arc).
 - Duration is checked against the real file. Timestamps past the real duration fail the track.
 - Every present claim carries timestamped evidence. Python verifies timing, ending, loudness shape and section ordering against the decoded waveform (librosa). Contradiction with the waveform or with itself blocks the track; uncertainty never does. Exception (Damir, 2026-09-23): G5–G8 (first sound, loudest moment, end silence, ending type) warn instead of block — "Ready with note", with the measured and claimed values — until five albums have DIFF files.
+- Measure first (Damir, 2026-09-28): before any model listens, Python measures the file's shape (structure.py: sections, stop-downs, hits, ending and tail, dialogue room, tempo per section, harmonic/percussive weight). The listener receives these facts with the audio and places its events on them; the writer may quote only measured timestamps; the referee (referee.py) checks every written timestamp against them. Timings come from arithmetic, words come from the model.
+- Instrument naming follows the listener's confidence (Damir, 2026-09-28): a family is written with its plain name at confidence 0.9 or above, as "<name>-like" between 0.6 and 0.9, and never below 0.6 (uncertain). Altered, processed and hybrid sounds are the norm in these catalogs; "-like" is the honest default, not a weakness.
 - BLOCKED is a real state. It is shown in the app and carried into the export. It is never silently converted to a result.
 - No silent failure anywhere on the analysis or export path. If it failed, the user sees it.
 
@@ -69,8 +71,9 @@ Placement keywords: Trailer, Teaser, TV Promo, Film, TV Drama, Documentary, Sizz
 ### SSC — Short Story Collective
 Identity: traditionally recorded orchestral cinematic music. Film score register. Prestige TV, documentary, arthouse, drama, period. Elegant, emotionally honest, never trailer-loud.
 Allowed placement words: film, score, prestige TV, documentary, drama, period, arthouse, streaming series, TV drama, ballet, concert.
-Forbidden placement words: trailer (as a lead placement), promo, advertising, commercial, brand, corporate, reality TV, social, sports.
+Forbidden placement words: trailer (as a lead placement), promo, advertising, commercial, brand, corporate, reality TV, social, sports, thriller, chase, countdown, pursuit, esports, cyberpunk.
 Forbidden jargon: underscore, bed, stinger, cue-sheet language of any kind.
+Listen note: Orchestral players here use extended techniques (col legno, sul ponticello, harmonics, scratch tone) and sounds are often processed; a struck or scraped string is still a string, not a drum. Human breath and voice occur as instruments.
 Placement keywords: Film, Prestige TV, Documentary, Drama, Period, Arthouse, Streaming Series.
 
 ### EPP — Ekonomic Propaganda
@@ -111,7 +114,11 @@ Call B (Gemini, text only) writes from the sonic map and the actors only — alb
 - A music supervisor's shortlist note: why it works and where to cut it in. Three moves, then the Fits line.
 - Move 1 — what the sound does: actors and verbs in time order, ending in a dash and a plain statement of what that adds up to. Move 2 — how it is built for cutting: structure, modularity, negative space, where it breaks, how it ends; at least one timestamp as m:ss. Move 3 — the placement as a scene, one short sentence starting with For / Cut it into / Drop it where / Made for.
 - When an album concept is given, at least one move shows how this track carries it, in the track's own terms. Never restate the concept as a label.
-- Instruments appear only as actors doing something, never as a list. One adjective per noun at most. Timestamps come from the sonic map only.
+- Instruments appear only as actors doing something, never as a list. One adjective per noun at most. Timestamps come from the measured structure only, and there is exactly one: the edit point that matters. Loudness peaks are not events.
+- Lead with what the track feels like and what it does, not with numbers; more than one timestamp reads like a manual (Damir, 2026-09-27).
+- Never "drums" when the measured weight carrier is harmonic; write hits, strikes or accents. Never "full orchestra" unless confirmed; "thicker arrangement". "Distorted" only for a sound that is actually distorted (amp, crusher), never for a mood.
+- No sentence, and no phrase of four words or more, may appear in two descriptions on the same album. The album concept is shown through what the sound does; it is never written as the same line twice.
+- SSC: no thriller, chase, countdown, pursuit, trailer, promo, stinger, underscore, bed. The listener's tone words are proposals, never copied.
 - Length before the Fits line: rC and SSC 45–80 words, EPP 35–60.
 - No track title in the description. No composer name. No "this track".
 - Writer: set by `track_writer` below.
@@ -127,16 +134,26 @@ Other legal values: `claude_synth`, `claude_edit`. Set by the blind test (M3). D
 - Ending type and dialogue-friendliness are keywords when true: Hard Cut Ending, Button Ending, Ring-Out Tail, Dialogue Friendly, Modular.
 - EPP: lane first.
 
+### Album order of work
+Track descriptions and keywords → album title → album description → track titles revised to the album's concept → MailChimp intro → cover-art prompts → CSV to Vesna. The album concept is derived from the chosen title and description, then fed back into a second pass on any track whose description or title no longer fits. The same order on the Mac driver and in the app (Damir, 2026-09-28: results must be comparable whichever path runs).
+
 ### Album description
 - One sentence, 6–20 words. No sell. No second person. No list of placements.
-- Reference register: "Air Hunger", "Vessel". Read the catalog's last ten album descriptions first; do not repeat their nouns.
+- Reference register: "Air Hunger", "Vessel", "Nervous Habits" (Clockwork strings, held breath and waltzes that lose their footing: elegant music for minds coming apart.). Read the catalog's last ten album descriptions first; do not repeat their nouns.
 
 ### Album names
-- Five candidates. Two words preferred, three maximum. No lane words in EPP titles. No "Vol." No colons, dashes or subtitles.
-- Reject any candidate that is a song title, a film title, or a phrase already in the catalog.
+- Ten candidates, each with a one-line rationale. Sound like a movie title everyone relates to at once: simple, real-life, cinematic, original, non-pretentious (Poor Things, Kinds of Kindness register). Plain words with weight; never a dictionary word the reader has to look up; never bombast (Damir, 2026-09-27).
+- Two words preferred, three maximum. No lane words in EPP titles. No "Vol." No colons, dashes or subtitles.
+- Think from the Fits lines: which high-end film campaigns (Oscar-class, prestige) would these scenes belong to; then name the album as that studio's head of marketing would.
+- Reject any candidate that is a song title, a film title, a TV series or a phrase already in the catalog; web-check before locking.
+
+### Track titles
+- After the album title and description are chosen, propose a new title for every track whose composer title does not carry the album's concept. Middle path (Damir, 2026-09-27): keep the composer's gravity, lose the abstraction — plain nouns with weight, no jokes (The Verdict, Resting Heart Rate, Clockmaker, Breathing Exercise). Keep an original when it already fits.
+- Always deliver original title → new title side by side; nothing goes live until the composer has agreed. Sparse mixes keep the track's name plus "(Sparse)".
 
 ### MailChimp intro
-- 40–70 words, company voice ("we"), one idea, no exclamation marks, no "excited".
+- Poster copy, not marketing copy (Damir's locked "RedCola Album Intro Prompt", Apple Notes, 2026-09-28). One to three declarative lines of four to ten words each, one idea, state over action, no track talk, no instrumentation, no genre words, no exclamation marks, no "excited", no "cinematic". Lines read like truths discovered too late; ambiguous scale; inevitable. Then a blank line, "Introducing", and the album title on its own line.
+- Exemplars: "Containment was the mistake." / "It does not arrive. It spreads." / "Intelligence was never the danger." (Vessel); "We all have them. / Nobody admits it. / Some end badly. // Introducing / Nervous Habits" (SSC022).
 
 ### Cover-art prompts (MidJourney, manual)
 - Four prompts per album. Narrative-first: a single frame from a story, not a mood board.
@@ -155,7 +172,10 @@ Album: Cinematic trailer cues built on voice and breath for sci-fi and thriller 
 (Source: rC056 Air Hunger Metadata.xlsx, pulled 2026-09-22. Vessel examples removed 2026-09-22: exemplars come from shipped Air Hunger finals only.)
 
 #### SSC
-(None yet. No locked SSC final dated 2026-06-01 or later exists; the SSC master sheet is dated 2026-03-15.)
+Track: Sparse, suspenseful opening: high strings and a soft ticking pulse leave room for dialogue. Col legno strings sharpen the pace from 0:50; a drop at 1:20 creates a pregnant pause before a chaotic, thicker back end that fades on a single held note. Fits: stalking scenes, night-street tension, slow-reveal dread
+Track: A waltz through paranoia: lopsided pulses, lurching tempo changes and strings that argue with themselves, each section a further step into madness. Eight distinct, colorful passages offer a dialogue-friendly first half and a chaotic back end, with cut points at every turn. Fits: unravelling-mind sequences, paranoia montages, unreliable-narrator reveals
+Album: Clockwork strings, held breath and waltzes that lose their footing: elegant music for minds coming apart.
+(Source: SSC022 Nervous Habits, Damir's approved texts 2026-09-27. Provisional until the album ships.)
 
 #### EPP
 Track: Sub-bass-driven trap beat with metallic hits and tight hi-hats. Confident, attitude-forward energy - sports promos, streetwear, esports.
@@ -167,6 +187,7 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
+- 0.7 — 2026-09-28 — Measure first (structure.py before Call A; measured timestamps only in Call B; referee.py cross-checks), instrument naming by confidence (0.9 plain / 0.6–0.9 "-like"), one timestamp per description, no cross-track phrase repeats, album order of work, film-title album names, track-title revision step, MailChimp intro as poster copy (locked note), first SSC exemplars (Nervous Habits).
 - 0.6 — 2026-09-23 — Damir's PFD-CALLB-SHIP decision: voice.breath_and_body_foley family added to Call A; rC "Listen note" sent to Call A; G5–G8 warn instead of block until five albums have DIFF files; §6 edit-distance criterion withdrawn.
 - 0.5 — 2026-09-22 — Call B final form (docs/PFD_v4_CallB_Final_2026-09-22.md §5): Fits become 2–3 lowercase scene-level tags, never media types; each catalog's "Placement list for Fits" becomes "Placement keywords"; album concept and track title go to Call B only; ALT mixes = fixed prefix + FULL description; exemplars from shipped finals only (Vessel removed); three-voice output stays retired; Track description spec rewritten to the three moves.
 - 0.4 — 2026-09-16 — Prompt redesign (Fable): sonic_map added to the Analysis schema; Call B writes from the sonic map and actors only; Track description and Keywords specs rewritten to the shortlist-note brief.
