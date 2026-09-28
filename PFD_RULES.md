@@ -157,7 +157,7 @@ Track descriptions and keywords → album title → album description → track 
 
 ### Cover-art prompts (MidJourney, manual)
 - Four prompts per album. Narrative-first: a single frame from a story, not a mood board.
-- Per-catalog film stock line, then `--v 7.0 --ar 1:1 --sref [URL]` — verify the current MidJourney version flag before use.
+- Per-catalog film stock line, then `--v 8.2 --ar 1:1 --sref [URL]` (V8.2 confirmed current by Damir 2026-09-28; re-verify when MidJourney ships a new version).
 - Obey the LOCKED "Cover art and people" rule.
 - Last line of every prompt set is the DNA gut-check: "Would a poster designer at a studio we work with put this in a portfolio?"
 
