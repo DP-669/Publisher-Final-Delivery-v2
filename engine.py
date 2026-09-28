@@ -30,7 +30,9 @@ from google.genai import types
 
 import capture
 import gate
+import referee
 import rules
+import structure as structure_mod
 import waveform
 from analysis_schema import Analysis, Presence, Writing, build_family_map, family_label, find_observation, simplify
 from pfd_errors import report
@@ -44,6 +46,7 @@ log = logging.getLogger("pfd")
 # or CLAUDE_WRITING_MODEL in Streamlit secrets (or env) locks the model instead.
 DEFAULT_GEMINI_AUDIO_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_CLAUDE_WRITING_MODEL = "claude-sonnet-5"
+ALBUM_NAME_COUNT = 10   # PFD_RULES "Album names" (2026-09-28)
 
 
 def _secret_value(key: str) -> Optional[str]:
@@ -423,7 +426,8 @@ class IngestionEngine:
                               self.prompts.call_a_system(duration, include_shape=True, catalog=catalog))
 
     def listen(self, file_bytes: bytes, ext: str, mix_type: str, gemini_api_key: str,
-               correction: str = "", measured: Optional[Dict] = None, catalog: str = "") -> Dict:
+               correction: str = "", measured: Optional[Dict] = None, catalog: str = "",
+               structure: Optional[Dict] = None) -> Dict:
         """
         Waveform → Call A → gate, at most two Call A per track.
         Returns {status, failures, measured, analysis, simple, uncertain, attempts, correction, call_a_mode}.
@@ -445,6 +449,15 @@ class IngestionEngine:
             return result
         result["measured"] = measured
         duration = measured["duration"]
+        # Measure first (2026-09-28): the file's own shape goes to the listener before it listens,
+        # and its timestamps are the only ones the writer may quote.
+        if structure is None:
+            try:
+                structure = structure_mod.measure_bytes(file_bytes, ext)
+            except Exception as exc:
+                report("Could not measure the track's structure", exc, show=False)
+                structure = None
+        result["structure"] = structure
 
         client = self._client(gemini_api_key)
         audio = self._audio_part(client, file_bytes, ext)
@@ -453,7 +466,8 @@ class IngestionEngine:
         for attempt in (1, 2):
             result["attempts"] = attempt
             user = self.prompts.call_a_user(mix, duration, hint=gate.retry_hint(rejected),
-                                            correction=result["correction"])
+                                            correction=result["correction"],
+                                            structure_brief=structure_mod.brief(structure) if structure else "")
             text = self._call_a(client, audio, user, duration, result, catalog)
             try:
                 analysis = gate.parse_analysis(text)
@@ -500,6 +514,8 @@ class IngestionEngine:
         if not track.get("analysis"):
             raise ValueError(f"'{track.get('Title')}' has no analysis to write from.")
         client = self._client(gemini_api_key)
+        from prompts import call_b_input
+        track["named_sources"] = call_b_input(track, catalog, self.album_context(track)).get("named_sources", [])
         prompt = self.prompts.call_b_prompt(track, catalog, is_redo, guidance, self.album_context(track))
         system = self.prompts.call_b_system(catalog)
         text = self._generate(client, prompt, CALL_B_CONFIG, system)
@@ -641,6 +657,7 @@ class IngestionEngine:
             "analysis": a or None,
             "simple": simple or None,
             "measured": {k: v for k, v in measured.items() if k != "per_sec_db"} or None,
+            "structure": result.get("structure") or None,
             "call_a_mode": result.get("call_a_mode", ""),
             "PFD_Gate": gate_state,
             "PFD_Notes": [],
@@ -732,7 +749,29 @@ class IngestionEngine:
                     t["Track Description"] = alt_description(t.get("Alt Descriptor", ""), parent["Track Description"])
                     t["Keywords"] = t.get("Keywords") or parent.get("Keywords", "")
                 self.refresh_status(t, catalog, lane, final, parent)
+        app_data["referee"] = referee.check_album(tracks)
         return sum(1 for t in tracks if t.get("PFD_Status") == gate.BLOCKED)
+
+    def referee_redo(self, app_data: Dict, catalog: str, gemini_api_key: str, claude_api_key: str,
+                     max_rounds: int = 1) -> List[Dict]:
+        """
+        Run the referee and rewrite every track it flagged, once, with its findings as guidance.
+        Returns the findings that remain. Used by the Mac driver; the app shows findings only.
+        """
+        lane = app_data.get("lane") if rules.catalog_code(catalog) == "EPP" else None
+        tracks = app_data.get("tracks", [])
+        remaining = referee.check_album(tracks)
+        for _ in range(max_rounds):
+            flagged = [t for t in tracks if t.get("PFD_Referee") and t.get("analysis") and not t.get("PFD_Manual")]
+            if not flagged:
+                break
+            for t in flagged:
+                self.try_write(t, catalog, gemini_api_key, claude_api_key, lane, is_redo=True,
+                               guidance=referee.guidance(t["PFD_Referee"]))
+            remaining = referee.check_album(tracks)
+        app_data["referee"] = remaining
+        self.refresh_statuses(app_data, catalog)
+        return remaining
 
     @staticmethod
     def status_counts(tracks: List[Dict]) -> Dict[str, int]:
@@ -891,16 +930,17 @@ class IngestionEngine:
 
     def generate_album_names(self, album_description: str, catalog: str, claude_api_key: str,
                              track_descriptions: Optional[List[str]] = None) -> Dict[str, List[Dict]]:
-        """Five candidates that pass the name rules, plus what was rejected and why."""
+        """Ten candidates that pass the name rules (PFD_RULES "Album names"), plus what was rejected and why."""
         taken = {e.get("album", "").strip().lower() for e in recent_album_descriptions(catalog)}
         accepted, rejected = [], []
+        want = ALBUM_NAME_COUNT
         for round_no in range(2):
-            need = 5 - len(accepted)
+            need = want - len(accepted)
             avoid = [r["name"] for r in rejected] + [a["name"] for a in accepted]
             text = self.call_claude(
                 rules.system_instruction(catalog),
                 self.prompts.album_names_prompt(album_description, track_descriptions or [],
-                                                count=need if round_no else 5, avoid=avoid or None),
+                                                count=need if round_no else want, avoid=avoid or None),
                 claude_api_key)
             for cand in self._parse_names(text):
                 reasons = gate.album_name_reasons(cand["name"], catalog)
@@ -908,11 +948,37 @@ class IngestionEngine:
                     reasons.append("already an album in the catalog")
                 if reasons:
                     rejected.append({**cand, "reasons": reasons})
-                elif len(accepted) < 5 and cand["name"].lower() not in {a["name"].lower() for a in accepted}:
+                elif len(accepted) < want and cand["name"].lower() not in {a["name"].lower() for a in accepted}:
                     accepted.append(cand)
-            if len(accepted) >= 5:
+            if len(accepted) >= want:
                 break
         return {"names": accepted, "rejected": rejected}
+
+    def generate_track_titles(self, tracks: List[Dict], album_name: str, album_description: str,
+                              catalog: str, claude_api_key: str) -> List[Dict]:
+        """
+        PFD_RULES "Track titles": a proposal per FULL mix — keep or rename — after the album
+        title and description are chosen. Returns [{original, proposed, keep, rationale}].
+        Nothing is applied; the composer agrees first.
+        """
+        items = [{"original": t.get("Parent Track") or base_title(t.get("Title", "")),
+                  "description": referee._body(t)} for t in tracks
+                 if gate.mix_type_code(t.get("Mix Type", "")) == "FULL" and not is_alt_or_cutdown(t)]
+        text = self.call_claude(rules.system_instruction(catalog),
+                                self.prompts.track_titles_prompt(album_name, album_description, items),
+                                claude_api_key, max_tokens=2048)
+        m = re.search(r"\{.*\}", text or "", flags=re.DOTALL)
+        try:
+            data = json.loads(m.group(0)) if m else None
+            out = []
+            for row in data["titles"]:
+                out.append({"original": str(row["original"]).strip(),
+                            "proposed": str(row.get("proposed") or row["original"]).strip(),
+                            "keep": bool(row.get("keep", False)),
+                            "rationale": str(row.get("rationale", "")).strip()})
+            return out
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise ClaudeError(f"Track titles were not valid JSON ({exc}): {str(text)[:200]!r}")
 
     def generate_cover_art_prompts(self, album_name: str, album_description: str, catalog: str,
                                    ref_urls: List[str], claude_api_key: str,

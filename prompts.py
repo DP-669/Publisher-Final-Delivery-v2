@@ -156,7 +156,9 @@ Note to the model: EPP finals are terser than rC on purpose. Yours add Move 2 ut
 CALL_B_CHECKLIST = """Before you write, hold to the exemplars' shape:
 - 45–60 words before the Fits line. Three moves, three or four sentences.
 - Move 1 is ONE sentence: open on the lead sound with one physical word ("Dry, erratic hyperventilation…", "An oppressive metallic tick…"), then what it does, ending " — " and a plain statement of what it adds up to.
-- Move 2: structure for the cut, with exactly one m:ss timestamp.
+- Move 2: structure for the cut, with exactly one m:ss timestamp, taken from measured_timestamps (rounded by at most two seconds). Any other timestamp is a fault.
+- Instruments: write each one exactly as its named_sources.write_as says (listener_note is context, never a name to copy). "cello-like" means the sound was altered or the listener was not sure; never drop the "-like", never add an instrument that is not in named_sources. When measured says drums are unlikely, do not write drums; write hits, strikes or accents.
+- Do not reuse a phrase from another track on this album; the concept must never appear as the same sentence twice.
 - Move 3: one short sentence starting with For / Cut it into / Drop it where / Made for.
 - The concept is shown through what the sound does. Never write the concept's own nouns (for example contagion, quarantine, deep space) as labels."""
 
@@ -176,7 +178,8 @@ def call_b_input(track: Dict, catalog: str, album: Optional[Dict] = None) -> Dic
     album: {"album_concept", "album_title", "sibling_full"} from the album state. The
     concept and the real title reach Call B only; Call A stays blind.
     """
-    from analysis_schema import FAMILY_PATHS, Observation, build_family_map, walk_families
+    from analysis_schema import FAMILY_PATHS, Observation, build_family_map, walk_families, family_label
+    import structure as structure_mod
     album = album or {}
     a = track.get("analysis") or {}
     inst, _ = build_family_map([Observation.model_validate(o) for o in a.get("instrumentation") or []])
@@ -204,7 +207,81 @@ def call_b_input(track: Dict, catalog: str, album: Optional[Dict] = None) -> Dic
         "do_not_claim": [p for p in FAMILY_PATHS if fams[p].presence.value != "present"],
         "dialogue_friendly": any(r.get("quality") == "clear" for r in sonic_map.get("dialogue_room") or []),
         "hybridity_electronic_pct": a.get("hybridity_electronic_pct"),
+        # Measure first (2026-09-28): the file's own timestamps, the only ones the writer may quote.
+        "measured": structure_mod.brief(track.get("structure") or {}),
+        "measured_timestamps": [gate.format_time(t) for t in structure_mod.event_times(track.get("structure") or {})],
+        # Instrument naming by confidence (Damir, 2026-09-28): >= NAME_PLAIN plain name, else "-like".
+        "named_sources": named_sources(fams, family_label, rules.catalog_code(catalog)),
     }
+
+
+# Naming thresholds (PFD_RULES.md LOCKED "Instrument naming", 2026-09-28). Below Call A's 0.6 floor a
+# family is uncertain and never written; between the floor and NAME_PLAIN it is hedged with "-like".
+NAME_PLAIN = 0.9
+
+# What a family is called in prose when the listener gave no instrument name. Schema labels
+# ("drone or sub", "trailer impacts") are not words a supervisor writes.
+NATURAL_NAMES = {
+    "percussion.drum_kit": "drum kit", "percussion.electronic_beats": "programmed beat",
+    "percussion.orchestral_percussion": "orchestral percussion", "percussion.trailer_impacts": "impacts",
+    "percussion.hand_and_world_percussion": "hand percussion",
+    "strings.orchestral_strings": "strings", "strings.solo_bowed_string": "solo string",
+    "strings.synth_string_pad": "string pad", "strings.harp": "harp", "strings.acoustic_guitar": "acoustic guitar",
+    "strings.electric_guitar": "electric guitar", "strings.world_plucked": "plucked strings",
+    "keys_and_synths.piano": "piano", "keys_and_synths.electric_piano_or_organ": "organ",
+    "keys_and_synths.synth_pad": "synth pad", "keys_and_synths.synth_lead_or_arp": "arpeggio",
+    "keys_and_synths.pulses_and_ostinati": "ostinato",
+    "bass.live_bass": "bass", "bass.synth_bass": "synth bass", "bass.drone_or_sub": "drone",
+    "winds.orchestral_brass": "brass", "winds.hybrid_or_synth_brass": "synth brass", "winds.woodwinds": "woodwinds",
+    "winds.world_wind": "wind instrument",
+    "voice.solo_voice_lyrics": "voice", "voice.solo_voice_wordless": "wordless voice", "voice.choir": "choir",
+    "voice.vocal_chops_fx": "vocal fragments", "voice.spoken_or_shouted": "spoken voice",
+    "voice.breath_and_body_foley": "breathing",
+    "sound_design.textures_and_atmos": "textures", "sound_design.processed_or_reversed": "processed textures",
+}
+# Catalog words a family name must not smuggle in (PFD_RULES catalog DNA).
+CATALOG_RENAMES = {"SSC": {"impacts": "heavy strikes", "programmed beat": "pulse", "synth brass": "brass-like swell"}}
+
+
+def natural_name(path: str, note: str, family_label, catalog_code: str = "") -> str:
+    """The family's prose name. The listener's note is a role or a guess ("Primary harmonic carrier"),
+    never a name the writer may use, so it is carried separately as listener_note."""
+    name = NATURAL_NAMES.get(path, family_label(path))
+    return CATALOG_RENAMES.get(catalog_code, {}).get(name.lower(), name)
+
+
+HEDGES = {  # how a multi-word name is hedged; single words take "-like"
+    "heavy strikes": "strike-like accents", "string pad": "pad-like strings", "synth pad": "pad-like synth",
+    "synth bass": "bass-like synth", "solo string": "solo string-like line", "drum kit": "kit-like drums",
+    "programmed beat": "beat-like pulse", "hand percussion": "drum-like hand percussion",
+    "orchestral percussion": "timpani-like percussion", "acoustic guitar": "guitar-like plucks",
+    "electric guitar": "guitar-like line", "plucked strings": "pluck-like strings", "wordless voice": "voice-like tone",
+    "vocal fragments": "voice-like fragments", "spoken voice": "voice-like murmur", "wind instrument": "wind-like line",
+    "processed textures": "processed texture-like layer", "brass-like swell": "brass-like swell",
+}
+
+
+def hedge(name: str) -> str:
+    if "-like" in name:
+        return name
+    if name in HEDGES:
+        return HEDGES[name]
+    words = name.split()
+    return f"{name}-like" if len(words) == 1 else f"{words[-1]}-like {' '.join(words[:-1])}".strip()
+
+
+def named_sources(fams: Dict, family_label, catalog_code: str = "") -> List[Dict]:
+    out = []
+    for path, fam in fams.items():
+        if fam.presence.value != "present":
+            continue
+        name = natural_name(path, fam.note, family_label, catalog_code)
+        conf = float(fam.confidence or 0)
+        out.append({"family": path, "heard_as": name, "confidence": round(conf, 2),
+                    "write_as": name if conf >= NAME_PLAIN else hedge(name),
+                    "role": fam.prominence.value if fam.prominence else "",
+                    "listener_note": (fam.note or "").strip()[:60]})
+    return sorted(out, key=lambda x: -x["confidence"])
 
 
 def _writer_context(track: Dict, catalog: str) -> str:
@@ -252,8 +329,14 @@ class PromptEngine:
                      "Keep the property order; no markdown, no commentary.\n" + shape)
         return text
 
-    def call_a_user(self, mix_type: str, duration_seconds: float, hint: str = "", correction: str = "") -> str:
+    def call_a_user(self, mix_type: str, duration_seconds: float, hint: str = "", correction: str = "",
+                    structure_brief: str = "") -> str:
         text = CALL_A_USER.format(mix_type=gate.mix_type_code(mix_type), duration_seconds=duration_seconds)
+        if structure_brief:
+            # Measured first (2026-09-28). Shape facts only: no title, album, concept or instruments.
+            text += ("\n\nMEASURED FROM THE FILE BEFORE YOU LISTEN (waveform arithmetic, trust it over your own "
+                     "timing; place every sonic-map event, section boundary and ending on these moments unless "
+                     "you clearly hear otherwise):\n" + structure_brief)
         if correction:
             text += (f"\nAn editor who listened to this file says: {correction.strip()} "
                      "Treat that as true and make every field agree with it.")
@@ -386,6 +469,22 @@ TRACK DESCRIPTIONS:
 {self._bullets(track_descriptions)}{avoid_line}
 
 Return ONLY JSON: {{"names": [{{"name": "...", "rationale": "one line"}}]}}"""
+
+    # ── Track titles (PFD_RULES "Track titles", 2026-09-28) ───────────────────
+    def track_titles_prompt(self, album_name: str, album_description: str, items: List[Dict]) -> str:
+        rows = "\n".join(f"- {i['original']}: {i['description']}" for i in items)
+        return f"""Propose the track titles for this album, one per track.
+
+TRACK TITLES SPEC:
+{rules.tunable("Track titles")}
+
+ALBUM: {album_name}
+ALBUM DESCRIPTION: {album_description}
+
+TRACKS (composer's title: description):
+{rows}
+
+For each track: keep the composer's title when it already carries the album's concept; otherwise propose one new title in the middle path. Return ONLY JSON: {{"titles": [{{"original": "...", "proposed": "...", "keep": true|false, "rationale": "one line"}}]}}"""
 
     # ── Cover art ─────────────────────────────────────────────────────────────
     def cover_art_prompt(self, catalog: str, album_name: str, album_description: str,
