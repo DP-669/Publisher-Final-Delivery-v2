@@ -12,7 +12,7 @@ Steps (PFD_RULES "Album order of work"):
   3. state.json + a PFD draft CSV in <out_dir>
 Album title, description, track titles and the MailChimp intro run through the same
 engine methods when an Anthropic key is present (env ANTHROPIC_API_KEY or Keychain
-item "claude-api"); otherwise they are left for the chat, and the CSV says so.
+item "anthropic-api", the one already on the Mac Studio); otherwise they are left for the chat, and the CSV says so.
 
 Keys: GEMINI_API_KEY env or Keychain item "gemini-api". Nothing runs on a schedule.
 """
@@ -81,7 +81,7 @@ def main():
     args = ap.parse_args()
 
     gem = os.environ.get("GEMINI_API_KEY") or keychain("gemini-api")
-    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("claude-api")
+    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("anthropic-api") or keychain("claude-api")
     if not gem:
         sys.exit("No Gemini key (env GEMINI_API_KEY or Keychain 'gemini-api').")
     out = Path(args.out)
