@@ -497,7 +497,7 @@ COVER-ART PROMPTS SPEC:
 {rules.tunable("Cover-art prompts")}
 
 FILM STOCK LINE FOR THIS CATALOG: {FILM_STOCK[code]}
-The LOCKED human-anatomy rule applies to every prompt.
+The LOCKED "Cover art and people" rule applies to every prompt.
 
 ALBUM: {album_name}
 ALBUM DESCRIPTION: {album_description}
