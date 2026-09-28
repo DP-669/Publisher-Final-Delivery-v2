@@ -1,5 +1,5 @@
 # PFD_RULES.md
-version: 0.7 (draft, 2026-09-28)
+version: 0.8 (draft, 2026-09-28)
 status: DRAFT — becomes v1.0 when Claude Code merges the M2 build and Damir runs the first real track.
 
 This file is the only place PFD rules live. The app reads it at startup and injects the LOCKED section plus the active catalog's block into every model call. Editing this file changes the app's behavior on the next deploy. Nothing in prompts.py may contradict it; if it does, prompts.py is wrong.
@@ -53,8 +53,8 @@ Every track description ends with a Fits line: `Fits: <tag>, <tag>, <tag>` — t
 ### Voice
 One consensus voice per track. The three-voice output (editor, supervisor, context) stays retired: the perspectives live inside the listen's map questions and fuse in the description's three moves.
 
-### Human anatomy in cover art
-Cover-art prompts never request hands, faces, full human figures, or crowds. Objects, places, weather, materials, macro detail, architecture and light carry the story.
+### Cover art and people
+People are allowed on covers (Damir, 2026-09-28; the catalogs are full of them: Draō, Phonos, Battle Scars, Abduction, Neon Noir, most of EPP). Prompts avoid what image models get wrong: close-up hands, crowds, readable text. SSC prefers people withheld — back turned, cropped, blurred, small in the frame.
 
 ---
 
@@ -158,7 +158,7 @@ Track descriptions and keywords → album title → album description → track 
 ### Cover-art prompts (MidJourney, manual)
 - Four prompts per album. Narrative-first: a single frame from a story, not a mood board.
 - Per-catalog film stock line, then `--v 7.0 --ar 1:1 --sref [URL]` — verify the current MidJourney version flag before use.
-- Obey the LOCKED anatomy rule.
+- Obey the LOCKED "Cover art and people" rule.
 - Last line of every prompt set is the DNA gut-check: "Would a poster designer at a studio we work with put this in a portfolio?"
 
 ### Few-shot examples
@@ -187,6 +187,7 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
+- 0.8 — 2026-09-28 — Human-anatomy ban on cover art removed (Damir): people allowed; avoid close-up hands, crowds, readable text; SSC withholds the person.
 - 0.7 — 2026-09-28 — Measure first (structure.py before Call A; measured timestamps only in Call B; referee.py cross-checks), instrument naming by confidence (0.9 plain / 0.6–0.9 "-like"), one timestamp per description, no cross-track phrase repeats, album order of work, film-title album names, track-title revision step, MailChimp intro as poster copy (locked note), first SSC exemplars (Nervous Habits).
 - 0.6 — 2026-09-23 — Damir's PFD-CALLB-SHIP decision: voice.breath_and_body_foley family added to Call A; rC "Listen note" sent to Call A; G5–G8 warn instead of block until five albums have DIFF files; §6 edit-distance criterion withdrawn.
 - 0.5 — 2026-09-22 — Call B final form (docs/PFD_v4_CallB_Final_2026-09-22.md §5): Fits become 2–3 lowercase scene-level tags, never media types; each catalog's "Placement list for Fits" becomes "Placement keywords"; album concept and track title go to Call B only; ALT mixes = fixed prefix + FULL description; exemplars from shipped finals only (Vessel removed); three-voice output stays retired; Track description spec rewritten to the three moves.
