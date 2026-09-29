@@ -61,7 +61,9 @@ def test_apply_to_named_sources_keeps_roles_and_hedges_missing():
     by = {o["family"]: o for o in out}
     assert by["strings.orchestral_strings"]["write_as"] == "strings"        # stem present → plain, even at 0.7
     assert by["voice.choir"]["write_as"] == "choir-like"                    # no stem → hedged, even at 0.95
-    assert by["bass.drone_or_sub"]["write_as"] == "a held low note"        # SSC: no Drone stem → no "drone"
+    assert by["bass.drone_or_sub"]["write_as"] == "a held low note"        # SSC: never "drone"
+    st2 = {"families": ["bass.drone_or_sub"], "labels": ["drone"]}
+    assert stems.apply_to_named_sources(named[2:], st2, "SSC")[0]["write_as"] == "a held low note"  # even with a Drone stem
     assert by["voice.choir"]["role"] == "lead"                              # prominence untouched: stems ≠ weight
 
 

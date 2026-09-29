@@ -76,7 +76,7 @@ Allowed placement words: film, score, prestige TV, documentary, drama, period, a
 Forbidden placement words: trailer (as a lead placement), promo, advertising, commercial, brand, corporate, reality TV, social, sports, thriller, chase, countdown, pursuit, esports, cyberpunk.
 Forbidden jargon: underscore, bed, stinger, cue-sheet language of any kind.
 Listen note: Orchestral players here use extended techniques (col legno, sul ponticello, harmonics, scratch tone) and sounds are often processed; a struck or scraped string is still a string, not a drum. Human breath and voice occur as instruments.
-No "drone" in SSC (Vesna, 2026-09-29) unless a stem is named Drone(s); a sustained low sound is otherwise named by its stem (cello, bass, pad) or written as "a held low note".
+Organic language (Damir and Vesna, 2026-09-29): SSC is built around organic, orchestral instruments and its descriptions must project that. Never "drone", even when a stem is named Drones — write the organic source (low cello tone, held low note, bowed bass) instead. Electronic or processed elements are framed organically (a held chord, a scraped string, dry percussion, a ringing tone) or left unmentioned; no "synth", "pad", "mechanical", "processed", "electronic", "programmed". Words that belong to the album's own idea (clockwork, ticking, music box) are allowed when the concept calls for them.
 Placement keywords: Film, Prestige TV, Documentary, Drama, Period, Arthouse, Streaming Series.
 
 ### EPP — Ekonomic Propaganda
@@ -191,7 +191,7 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
-- 0.9 — 2026-09-29 — From Vesna's stem check of SSC022 (9 of 24 descriptions wrong): stems decide instrument names; events only when measured; no "drone" in SSC without a Drone stem; keywords must add to the description, not repeat it.
+- 0.9 — 2026-09-29 — From Vesna's stem check of SSC022 (9 of 24 descriptions wrong): stems decide instrument names; events only when measured; keywords must add to the description, not repeat it. Same day, second note from Vesna backed by Damir: SSC organic language — never "drone", electronic elements framed organically or left out.
 - 0.8 — 2026-09-28 — Human-anatomy ban on cover art removed (Damir): people allowed; avoid close-up hands, crowds, readable text; SSC withholds the person.
 - 0.7 — 2026-09-28 — Measure first (structure.py before Call A; measured timestamps only in Call B; referee.py cross-checks), instrument naming by confidence (0.9 plain / 0.6–0.9 "-like"), one timestamp per description, no cross-track phrase repeats, album order of work, film-title album names, track-title revision step, MailChimp intro as poster copy (locked note), first SSC exemplars (Nervous Habits).
 - 0.6 — 2026-09-23 — Damir's PFD-CALLB-SHIP decision: voice.breath_and_body_foley family added to Call A; rC "Listen note" sent to Call A; G5–G8 warn instead of block until five albums have DIFF files; §6 edit-distance criterion withdrawn.

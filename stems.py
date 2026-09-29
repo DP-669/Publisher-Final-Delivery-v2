@@ -154,8 +154,8 @@ def apply_to_named_sources(named: List[Dict], stems: Optional[Dict], catalog_cod
             from prompts import hedge
             s["write_as"] = hedge(s.get("heard_as", s.get("write_as", "")))
             s["stem"] = "no"
-            if fam == "bass.drone_or_sub" and catalog_code == "SSC":
-                s["write_as"] = "a held low note"
+        if fam == "bass.drone_or_sub" and catalog_code == "SSC":
+            s["write_as"] = "a held low note"  # SSC organic language: never "drone", stem or no stem
         out.append(s)
     return out
 
