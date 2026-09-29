@@ -71,13 +71,13 @@ Listen note: This catalog routinely uses processed human breath and voice as ins
 Placement keywords: Trailer, Teaser, TV Promo, Film, TV Drama, Documentary, Sizzle Reel, Network Promo.
 
 ### SSC — Short Story Collective
-Identity: traditionally recorded orchestral cinematic music. Film score register. Prestige TV, documentary, arthouse, drama, period. Elegant, emotionally honest, never trailer-loud.
-Allowed placement words: film, score, prestige TV, documentary, drama, period, arthouse, streaming series, TV drama, ballet, concert.
-Forbidden placement words: trailer (as a lead placement), promo, advertising, commercial, brand, corporate, reality TV, social, sports, thriller, chase, countdown, pursuit, esports, cyberpunk.
+Identity: music made for movie trailers (Damir, 2026-09-29) — traditionally recorded orchestral music, often recorded live and in locations around the world, for drama, arthouse, historical and period films, sometimes horror. Not the big bombastic blockbuster sound: the campaigns where electronic instruments would get a track ruled out. Music supervisors come to SSC because it is orchestral and organic (e.g. HBO's The Gilded Age). Sub-publishers also place it in wider production-music contexts, but it is created for trailers.
+Allowed placement words: trailer, teaser, film, score, prestige TV, documentary, drama, period, historical, arthouse, horror, streaming series, TV drama, ballet, concert.
+Forbidden placement words: advertising, commercial, brand, corporate, reality TV, social, sports, esports, cyberpunk.
 Forbidden jargon: underscore, bed, stinger, cue-sheet language of any kind.
 Listen note: Orchestral players here use extended techniques (col legno, sul ponticello, harmonics, scratch tone) and sounds are often processed; a struck or scraped string is still a string, not a drum. Human breath and voice occur as instruments.
 Organic language (Damir and Vesna, 2026-09-29): SSC is built around organic, orchestral instruments and its descriptions must project that. Never "drone", even when a stem is named Drones — write the organic source (low cello tone, held low note, bowed bass) instead. Electronic or processed elements are framed organically (a held chord, a scraped string, dry percussion, a ringing tone) or left unmentioned; no "synth", "pad", "mechanical", "processed", "electronic", "programmed". Words that belong to the album's own idea (clockwork, ticking, music box) are allowed when the concept calls for them.
-Placement keywords: Film, Prestige TV, Documentary, Drama, Period, Arthouse, Streaming Series.
+Placement keywords: Trailer, Film, Prestige TV, Drama, Period, Arthouse, Documentary, Streaming Series.
 
 ### EPP — Ekonomic Propaganda
 Identity: broad production music with a fixed set of lanes. Advertising and brand, unscripted and reality TV, scripted TV, TV promos, documentary, corporate, educational, lifestyle, cooking, gaming, YouTube, social.
@@ -121,7 +121,7 @@ Call B (Gemini, text only) writes from the sonic map and the actors only — alb
 - Lead with what the track feels like and what it does, not with numbers; more than one timestamp reads like a manual (Damir, 2026-09-27).
 - Never "drums" when the measured weight carrier is harmonic; write hits, strikes or accents. Never "full orchestra" unless confirmed; "thicker arrangement". "Distorted" only for a sound that is actually distorted (amp, crusher), never for a mood.
 - No sentence, and no phrase of four words or more, may appear in two descriptions on the same album. The album concept is shown through what the sound does; it is never written as the same line twice.
-- SSC: no thriller, chase, countdown, pursuit, trailer, promo, stinger, underscore, bed. The listener's tone words are proposals, never copied.
+- SSC: no stinger, underscore, bed (cue-sheet jargon). The listener's tone words are proposals, never copied.
 - Length before the Fits line: rC and SSC 45–80 words, EPP 35–60.
 - No track title in the description. No composer name. No "this track".
 - Writer: set by `track_writer` below.
@@ -191,7 +191,7 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
-- 0.9 — 2026-09-29 — From Vesna's stem check of SSC022 (9 of 24 descriptions wrong): stems decide instrument names; events only when measured; keywords must add to the description, not repeat it. Same day, second note from Vesna backed by Damir: SSC organic language — never "drone", electronic elements framed organically or left out.
+- 0.9 — 2026-09-29 — SSC identity corrected (Damir): SSC is made for movie trailers — orchestral, organic, drama/arthouse/historical/horror; the old "never trailer-loud" line and the trailer/thriller/chase/countdown/pursuit bans were wrong and are removed. From Vesna's stem check of SSC022 (9 of 24 descriptions wrong): stems decide instrument names; events only when measured; keywords must add to the description, not repeat it. Same day, second note from Vesna backed by Damir: SSC organic language — never "drone", electronic elements framed organically or left out.
 - 0.8 — 2026-09-28 — Human-anatomy ban on cover art removed (Damir): people allowed; avoid close-up hands, crowds, readable text; SSC withholds the person.
 - 0.7 — 2026-09-28 — Measure first (structure.py before Call A; measured timestamps only in Call B; referee.py cross-checks), instrument naming by confidence (0.9 plain / 0.6–0.9 "-like"), one timestamp per description, no cross-track phrase repeats, album order of work, film-title album names, track-title revision step, MailChimp intro as poster copy (locked note), first SSC exemplars (Nervous Habits).
 - 0.6 — 2026-09-23 — Damir's PFD-CALLB-SHIP decision: voice.breath_and_body_foley family added to Call A; rC "Listen note" sent to Call A; G5–G8 warn instead of block until five albums have DIFF files; §6 edit-distance criterion withdrawn.

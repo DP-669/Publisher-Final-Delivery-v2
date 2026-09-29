@@ -97,7 +97,7 @@ class TestParsedLists(unittest.TestCase):
         self.assertIn("trailer", epp)
         self.assertIn("hollywood", epp)
         ssc = {f["word"]: f["qualifier"] for f in rules.forbidden_placement_words("SSC")}
-        self.assertEqual(ssc["trailer"], "as a lead placement")
+        self.assertNotIn("trailer", ssc)  # SSC is made for trailers (Damir, 2026-09-29)
         self.assertIn("underscore", ssc)  # SSC forbidden jargon
 
     def test_placement_keywords_parse(self):

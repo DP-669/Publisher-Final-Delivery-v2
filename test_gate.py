@@ -432,11 +432,11 @@ class TestTextRules(unittest.TestCase):
         self.assertIn("commercial", bad["words"])
         self.assertIn("commercial", gate.explain(bad)["values"])
 
-    def test_ssc_trailer_only_forbidden_as_lead(self):
-        body = "Strings hold a long line. Works under a trailer's quiet middle. Fits: Film, Drama"
-        self.assertNotIn("FORBIDDEN", codes(gate.description_reasons(body, "SSC")))
+    def test_ssc_trailer_allowed(self):
+        # SSC is made for movie trailers (Damir, 2026-09-29): "trailer" is never forbidden there.
         lead = "Trailer-ready strings rise. They end softly. Fits: Film, Drama"
-        self.assertIn("FORBIDDEN", codes(gate.description_reasons(lead, "SSC")))
+        self.assertNotIn("FORBIDDEN", codes(gate.description_reasons(lead, "SSC")))
+        self.assertIn("FORBIDDEN", codes(gate.description_reasons("Built for an advertising spot. Fits: Film", "SSC")))
 
     def test_sentence_helper(self):
         self.assertEqual(gate.sentence("keyword count 3 (must be 12–18)"), "Keyword count 3 (must be 12–18).")
