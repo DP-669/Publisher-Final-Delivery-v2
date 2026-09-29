@@ -188,7 +188,7 @@ def call_b_input(track: Dict, catalog: str, album: Optional[Dict] = None) -> Dic
     duration = track.get("Duration Seconds")
     label = (track.get("Mix Type") or "").strip().lower()
     mix = "ALT" if label.startswith("alt") else gate.mix_type_code(label or a.get("mix_type") or "")
-    return {
+    out = {
         "album_concept": (album.get("album_concept") or "").strip(),
         "album_title": (album.get("album_title") or "").strip(),
         "track_title": track.get("Parent Track") or track.get("Title", ""),
@@ -213,6 +213,16 @@ def call_b_input(track: Dict, catalog: str, album: Optional[Dict] = None) -> Dic
         # Instrument naming by confidence (Damir, 2026-09-28): >= NAME_PLAIN plain name, else "-like".
         "named_sources": named_sources(fams, family_label, rules.catalog_code(catalog)),
     }
+    # Stems decide names (PFD_RULES 0.9, 2026-09-29): a family with a stem is written plainly, one
+    # without is hedged at most. Presence only — the listener's roles (lead/supporting) are untouched.
+    stems = track.get("stems")
+    if stems and stems.get("families"):
+        import stems as stems_mod
+        out["named_sources"] = stems_mod.apply_to_named_sources(out["named_sources"], stems, rules.catalog_code(catalog))
+        out["stem_sources"] = stems["labels"]  # the composer's own words for what is in the mix
+        out["do_not_claim"] = sorted(set(out["do_not_claim"]) | {p for p in FAMILY_PATHS if p not in set(stems["families"])
+                                                                 and p not in {s["family"] for s in out["named_sources"]}})
+    return out
 
 
 # Naming thresholds (PFD_RULES.md LOCKED "Instrument naming", 2026-09-28). Below Call A's 0.6 floor a

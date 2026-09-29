@@ -1,5 +1,5 @@
 # PFD_RULES.md
-version: 0.8 (draft, 2026-09-28)
+version: 0.9 (draft, 2026-09-29)
 status: DRAFT — becomes v1.0 when Claude Code merges the M2 build and Damir runs the first real track.
 
 This file is the only place PFD rules live. The app reads it at startup and injects the LOCKED section plus the active catalog's block into every model call. Editing this file changes the app's behavior on the next deploy. Nothing in prompts.py may contradict it; if it does, prompts.py is wrong.
@@ -25,6 +25,8 @@ A run is rC, SSC or EPP. Never mixed. The active catalog's DNA block is injected
 - Every present claim carries timestamped evidence. Python verifies timing, ending, loudness shape and section ordering against the decoded waveform (librosa). Contradiction with the waveform or with itself blocks the track; uncertainty never does. Exception (Damir, 2026-09-23): G5–G8 (first sound, loudest moment, end silence, ending type) warn instead of block — "Ready with note", with the measured and claimed values — until five albums have DIFF files.
 - Measure first (Damir, 2026-09-28): before any model listens, Python measures the file's shape (structure.py: sections, stop-downs, hits, ending and tail, dialogue room, tempo per section, harmonic/percussive weight). The listener receives these facts with the audio and places its events on them; the writer may quote only measured timestamps; the referee (referee.py) checks every written timestamp against them. Timings come from arithmetic, words come from the model.
 - Instrument naming follows the listener's confidence (Damir, 2026-09-28): a family is written with its plain name at confidence 0.9 or above, as "<name>-like" between 0.6 and 0.9, and never below 0.6 (uncertain). Altered, processed and hybrid sounds are the norm in these catalogs; "-like" is the honest default, not a weakness.
+- Stems decide names (Damir, 2026-09-29, after Vesna's SSC022 check): when a track's stems exist, their file names are the composer's own instrument list and outrank the listener. A family that has a stem is written with its plain name; a family with no stem is never written plainly, whatever the listener's confidence ("-like" at most, or nothing). The stems are the truth about what is present; they say nothing about prominence. Twenty string stems and two vocal stems do not make the strings lead (Damir, 2026-09-29: composers stack libraries, then pull them down under the vocal). What leads comes only from the mixed audio: measured weight and the listener's balance.
+- Events must be measured, not dramatised (Damir, 2026-09-29): a hit, a choir entry, a "breath before the fight" or any turn of events is written only when structure.py measured it (a hit, a stop-down, a section start or a loudness step at that time). A section boundary is not a hit. If nothing was measured, nothing happened.
 - BLOCKED is a real state. It is shown in the app and carried into the export. It is never silently converted to a result.
 - No silent failure anywhere on the analysis or export path. If it failed, the user sees it.
 
@@ -74,6 +76,7 @@ Allowed placement words: film, score, prestige TV, documentary, drama, period, a
 Forbidden placement words: trailer (as a lead placement), promo, advertising, commercial, brand, corporate, reality TV, social, sports, thriller, chase, countdown, pursuit, esports, cyberpunk.
 Forbidden jargon: underscore, bed, stinger, cue-sheet language of any kind.
 Listen note: Orchestral players here use extended techniques (col legno, sul ponticello, harmonics, scratch tone) and sounds are often processed; a struck or scraped string is still a string, not a drum. Human breath and voice occur as instruments.
+No "drone" in SSC (Vesna, 2026-09-29) unless a stem is named Drone(s); a sustained low sound is otherwise named by its stem (cello, bass, pad) or written as "a held low note".
 Placement keywords: Film, Prestige TV, Documentary, Drama, Period, Arthouse, Streaming Series.
 
 ### EPP — Ekonomic Propaganda
@@ -132,6 +135,7 @@ Other legal values: `claude_synth`, `claude_edit`. Set by the blind test (M3). D
 - Generated from the sonic map, in internal buckets: the scene it serves (2–3), the arc in plain words (1), lead actors (2–4), editor utilities (3–5, e.g. VO Room Intro, Hard Cut 1:41, Vacuum Cuts, Loop Ready), tempo and ending (2), media placements from the catalog's Placement keywords (2–3) — buckets are scaffolding, not output.
 - No bare instrument unless it is the soul of the track. No generic sound-design mechanics (riser, hit, boomer, stutter, whoosh) — a signature event is fine (Vacuum Cuts, Klaxon, Breath Foley).
 - Ending type and dialogue-friendliness are keywords when true: Hard Cut Ending, Button Ending, Ring-Out Tail, Dialogue Friendly, Modular.
+- Keywords add, never repeat (Vesna, 2026-09-29): a keyword that already appears as a word in the track's description is dropped; the list must give a searcher what the description does not say (mood synonyms, use cases, era, territory, comparable scenes). Keywords are checked against the description in code.
 - EPP: lane first.
 
 ### Album order of work
@@ -157,7 +161,7 @@ Track descriptions and keywords → album title → album description → track 
 
 ### Cover-art prompts (MidJourney, manual)
 - Four prompts per album. Narrative-first: a single frame from a story, not a mood board.
-- Per-catalog film stock line, then `--v 8.2 --ar 1:1 --sref [URL]` (V8.2 confirmed current by Damir 2026-09-28; re-verify when MidJourney ships a new version).
+- Per-catalog film stock line, then `--v 7.0 --ar 1:1 --sref [URL]` — verify the current MidJourney version flag before use.
 - Obey the LOCKED "Cover art and people" rule.
 - Last line of every prompt set is the DNA gut-check: "Would a poster designer at a studio we work with put this in a portfolio?"
 
@@ -187,6 +191,7 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
+- 0.9 — 2026-09-29 — From Vesna's stem check of SSC022 (9 of 24 descriptions wrong): stems decide instrument names; events only when measured; no "drone" in SSC without a Drone stem; keywords must add to the description, not repeat it.
 - 0.8 — 2026-09-28 — Human-anatomy ban on cover art removed (Damir): people allowed; avoid close-up hands, crowds, readable text; SSC withholds the person.
 - 0.7 — 2026-09-28 — Measure first (structure.py before Call A; measured timestamps only in Call B; referee.py cross-checks), instrument naming by confidence (0.9 plain / 0.6–0.9 "-like"), one timestamp per description, no cross-track phrase repeats, album order of work, film-title album names, track-title revision step, MailChimp intro as poster copy (locked note), first SSC exemplars (Nervous Habits).
 - 0.6 — 2026-09-23 — Damir's PFD-CALLB-SHIP decision: voice.breath_and_body_foley family added to Call A; rC "Listen note" sent to Call A; G5–G8 warn instead of block until five albums have DIFF files; §6 edit-distance criterion withdrawn.

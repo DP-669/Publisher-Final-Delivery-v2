@@ -592,10 +592,13 @@ class IngestionEngine:
     def process_track(self, title: str, mix_type: str, data: bytes, ext: str, catalog: str,
                       gemini_api_key: str, claude_api_key: str, lane: Optional[str] = None,
                       source_path: str = "", parent_track: str = "", correction: str = "",
-                      track_id: str = "") -> Dict:
-        """Listen, gate, write. Quota errors raise so the run can stop; other write failures land on the row."""
+                      track_id: str = "", stems: Optional[Dict] = None) -> Dict:
+        """Listen, gate, write. Quota errors raise so the run can stop; other write failures land on the row.
+        `stems` (stems.read_stems) is the composer's presence list; it reaches the writer through call_b_input."""
         result = self.listen(data, ext, mix_type, gemini_api_key, correction=correction, catalog=catalog)
         track = self.track_record(title, mix_type, result, catalog, source_path, parent_track, track_id)
+        if stems:
+            track["stems"] = stems
         if track.get("analysis") and (track["PFD_Gate"]["status"] in gate.READY):
             self.try_write(track, catalog, gemini_api_key, claude_api_key, lane)
         self.refresh_status(track, catalog, lane)

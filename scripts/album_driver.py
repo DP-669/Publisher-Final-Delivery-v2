@@ -12,7 +12,7 @@ Steps (PFD_RULES "Album order of work"):
   3. state.json + a PFD draft CSV in <out_dir>
 Album title, description, track titles and the MailChimp intro run through the same
 engine methods when an Anthropic key is present (env ANTHROPIC_API_KEY or Keychain
-item "anthropic-api", the one already on the Mac Studio); otherwise they are left for the chat, and the CSV says so.
+item "claude-api"); otherwise they are left for the chat, and the CSV says so.
 
 Keys: GEMINI_API_KEY env or Keychain item "gemini-api". Nothing runs on a schedule.
 """
@@ -32,6 +32,7 @@ os.chdir(ROOT)
 
 import gate  # noqa: E402
 import referee  # noqa: E402
+import stems  # noqa: E402
 from engine import IngestionEngine, ClaudeError  # noqa: E402
 
 AUDIO = {".aif", ".aiff", ".wav", ".mp3", ".flac"}
@@ -78,10 +79,11 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--only", default="")
     ap.add_argument("--no-album-steps", action="store_true")
+    ap.add_argument("--stems", default="", help="root of the composer's stem folders (presence list for the writer)")
     args = ap.parse_args()
 
     gem = os.environ.get("GEMINI_API_KEY") or keychain("gemini-api")
-    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("anthropic-api") or keychain("claude-api")
+    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("claude-api")
     if not gem:
         sys.exit("No Gemini key (env GEMINI_API_KEY or Keychain 'gemini-api').")
     out = Path(args.out)
@@ -109,9 +111,13 @@ def main():
             continue
         t0 = time.time()
         data = p.read_bytes()
+        st = stems.stems_for(args.stems, title, mix) if args.stems else None
+        if args.stems:
+            print(f"   stems: {', '.join(st['labels']) if st and st['labels'] else 'none found'}"
+                  + (f"  ({'; '.join(st['anomalies'])})" if st and st.get("anomalies") else ""), flush=True)
         try:
             tr = eng.process_track(title, mix, data, p.suffix.lstrip("."), args.catalog, gem, cla or "",
-                                   source_path=str(p), track_id=f"{title}|{mix}")
+                                   source_path=str(p), track_id=f"{title}|{mix}", stems=st)
         except Exception as exc:
             print(f"FAILED {title} [{mix}]: {type(exc).__name__}: {str(exc)[:300]}", flush=True)
             continue

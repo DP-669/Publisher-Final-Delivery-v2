@@ -8,6 +8,8 @@ Runs after Call B, on the whole album, with no model:
   R4  a phrase of four or more words shared with another track's description on this album
   R5  the same sentence in two descriptions
   R6  more than one timestamp in a description (PFD_RULES: one timestamp, the edit point that matters)
+  R7  an instrument word written plainly with no stem behind it (PFD_RULES 0.9: stems decide names);
+      only when the track carries a stems record with families
 
 Every finding is a warning on the track (PFD_Referee); the album summary is a
 list of {rule, tracks, detail}. Warnings never block; they are shown, exported,
@@ -68,6 +70,11 @@ def check_track(track: Dict) -> List[Dict]:
             out.append({"rule": "R2", "detail": f"'{name}' written plainly; confidence {src.get('confidence')} asks for '{src.get('write_as')}'"})
     if (structure.get("harmonic_share") or 0) >= 0.85 and DRUM_WORDS.search(body):
         out.append({"rule": "R3", "detail": f"drums written; harmonic share {structure.get('harmonic_share')} says the weight is not percussive"})
+    # R7: stems decide names. Only instrument nouns, only plain (not "-like"), only when stems were read.
+    import stems as stems_mod
+    for word, reason in stems_mod.absent_words(track.get("stems")).items():
+        if re.search(rf"\b{re.escape(word)}\b(?!-like)", body, re.I):
+            out.append({"rule": "R7", "detail": f"'{word}' written plainly; {reason}"})
     return out
 
 
@@ -97,7 +104,7 @@ def check_album(tracks: List[Dict]) -> List[Dict]:
     for t in written:
         t["PFD_Referee"] = per_track[id(t)]
         for f in per_track[id(t)]:
-            if f["rule"] in ("R1", "R2", "R3"):
+            if f["rule"] in ("R1", "R2", "R3", "R7"):
                 album.append({"rule": f["rule"], "tracks": [t.get("Title")], "detail": f["detail"]})
     return album
 
@@ -139,4 +146,6 @@ def guidance(findings: List[Dict]) -> str:
             parts.append(f"reword, {f['detail']}")
         elif r == "R6":
             parts.append("keep one timestamp only")
+        elif r == "R7":
+            parts.append(f"name only what the stems contain: {f['detail']}")
     return "; ".join(dict.fromkeys(parts))
