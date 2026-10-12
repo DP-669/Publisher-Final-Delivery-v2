@@ -39,7 +39,7 @@ class TestExport(unittest.TestCase):
     def test_draft_written_on_export(self):
         dbx = MagicMock()
         zip_bytes, zip_name, draft_path = capture.export_album(dbx, _app_data(gate.BLOCKED), "EPP", "TEST")
-        self.assertEqual(draft_path, "/PFD-App/albums/TEST/EPP_TEST_Glass_Hours_DRAFT.csv")
+        self.assertEqual(draft_path, capture.PFD_ROOT + "/albums/TEST/EPP_TEST_Glass_Hours_DRAFT.csv")
         dbx.files_upload.assert_called_once()
         data, path = dbx.files_upload.call_args.args[:2]
         self.assertEqual(path, draft_path)
@@ -121,7 +121,7 @@ class TestState(unittest.TestCase):
         dbx = MagicMock()
         state = {"album_code": "SSC042", "tracks": [], "catalog": "SSC"}
         path = capture.save_state(dbx, "SSC042", state)
-        self.assertEqual(path, "/PFD-App/albums/SSC042/state.json")
+        self.assertEqual(path, capture.PFD_ROOT + "/albums/SSC042/state.json")
         data, written = dbx.files_upload.call_args.args[:2]
         self.assertEqual((json.loads(data), written), (state, path))
         dbx.files_download.return_value = (MagicMock(), MagicMock(content=data))
@@ -134,11 +134,11 @@ class TestState(unittest.TestCase):
         entries = []
         for code, day in (("RC055", 3), ("SSC042", 9)):
             e = MagicMock()
-            e.name, e.path_display = "state.json", f"/PFD-App/albums/{code}/state.json"
+            e.name, e.path_display = "state.json", f"{capture.PFD_ROOT}/albums/{code}/state.json"
             e.server_modified = datetime.datetime(2026, 9, day)
             entries.append(e)
         dbx.files_list_folder.return_value = MagicMock(entries=entries, has_more=False)
-        states = {e.path_display: json.dumps({"album_code": e.path_display.split("/")[3], "catalog": "SSC",
+        states = {e.path_display: json.dumps({"album_code": e.path_display.split("/")[-2], "catalog": "SSC",
                                               "run_status": "review", "exported_at": None}).encode()
                   for e in entries}
         dbx.files_download.side_effect = lambda path: (MagicMock(), MagicMock(content=states[path]))
@@ -179,7 +179,7 @@ class TestDiff(unittest.TestCase):
         dbx = MagicMock()
         entry = MagicMock()
         entry.name = "EPP_TEST_Glass_Hours_DRAFT.csv"
-        entry.path_display = "/PFD-App/albums/TEST/EPP_TEST_Glass_Hours_DRAFT.csv"
+        entry.path_display = capture.PFD_ROOT + "/albums/TEST/EPP_TEST_Glass_Hours_DRAFT.csv"
         dbx.files_list_folder.return_value.entries = [entry]
         draft_csv = capture.build_csv(_app_data(), "EPP")
         dbx.files_download.return_value = (MagicMock(), MagicMock(content=draft_csv))
@@ -187,8 +187,8 @@ class TestDiff(unittest.TestCase):
         final.loc[0, "Track Description"] = "Brass swells over hiss. Ends on a button. Fits: Sounds Tender, Documentary"
         out = capture.save_final_and_diff(dbx, "TEST", final.to_csv(index=False).encode())
         paths = [c.args[1] for c in dbx.files_upload.call_args_list]
-        self.assertEqual(paths, ["/PFD-App/albums/TEST/EPP_TEST_Glass_Hours_FINAL.csv",
-                                 "/PFD-App/albums/TEST/EPP_TEST_Glass_Hours_DIFF.md"])
+        self.assertEqual(paths, [capture.PFD_ROOT + "/albums/TEST/EPP_TEST_Glass_Hours_FINAL.csv",
+                                 capture.PFD_ROOT + "/albums/TEST/EPP_TEST_Glass_Hours_DIFF.md"])
         self.assertIn("track description:", out["summary"])
 
     def test_final_without_draft_is_an_error(self):

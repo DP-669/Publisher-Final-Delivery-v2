@@ -1,9 +1,9 @@
 """
 Capture: what the app produced (DRAFT) versus what Vesna ingested (FINAL).
 
-    /PFD-App/albums/<ALBUMCODE>/<CATALOG>_<ALBUMCODE>_<album>_DRAFT.csv   written on export
-    /PFD-App/albums/<ALBUMCODE>/<CATALOG>_<ALBUMCODE>_<album>_FINAL.csv   uploaded by Vesna
-    /PFD-App/albums/<ALBUMCODE>/<CATALOG>_<ALBUMCODE>_<album>_DIFF.md     word-level edit distance
+    /01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<ALBUMCODE>/<CATALOG>_<ALBUMCODE>_<album>_DRAFT.csv   written on export
+    /01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<ALBUMCODE>/<CATALOG>_<ALBUMCODE>_<album>_FINAL.csv   uploaded by Vesna
+    /01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<ALBUMCODE>/<CATALOG>_<ALBUMCODE>_<album>_DIFF.md     word-level edit distance
 
 The difference between DRAFT and FINAL is how the system learns. Dropbox only;
 nothing here ever writes to Google Drive.
@@ -19,7 +19,7 @@ import pandas as pd
 import gate
 import rules
 
-PFD_ROOT = "/PFD-App"
+PFD_ROOT = "/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App"  # moved into 01 Claude on 2026-10-12; the Dropbox root stays clean
 COLUMNS_REFERENCE_PATH = f"{PFD_ROOT}/reference/sourceaudio_columns.txt"
 TESTS_FOLDER = f"{PFD_ROOT}/tests"
 
@@ -357,7 +357,7 @@ def state_path(album_code: str) -> str:
 
 
 def save_state(dbx, album_code: str, state: Dict) -> str:
-    """Overwrite /PFD-App/albums/<CODE>/state.json. Called after every analysed track and every edit."""
+    """Overwrite /01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<CODE>/state.json. Called after every analysed track and every edit."""
     import json
     path = state_path(album_code)
     dbx.files_upload(json.dumps(state, ensure_ascii=False, default=str).encode("utf-8"), path,
@@ -373,7 +373,7 @@ def load_state(dbx, album_code: str) -> Dict:
 
 def list_recent_albums(dbx, limit: int = 10) -> List[Dict]:
     """
-    Recent albums from /PFD-App/albums/*/state.json, newest first:
+    Recent albums from /01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/*/state.json, newest first:
     {code, name, catalog, date, status, exported}. An empty list when the folder does not exist yet.
     """
     import json

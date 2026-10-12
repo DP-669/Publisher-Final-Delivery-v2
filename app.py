@@ -4,7 +4,7 @@ Publisher Final Delivery — v4.
 Three steps: Start → Review → Export.
 - Start: pick the catalog, paste the Dropbox folder link, analyze. Every track is
   listened to (Call A), checked against its own waveform (gate.py) and written
-  (Call B). Progress is saved to /PFD-App/albums/<CODE>/state.json after every track.
+  (Call B). Progress is saved to /01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<CODE>/state.json after every track.
 - Review: one table. Green = ready, amber = ready with a note, red = blocked with
   a plain-language reason and a fix panel.
 - Export: one ZIP for SourceAudio; the untouched DRAFT CSV is saved to Dropbox.
@@ -96,7 +96,7 @@ def dropbox_status(configured: bool, token: str) -> dict:
         return {"ok": False, "detail": "not configured"}
     try:
         account = eng.get_dropbox_client(token).users_get_current_account()
-        return {"ok": True, "detail": account.name.display_name}
+        return {"ok": True, "detail": f"{account.name.display_name} ({account.email})"}
     except Exception as exc:
         return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
 

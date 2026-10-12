@@ -9,7 +9,7 @@
 | Analysis schema | Flat facts, 3–6 events | **31 instrument families (present/absent/uncertain + evidence), sections, ending, tempo, grounding** |
 | Track status | PASSED / BLOCKED | **PASSED / PASSED_WITH_UNCERTAINTY / BLOCKED** — uncertainty never blocks |
 | Writing | Gemini wrote in the analysis pass | **Call B: Gemini writes from the analysis (no audio); uncertain instruments are never mentioned** |
-| Progress | Auto-save to "PFD Progress" | **`/PFD-App/albums/<CODE>/state.json` after every track** |
+| Progress | Auto-save to "PFD Progress" | **`/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<CODE>/state.json` after every track** |
 | Sidebar | Tabs, errors, uploads, learning, model check | **System health only** |
 
 The full list is in `V4_CHANGES.md`. The gate is described in `GATE_FIX.md`.
@@ -102,6 +102,6 @@ GitHub Actions runs them on every push to `main` and every pull request.
 
 ## Dropbox locations
 
-- `/PFD-App/albums/<ALBUMCODE>/` — `state.json` (progress, saved after every track and edit), DRAFT (app output), FINAL (Vesna's upload), DIFF. Not a release folder; do not clean it.
-- `/PFD-App/tests/` — writing-style comparisons.
-- `/PFD-App/reference/sourceaudio_columns.txt` — optional column order for the CSV (one column per line).
+- `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<ALBUMCODE>/` — `state.json` (progress, saved after every track and edit), DRAFT (app output), FINAL (Vesna's upload), DIFF. Not a release folder; do not clean it.
+- `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/tests/` — writing-style comparisons.
+- `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/reference/sourceaudio_columns.txt` — optional column order for the CSV (one column per line).

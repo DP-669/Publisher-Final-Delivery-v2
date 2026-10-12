@@ -22,8 +22,8 @@ See GATE_FIX.md. In short:
   - the folder prefix must match the chosen catalog
   - audio files counted, with a time estimate: "SSC042 · 51 audio files found · about 38 minutes", at 45 s per track (`engine.SECONDS_PER_TRACK`; the live track took 60 s with a re-run)
   - alt mixes and cutdowns counted separately
-- **Progress:** "Track 12 of 51 — listening…", a progress bar, a Stop button, and one row per track as it finishes. Progress is saved to `/PFD-App/albums/<CODE>/state.json` after every track. Stop pauses the run; Start then offers Resume or Review. Review opens automatically at the end. ntfy messages go out on completion and on a quota stop.
-- **Recent albums** from `/PFD-App/albums/*/state.json`: code, name, date, status, an Open button, and "Upload Vesna's final" once exported.
+- **Progress:** "Track 12 of 51 — listening…", a progress bar, a Stop button, and one row per track as it finishes. Progress is saved to `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<CODE>/state.json` after every track. Stop pauses the run; Start then offers Resume or Review. Review opens automatically at the end. ntfy messages go out on completion and on a quota stop.
+- **Recent albums** from `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/*/state.json`: code, name, date, status, an Open button, and "Upload Vesna's final" once exported.
 
 ### Review
 - **One table:** Open, Status, Track, Description (inline editable), Keywords (inline editable), Ending. Filters: All · Needs a look (red + amber) · Ready (green). It defaults to Needs a look when that isn't empty.
@@ -36,7 +36,7 @@ See GATE_FIX.md. In short:
   - **I'll write it** — an empty box; saved only once the text passes the rules; keywords from Call B, or typed when there is no analysis; tagged Manual
   - **Skip this track**
 - **Album details** (collapsed): EPP lane, album description, five names, MailChimp intro, four cover prompts with copy buttons.
-- **Compare writing styles** (Settings toggle): three anonymised versions per track; picks are written to `/PFD-App/tests/` on export.
+- **Compare writing styles** (Settings toggle): three anonymised versions per track; picks are written to `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/tests/` on export.
 
 ### Export
 - Counts, then **Export for SourceAudio**. It stays grey while any track is red, an EPP lane is unconfirmed, or tracks are still pending.
