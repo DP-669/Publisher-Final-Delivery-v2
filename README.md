@@ -24,7 +24,7 @@ One web app that turns a folder of finished MP3s into the metadata package Vesna
 1. Download the ZIP. Paste the CSV into the catalog's Master Metadata sheet and make the fixes you always make.
 2. Export this album's rows as CSV. In the app, on **Start → Recent albums**, tap **Upload Vesna's final** on that album's row. That upload is the whole feedback step.
 3. Ingest to SourceAudio and Harvest Media as usual. Reply to Damir with one line: "imported, no column fixes" or what you had to fix.
-4. Once, please: put the exact SourceAudio import column list in Dropbox at `/PFD-App/reference/sourceaudio_columns.txt`. The app will use that order from then on.
+4. Once, please: put the exact SourceAudio import column list in Dropbox at `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/reference/sourceaudio_columns.txt`. The app will use that order from then on.
 
 ## What "blocked" means
 The app could not trust the analysis. It put a moment past the end of the file, called a ring-out a hard cut, heard a beat the file doesn't have, or contradicted itself. It is not a bug; it is the app refusing to guess. The red row says exactly what didn't match, and a human ear resolves it in under a minute.
@@ -32,8 +32,8 @@ The app could not trust the analysis. It put a moment past the end of the file, 
 ## Where things live
 - App code and rules: GitHub, `DP-669/Publisher-Final-Delivery-v2`. Pushing to `main` redeploys the app.
 - Rules: `PFD_RULES.md` and `EPP_LANES.md` in that repo.
-- Albums: Dropbox `/PFD-App/albums/<album code>/`, holding the progress file (`state.json`), DRAFT, FINAL and DIFF. Not a release folder; do not clean it.
-- Writing-style comparisons: Dropbox `/PFD-App/tests/`.
+- Albums: Dropbox `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/albums/<album code>/`, holding the progress file (`state.json`), DRAFT, FINAL and DIFF. Not a release folder; do not clean it.
+- Writing-style comparisons: Dropbox `/01 rMG Admin/03 Metadata, Registrations & Data/07 AI - Claude, GPT, Google, Perplexity/01 Claude/PFD-App/tests/`.
 - Nothing lives on Google Drive.
 
 ## Changing a rule
