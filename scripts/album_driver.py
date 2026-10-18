@@ -57,6 +57,7 @@ def mix_of(name: str) -> str:
 
 def title_of(name: str) -> str:
     base = re.sub(r"\.[^.]+$", "", name)
+    base = re.sub(r"_+", " ", base)  # "Battered_Full Master" (2026-10-13, EPP Anthony Hugh Harrison)
     base = re.sub(r"\b(full|sparse|sparce)?\s*master(_\d+)?\b", "", base, flags=re.I)
     return re.sub(r"\s+", " ", base).strip(" -_")
 

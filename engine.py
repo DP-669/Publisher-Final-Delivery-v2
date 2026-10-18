@@ -44,7 +44,7 @@ log = logging.getLogger("pfd")
 # The app resolves the newest Opus / newest Pro at runtime (models.resolve).
 # These pins are the fallback when that check fails. Setting GEMINI_AUDIO_MODEL
 # or CLAUDE_WRITING_MODEL in Streamlit secrets (or env) locks the model instead.
-DEFAULT_GEMINI_AUDIO_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_GEMINI_AUDIO_MODEL = "gemini-4-argon"  # Damir 2026-10-17: Argon won the Lioness listen test over 3.1 Pro
 DEFAULT_CLAUDE_WRITING_MODEL = "claude-sonnet-5"
 ALBUM_NAME_COUNT = 10   # PFD_RULES "Album names" (2026-09-28)
 
@@ -62,7 +62,8 @@ def _secret_value(key: str) -> Optional[str]:
     return value or None
 
 
-GEMINI_PIN_EXPLICIT = _secret_value("GEMINI_AUDIO_MODEL") is not None
+# Argon is a human choice (2026-10-17), not "newest Pro": never auto-swap it for a Pro model.
+GEMINI_PIN_EXPLICIT = True
 CLAUDE_PIN_EXPLICIT = _secret_value("CLAUDE_WRITING_MODEL") is not None
 GEMINI_AUDIO_MODEL = _secret_value("GEMINI_AUDIO_MODEL") or DEFAULT_GEMINI_AUDIO_MODEL
 CLAUDE_WRITING_MODEL = _secret_value("CLAUDE_WRITING_MODEL") or DEFAULT_CLAUDE_WRITING_MODEL
@@ -96,6 +97,16 @@ CALL_B_RETRY_MAX_OUTPUT_TOKENS = 16384
 # never silently (widened 2026-09-16: the message text is not dependable).
 CALL_A_MODE = "schema"
 CALL_A_PROMPT_CONFIG = CALL_A_CONFIG.model_copy(update={"response_schema": None})
+
+# Optional thinking level for both Gemini calls (2026-10-13, Argon side-by-side).
+# Off unless GEMINI_THINKING_LEVEL is set (LOW / MEDIUM / HIGH); the live app is unchanged.
+_THINKING = (_secret_value("GEMINI_THINKING_LEVEL") or ("HIGH" if "argon" in GEMINI_AUDIO_MODEL else "")).upper()  # Argon ran at HIGH in the 10-13/10-17 tests
+if _THINKING in ("MINIMAL", "LOW", "MEDIUM", "HIGH"):
+    _tc = types.ThinkingConfig(thinking_level=_THINKING)
+    CALL_A_CONFIG = CALL_A_CONFIG.model_copy(update={"thinking_config": _tc, "max_output_tokens": 65536})
+    CALL_A_PROMPT_CONFIG = CALL_A_PROMPT_CONFIG.model_copy(update={"thinking_config": _tc, "max_output_tokens": 65536})
+    CALL_B_CONFIG = CALL_B_CONFIG.model_copy(update={"thinking_config": _tc, "max_output_tokens": 32768})
+    CALL_B_RETRY_MAX_OUTPUT_TOKENS = 65536
 
 # Wall-clock estimate per analysed file (listen, gate, write), for the Start
 # screen. v3's live listen took ~28 s before its second listen; tune from runs.

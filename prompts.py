@@ -55,6 +55,7 @@ Definitions decide ambiguity:
 - Ostinati also reported under pulses_and_ostinati plus their instrument family.
 - breath_and_body_foley: panting, gasping, hyperventilation, breath loops, heartbeat, swallowing.
 - Processed human breath and vocal textures are frequently mistaken for brass swells or string pads. If the envelope has irregular human timing — inhale/exhale, gasp, catch — it is breath_and_body_foley or vocal_chops_fx, not brass or strings. When unsure, mark the instrument family uncertain and the breath family present.
+- Human voices used as sound — shouts, chants, short exclamations ("hey!", spoken calls), rising wordless "aah" swells — are voice families (spoken_or_shouted, solo_voice_wordless, vocal_chops_fx) or breath_and_body_foley. Report them with timestamps even when percussion leads the mix; they are easy to miss under drums.
 
 Three states: present (point to it, 1-3 evidence items, confidence >= 0.6), absent (listened, not there), uncertain (give reason — this is correct, never a failure).
 Never present with confidence < 0.6. Never present without evidence.
