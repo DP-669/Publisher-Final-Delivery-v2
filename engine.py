@@ -108,9 +108,29 @@ if _THINKING in ("MINIMAL", "LOW", "MEDIUM", "HIGH"):
     CALL_B_CONFIG = CALL_B_CONFIG.model_copy(update={"thinking_config": _tc, "max_output_tokens": 32768})
     CALL_B_RETRY_MAX_OUTPUT_TOKENS = 65536
 
+def _log_usage(model: str, response) -> None:
+    """Token usage per Gemini call, appended to $PFD_USAGE_LOG (JSONL) when set; for cost per album (2026-10-18)."""
+    path = os.environ.get("PFD_USAGE_LOG")
+    if not path:
+        return
+    u = getattr(response, "usage_metadata", None)
+    row = {"t": time.time(), "model": model}
+    for k in ("prompt_token_count", "candidates_token_count", "thoughts_token_count", "total_token_count"):
+        row[k] = getattr(u, k, None) if u is not None else None
+    try:
+        with open(path, "a") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError as exc:
+        log.warning("Could not write usage log %s: %s", path, exc)
+
+
+# Claude's per-track gate/edit replies hit 1024 tokens with no text on the 2026-10-18 Harrison run
+# (stop_reason=max_tokens); give them room.
+TRACK_CLAUDE_MAX_TOKENS = 8192
+
 # Wall-clock estimate per analysed file (listen, gate, write), for the Start
 # screen. v3's live listen took ~28 s before its second listen; tune from runs.
-SECONDS_PER_TRACK = 45
+SECONDS_PER_TRACK = 260  # Argon at HIGH thinking, measured on 12 Harrison tracks (2026-10-18)
 
 DEFAULT_ROOT_PATH = Path(".")
 REFERENCE_DIR = Path(__file__).resolve().parent / "reference"
@@ -413,6 +433,7 @@ class IngestionEngine:
                 from dropbox_pipeline import send_ntfy
                 send_ntfy("⚠️ PFD — Gemini quota error", f"Pipeline paused: {exc}", priority="urgent")
             raise
+        _log_usage(self.gemini_model, response)
         return response.text
 
     # ── Call A + gate ──────────────────────────────────────────────────────────
@@ -570,16 +591,17 @@ class IngestionEngine:
         system = rules.system_instruction(catalog)
         if mode == "claude_synth":
             return self.call_claude(system, self.prompts.track_synth_prompt(track, catalog, is_redo, guidance),
-                                    claude_api_key)
+                                    claude_api_key, max_tokens=TRACK_CLAUDE_MAX_TOKENS)
         gemini_text = track.get("Gemini Description", "")
         issues = [gate.reason_text(r) for r in
                   gate.description_reasons(gemini_text, catalog, base_title(track.get("Title", "")), lane)]
         if mode == "claude_edit":
             return self.call_claude(system, self.prompts.track_edit_prompt(track, catalog, gemini_text, issues,
-                                                                           is_redo, guidance), claude_api_key)
+                                                                           is_redo, guidance), claude_api_key,
+                                    max_tokens=TRACK_CLAUDE_MAX_TOKENS)
         try:
             return self.call_claude(system, self.prompts.track_gate_prompt(track, gemini_text, issues),
-                                    claude_api_key)
+                                    claude_api_key, max_tokens=TRACK_CLAUDE_MAX_TOKENS)
         except ClaudeError as exc:
             report(f"Claude could not gate the description for '{track.get('Title')}' — Gemini's text is kept", exc)
             notes = track.setdefault("PFD_Notes", [])

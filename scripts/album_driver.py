@@ -84,7 +84,7 @@ def main():
     args = ap.parse_args()
 
     gem = os.environ.get("GEMINI_API_KEY") or keychain("gemini-api")
-    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("claude-api")
+    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("anthropic-api") or keychain("claude-api")  # Keychain item is "anthropic-api" (2026-10-18)
     if not gem:
         sys.exit("No Gemini key (env GEMINI_API_KEY or Keychain 'gemini-api').")
     out = Path(args.out)
