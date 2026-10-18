@@ -121,7 +121,7 @@ class TestListen(ListenCase):
         self.assertIs(config.response_schema, None if prompt_mode else Analysis)
         self.assertEqual(config.response_mime_type, "application/json")
         self.assertEqual((config.temperature, config.top_p, config.top_k, config.candidate_count,
-                          config.max_output_tokens), (0.0, 1.0, 1, 1, 16384))
+                          config.max_output_tokens), (0.0, 1.0, 1, 1, engine.CALL_A_CONFIG.max_output_tokens))
         self.assertEqual(config.system_instruction,
                          self.engine.prompts.call_a_system(60.0, include_shape=prompt_mode))
         self.assertIn("Duration: 60.0 seconds. Every timestamp must be between 0 and 60.0.", config.system_instruction)
@@ -233,7 +233,7 @@ class TestProcessTrack(ListenCase):
         call = self.calls()[1]
         config, prompt = call.kwargs["config"], call.kwargs["contents"]
         self.assertIs(config.response_schema, Writing)
-        self.assertEqual((config.temperature, config.top_p, config.max_output_tokens), (0.7, 0.95, 8192))
+        self.assertEqual((config.temperature, config.top_p, config.max_output_tokens), (0.7, 0.95, engine.CALL_B_CONFIG.max_output_tokens))
         self.assertTrue(config.system_instruction.startswith("You are the music supervisor who has just licensed"))
         self.assertIn(CALL_B_VOICE["SSC"], config.system_instruction)
         self.assertNotIn(CALL_B_VOICE["rC"], config.system_instruction)
@@ -347,7 +347,7 @@ class TestProcessTrack(ListenCase):
         with self.assertLogs("pfd", level="WARNING") as logs:
             track = self.process()
         self.assertEqual(track["PFD_Status"], gate.PASSED, track["PFD_Block_Reasons"])
-        self.assertEqual([c.kwargs["config"].max_output_tokens for c in self.calls()[1:]], [8192, 16384])
+        self.assertEqual([c.kwargs["config"].max_output_tokens for c in self.calls()[1:]], [engine.CALL_B_CONFIG.max_output_tokens, engine.CALL_B_RETRY_MAX_OUTPUT_TOKENS])
         self.assertTrue(any("not valid JSON" in m for m in logs.output))
 
     def test_quota_error_while_writing_stops_the_run(self):

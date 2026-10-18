@@ -57,6 +57,7 @@ def mix_of(name: str) -> str:
 
 def title_of(name: str) -> str:
     base = re.sub(r"\.[^.]+$", "", name)
+    base = re.sub(r"_+", " ", base)  # "Battered_Full Master" (2026-10-13, EPP Anthony Hugh Harrison)
     base = re.sub(r"\b(full|sparse|sparce)?\s*master(_\d+)?\b", "", base, flags=re.I)
     return re.sub(r"\s+", " ", base).strip(" -_")
 
@@ -83,7 +84,7 @@ def main():
     args = ap.parse_args()
 
     gem = os.environ.get("GEMINI_API_KEY") or keychain("gemini-api")
-    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("claude-api")
+    cla = os.environ.get("ANTHROPIC_API_KEY") or keychain("anthropic-api") or keychain("claude-api")  # Keychain item is "anthropic-api" (2026-10-18)
     if not gem:
         sys.exit("No Gemini key (env GEMINI_API_KEY or Keychain 'gemini-api').")
     out = Path(args.out)
