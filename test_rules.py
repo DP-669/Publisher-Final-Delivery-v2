@@ -86,7 +86,7 @@ class TestParsedLists(unittest.TestCase):
 
     def test_banned_list_follows_an_edit(self):
         raw = rules.RULES_PATH.read_text(encoding="utf-8")
-        edited = raw.replace("sonic short stories.", "sonic short stories, gritty.")
+        edited = raw.replace("fades out.", "fades out, gritty.")
         self.assertIn("gritty", Rules(edited).banned_list())
 
     def test_forbidden_placement_words_parse(self):

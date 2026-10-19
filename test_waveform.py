@@ -103,3 +103,22 @@ class TestMeasure(WaveCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_lioness_style_stop_is_not_a_fade():
+    """Damir 2026-10-19: Lioness ends with a sudden 26 dB drop and a tail. That is a stop, never a fade."""
+    import numpy as np, structure
+    sr = 8000
+    loud = np.random.default_rng(0).normal(0, 0.2, sr * 20)
+    tail = np.random.default_rng(1).normal(0, 0.2, sr * 3) * np.geomspace(0.05, 0.0005, sr * 3)
+    e = structure.ending(np.concatenate([loud, tail]), sr, 23.0)
+    assert not e["fade_suspected"] and "FADE" not in e["type"]
+
+
+def test_gradual_slide_is_flagged_as_suspected_fade():
+    import numpy as np, structure
+    sr = 8000
+    loud = np.random.default_rng(0).normal(0, 0.2, sr * 20)
+    slide = np.random.default_rng(1).normal(0, 0.2, sr * 8) * np.geomspace(1, 0.003, sr * 8)
+    e = structure.ending(np.concatenate([loud, slide]), sr, 28.0)
+    assert e["fade_suspected"]
