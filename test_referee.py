@@ -5,7 +5,7 @@ import structure
 
 def _structure():
     return {"duration_s": 150.0, "sections": [0.0, 27.0, 50.0, 91.0], "stop_downs": [{"start": 80.3, "len": 0.65}],
-            "hits": [16.0], "ending": {"type": "fade", "tail_len_s": 7.0, "last_hit_at": None, "end_drop_db": 50.0},
+            "hits": [16.0], "ending": {"type": "stop with tail", "tail_len_s": 7.0, "last_hit_at": None, "end_drop_db": 50.0},
             "trajectory": "two-phase", "peak_at_s": 140, "dialogue_room_share": 0.51,
             "dialogue_sections": [[0.0, 27.0]], "tempo": "123 BPM", "bpm": 123.0, "bpm_conf": 0.9,
             "section_tempi": [{"start": 0.0, "end": 27.0, "bpm": 117}], "harmonic_share": 0.9,
@@ -58,3 +58,11 @@ def test_r4_r5_cross_track_repeats():
     assert "R4" in rules
     assert a["PFD_Referee"] and b["PFD_Referee"] and not c["PFD_Referee"]
     assert "reword" in referee.guidance(a["PFD_Referee"])
+
+
+def test_r8_fade_suspected_is_flagged_for_damir():
+    import referee
+    t = {"Title": "X", "Track Description": "Hand drums run hot. Fits: walkouts",
+         "structure": {"sections": [0.0], "hits": [], "stop_downs": [],
+                       "ending": {"type": "FADE SUSPECTED - Damir to listen", "fade_suspected": True}}}
+    assert any(f["rule"] == "R8" for f in referee.check_track(t))

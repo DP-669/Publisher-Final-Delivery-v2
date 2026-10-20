@@ -110,19 +110,41 @@ def ending(y, sr, dur) -> Dict:
             last_hit = round(dur - (k - i) * 0.25, 2)
     if last_hit is not None:
         tail_len = round(dur - last_hit, 2)
+    gradual = _gradual_fall(db)
     if last_hit is not None and dur - last_hit <= 2.5:
         kind = "hard hit"
     elif last_hit is not None:
         kind = "hit with tail"
-    elif tail_len >= 3 and drop >= 15:
-        kind = "fade"
     elif drop < 8:
         kind = "sustained"
+    elif gradual:
+        # Damir 2026-10-19: no fade-out endings, ever. A real fade is flagged to him by name, never written.
+        kind = "FADE SUSPECTED - Damir to listen"
     elif tail_len < 1.5:
         kind = "abrupt"
     else:
-        kind = "fade"
-    return {"type": kind, "tail_len_s": tail_len, "last_hit_at": last_hit, "end_drop_db": round(float(drop), 1)}
+        kind = "stop with tail"
+    return {"type": kind, "tail_len_s": tail_len, "last_hit_at": last_hit, "end_drop_db": round(float(drop), 1),
+            "fade_suspected": bool(gradual)}
+
+
+def _gradual_fall(db_quarter) -> bool:
+    """True only when the level slides down: 20 dB takes 3 s or more and no half-second step drops more than 8 dB.
+    Calibrated on Harrison Lioness Full (Damir's ear: not a fade; it drops 26 dB in half a second)."""
+    k = len(db_quarter) // 2
+    if k < 4:
+        return False
+    db = np.array([db_quarter[2 * i:2 * i + 2].mean() for i in range(k)])
+    body = np.median(db[:max(1, k - 8)])
+    loud = np.where(db >= body - 3)[0]
+    if not len(loud):
+        return False
+    seg = db[int(loud[-1]):]
+    fall = np.where(seg <= seg[0] - 20)[0]
+    n = int(fall[0]) if len(fall) else len(seg) - 1
+    if n < 1:
+        return False
+    return n * 0.5 >= 3.0 and float((-np.diff(seg[:n + 1])).max()) <= 8.0
 
 
 def trajectory(r10, sd, dur):

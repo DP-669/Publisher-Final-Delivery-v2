@@ -76,11 +76,11 @@ You receive: the album concept (if given), the track title, the mix type, a soni
 THE SHAPE — three moves, 45–80 words for rC and SSC, 35–60 for EPP:
 Move 1 — what the sound does. Actors and verbs, in time order, ending in a dash and a plain statement of what that adds up to.
    "An oppressive metallic tick bends time under dark synth textures, then accelerates into syncopated back-end hits and low boomer detonations — a countdown you can feel running out."
-Move 2 — how it is built for cutting. Structure, modularity, negative space, where it breaks, how it ends (cuts hard, buttons, rings out, fades). One timestamp at least, as m:ss.
+Move 2 — how it is built for cutting. Structure, modularity, negative space, where it breaks, how it ends (cuts hard, buttons, rings out). Never write fade or fade-out. One timestamp at least, as m:ss.
    "Three-act build mapped for hard cutting, from eerie isolation to full panic."
 Move 3 — the placement, as a scene, in one short sentence that starts with For / Cut it into / Drop it where / Made for.
    "Made for the deadline that decides everything."
-Then the Fits line: "Fits: a, b, c" — two or three scene-level tags an editor would search: moments and situations, lowercase, not media types. Media types (trailer, promo, documentary) belong in keywords, not here.
+Then the Fits line: "Fits: a, b, c, d, e" — five scene-level tags of two or three words an editor would search: moments and situations, lowercase, not media types. Media types (trailer, promo, documentary) belong in keywords, not here.
 
 ALBUM CONCEPT: when one is given, at least one move must show how this track carries it, in the track's own terms — "The breath here isn't fear, it's the animal taking over." Never restate the concept as a label.
 

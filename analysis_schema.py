@@ -332,7 +332,7 @@ class Writing(BaseModel):
     description: str
     editor_note: str
     keywords: List[str] = Field(min_length=12, max_length=18)
-    fits: List[str] = Field(min_length=2, max_length=3)
+    fits: List[str] = Field(min_length=2, max_length=6)  # prompt asks for five scene tags; EPP lane first (Damir 2026-10-19)
     scene_named: str
 
 

@@ -903,7 +903,7 @@ def status_for(reasons: List[str]) -> str:
     return BLOCKED if reasons else PASSED
 
 
-ENDING_LABELS = {"hard_cut": "Hard cut", "button": "Button", "ring_out": "Ring-out", "fade_out": "Fade-out"}
+ENDING_LABELS = {"hard_cut": "Hard cut", "button": "Button", "ring_out": "Ring-out", "fade_out": "FADE SUSPECTED - Damir to listen"}
 
 
 def format_time(seconds) -> str:

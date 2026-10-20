@@ -8,6 +8,7 @@ Runs after Call B, on the whole album, with no model:
   R4  a phrase of four or more words shared with another track's description on this album
   R5  the same sentence in two descriptions
   R6  more than one timestamp in a description (PFD_RULES: one timestamp, the edit point that matters)
+  R8  the measured ending is a suspected fade: Damir listens (PFD_RULES LOCKED Endings)
   R7  an instrument word written plainly with no stem behind it (PFD_RULES 0.9: stems decide names);
       only when the track carries a stems record with families
 
@@ -75,6 +76,9 @@ def check_track(track: Dict) -> List[Dict]:
     for word, reason in stems_mod.absent_words(track.get("stems")).items():
         if re.search(rf"\b{re.escape(word)}\b(?!-like)", body, re.I):
             out.append({"rule": "R7", "detail": f"'{word}' written plainly; {reason}"})
+    end = structure.get("ending") or {}
+    if end.get("fade_suspected") or str(end.get("type", "")).lower() in ("fade", "fade_out"):
+        out.append({"rule": "R8", "detail": "FADE SUSPECTED at the end: Damir to listen (no fade-outs, ever)"})
     return out
 
 
