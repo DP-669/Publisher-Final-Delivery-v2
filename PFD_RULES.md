@@ -49,7 +49,7 @@ Legal. At most once per album description. Never in a track description's first 
 Internal. The user sees consensus only. Never expose voices, personas, or deliberation.
 
 ### Fits
-Every track description ends with a Fits line: `Fits: <tag>, <tag>, <tag>` — two or three scene-level tags, lowercase: the moments and situations an editor would search for ("dialogue-heavy tension, isolation wards, documentary dread"). A Fits tag is never a media type (trailer, TV promo, documentary…); media placements go in keywords, from the catalog's "Placement keywords". EPP: the album's lane is the first tag.
+Every track description ends with a Fits line: `Fits: <tag>, <tag>, <tag>, <tag>, <tag>` — five scene-level tags, lowercase, each two or three words (Damir, 2026-10-19: more options mean editors think less before they press play): the moments and situations an editor would search for ("dialogue-heavy tension, isolation wards, documentary dread"). A Fits tag is never a media type (trailer, TV promo, documentary…); media placements go in keywords, from the catalog's "Placement keywords". EPP: the album's lane comes first and does not count toward the five.
 
 ### Mixes
 - FULL and SPARSE mixes each get their own listen and their own description. A sparse description opens with what is removed or exposed, then what that makes possible; it is never "the full minus X".
@@ -114,7 +114,7 @@ narrative_map: string                        # A → B → C, with timestamps
 genre_tags: [string]                         # 2–6
 sounds_like_no_names: string                 # never an artist, composer or film name
 ```
-Call B (Gemini, text only) writes from the sonic map and the actors only — album_concept, album_title, track_title, catalog, duration, mix type, alt_descriptor, sibling_full (a sparse mix's FULL description), sonic_map, ending, tempo band, lead and supporting sources, do_not_claim (every family not heard as present), dialogue_friendly, hybridity_electronic_pct — never the instrument inventory: description, editor_note, keywords (12–18), fits (2–3), scene_named.
+Call B (Gemini, text only) writes from the sonic map and the actors only — album_concept, album_title, track_title, catalog, duration, mix type, alt_descriptor, sibling_full (a sparse mix's FULL description), sonic_map, ending, tempo band, lead and supporting sources, do_not_claim (every family not heard as present), dialogue_friendly, hybridity_electronic_pct — never the instrument inventory: description, editor_note, keywords (12–18), fits (5), scene_named.
 
 ### Track description
 - A music supervisor's shortlist note: why it works and where to cut it in. Three moves, then the Fits line.
@@ -194,7 +194,7 @@ Album: Dark sub-bass hip-hop with swagger - built for sports promos, reality TV,
 ---
 
 ## Change log
-- 0.10 — 2026-10-19 — Damir: no fade-out endings, ever. LOCKED Endings rule; fade words on the hard banned list; structure.py calls a fade only on a gradual slide and flags it for Damir (Lioness was mislabelled).
+- 0.10 — 2026-10-19 — Damir: Fits are five scene tags (EPP lane first, not counted). No fade-out endings, ever. LOCKED Endings rule; fade words on the hard banned list; structure.py calls a fade only on a gradual slide and flags it for Damir (Lioness was mislabelled).
 - 0.9 — 2026-09-29 — SSC identity corrected (Damir): SSC is made for movie trailers — orchestral, organic, drama/arthouse/historical/horror; the old "never trailer-loud" line and the trailer/thriller/chase/countdown/pursuit bans were wrong and are removed. From Vesna's stem check of SSC022 (9 of 24 descriptions wrong): stems decide instrument names; events only when measured; keywords must add to the description, not repeat it. Same day, second note from Vesna backed by Damir: SSC organic language — never "drone", electronic elements framed organically or left out.
 - 0.8 — 2026-09-28 — Human-anatomy ban on cover art removed (Damir): people allowed; avoid close-up hands, crowds, readable text; SSC withholds the person.
 - 0.7 — 2026-09-28 — Measure first (structure.py before Call A; measured timestamps only in Call B; referee.py cross-checks), instrument naming by confidence (0.9 plain / 0.6–0.9 "-like"), one timestamp per description, no cross-track phrase repeats, album order of work, film-title album names, track-title revision step, MailChimp intro as poster copy (locked note), first SSC exemplars (Nervous Habits).
