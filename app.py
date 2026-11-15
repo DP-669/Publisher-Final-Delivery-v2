@@ -895,6 +895,37 @@ def render_compare(track: dict):
                 st.rerun()
 
 
+def render_card(track: dict):
+    """The catalog listening card (cards.py), beside PFD's own text. Nothing changes unless you tap Use."""
+    card = track.get("PFD_Card")
+    if not card:
+        if track.get("PFD_Card_Error"):
+            st.caption("No listening card for this track (Gemini didn't return one).")
+        return
+    with st.expander("Listening card", expanded=False):
+        st.markdown(f"**Card description.** {card.get('sa_description', '')}")
+        st.markdown(f"**Card keywords.** {track.get('Card Keywords', '')}")
+        for label, key in (("What it is", "what_it_is"), ("Emotion", "emotion"), ("Shape", "energy_arc")):
+            if card.get(key):
+                st.markdown(f"**{label}.** {card[key]}")
+        for label, key in (("Best for", "best_for"), ("Not for", "not_for"), ("Moments", "signature_sounds")):
+            if card.get(key):
+                st.markdown(f"**{label}.** " + "; ".join(str(x) for x in card[key]))
+        c = st.columns(2)
+        if c[0].button("Use card description", key=f"card_desc_{track_key(track)}",
+                       disabled=not card.get("sa_description")):
+            track["Track Description"] = card["sa_description"]
+            eng.refresh_statuses(ss.album, ss.album["catalog"])
+            save_album()
+            st.rerun()
+        if c[1].button("Use card keywords", key=f"card_kw_{track_key(track)}",
+                       disabled=not track.get("Card Keywords")):
+            track["Keywords"] = track["Card Keywords"]
+            eng.refresh_statuses(ss.album, ss.album["catalog"])
+            save_album()
+            st.rerun()
+
+
 def render_fix_panel(track: dict):
     album = ss.album
     catalog = album["catalog"]
@@ -916,6 +947,8 @@ def render_fix_panel(track: dict):
                 st.caption("That file was uploaded in an earlier session, so it can't be played here.")
         except Exception as exc:
             report("Couldn't load the audio", exc)
+
+    render_card(track)
 
     if status == gate.BLOCKED:
         for reason in gate.normalize(track.get("PFD_Block_Reasons")):

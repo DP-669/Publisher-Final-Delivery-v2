@@ -29,6 +29,8 @@ BASE_COLUMNS = ["Title", "Mix Type", "Track Description", "Overall Consensus",
                 "{context}", "Editor Description", "Supervisor Description",
                 "Keywords", "Tip", "Album", "Album Description"]
 STATUS_COLUMNS = ["PFD_Status", "PFD_Block_Reasons"]
+# Catalog card (cards.py, Nov 2026): shown beside PFD's own text so the two can be compared.
+CARD_COLUMNS = ["Card Description", "Card Keywords"]
 
 # The "TRACK: …"/"ALBUM: …" names are the master metadata sheets' SourceAudio
 # headers (read 2026-09-12), which is what Vesna's FINAL export will carry.
@@ -137,10 +139,12 @@ def track_rows(app_data: Dict, catalog: str) -> pd.DataFrame:
             "Tip": t.get("Tip", ""),
             "Album": album,
             "Album Description": album_desc,
+            "Card Description": t.get("Card Description", ""),
+            "Card Keywords": t.get("Card Keywords", ""),
             "PFD_Status": t.get("PFD_Status") or gate.BLOCKED,
             "PFD_Block_Reasons": _block_reasons(t),
         })
-    columns = [c.replace("{context}", ctx) for c in BASE_COLUMNS] + STATUS_COLUMNS
+    columns = [c.replace("{context}", ctx) for c in BASE_COLUMNS] + CARD_COLUMNS + STATUS_COLUMNS
     return pd.DataFrame(rows, columns=columns)
 
 

@@ -164,6 +164,14 @@ OVERRIDE = "OVERRIDE"
 ANALYSED_MIXES = ("full", "full_mix", "sparse", "sound_design", "sde", "unknown")
 
 
+def _card_kw(result: Dict) -> str:
+    card = (result.get("card_result") or {}).get("card")
+    if not card:
+        return ""
+    import cards
+    return cards.card_keywords(card)
+
+
 def _now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
@@ -459,9 +467,9 @@ class IngestionEngine:
 
     def listen(self, file_bytes: bytes, ext: str, mix_type: str, gemini_api_key: str,
                correction: str = "", measured: Optional[Dict] = None, catalog: str = "",
-               structure: Optional[Dict] = None) -> Dict:
+               structure: Optional[Dict] = None, title: str = "") -> Dict:
         """
-        Waveform → Call A → gate, at most two Call A per track.
+        Waveform → Call A → gate, at most two Call A per track, then the catalog card (cards.py).
         Returns {status, failures, measured, analysis, simple, uncertain, attempts, correction, call_a_mode}.
         API errors raise; a file that cannot be decoded is BLOCKED without calling the model.
         """
@@ -524,6 +532,10 @@ class IngestionEngine:
             rejected = failures + warnings   # G5–G8 still earn the one re-listen; only a second miss warns
         result["failures"] = failures
         result["status"] = gate.listen_status(failures, result["uncertain"], result["warnings"])
+        # Catalog card (Nov 2026 method): best-effort, never changes the gate status.
+        if os.environ.get("PFD_CATALOG_CARDS", "1") != "0":
+            import cards
+            result["card_result"] = cards.make_card(self, client, audio, title, structure)
         return result
 
     # ── Call B + writers ───────────────────────────────────────────────────────
@@ -628,7 +640,7 @@ class IngestionEngine:
                       track_id: str = "", stems: Optional[Dict] = None) -> Dict:
         """Listen, gate, write. Quota errors raise so the run can stop; other write failures land on the row.
         `stems` (stems.read_stems) is the composer's presence list; it reaches the writer through call_b_input."""
-        result = self.listen(data, ext, mix_type, gemini_api_key, correction=correction, catalog=catalog)
+        result = self.listen(data, ext, mix_type, gemini_api_key, correction=correction, catalog=catalog, title=title)
         track = self.track_record(title, mix_type, result, catalog, source_path, parent_track, track_id)
         if stems:
             track["stems"] = stems
@@ -696,6 +708,10 @@ class IngestionEngine:
             "structure": result.get("structure") or None,
             "call_a_mode": result.get("call_a_mode", ""),
             "PFD_Gate": gate_state,
+            "PFD_Card": (result.get("card_result") or {}).get("card"),
+            "PFD_Card_Error": (result.get("card_result") or {}).get("error", ""),
+            "Card Description": ((result.get("card_result") or {}).get("card") or {}).get("sa_description", ""),
+            "Card Keywords": _card_kw(result),
             "PFD_Notes": [],
             "PFD_Added": [],
             "PFD_Dismissed": [],
