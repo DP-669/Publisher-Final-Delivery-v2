@@ -905,7 +905,9 @@ def render_card(track: dict):
     with st.expander("Listening card", expanded=False):
         st.markdown(f"**Card description.** {card.get('sa_description', '')}")
         st.markdown(f"**Card keywords.** {track.get('Card Keywords', '')}")
-        for label, key in (("What it is", "what_it_is"), ("Emotion", "emotion"), ("Shape", "energy_arc")):
+        for label, key in (("What it is", "what_it_is"), ("Type", "element_type"), ("Character", "character"),
+                           ("Emotion", "emotion"), ("Shape", "energy_arc"), ("Envelope", "envelope"),
+                           ("Tail", "tail"), ("Sync point", "key_moment")):
             if card.get(key):
                 st.markdown(f"**{label}.** {card[key]}")
         for label, key in (("Best for", "best_for"), ("Not for", "not_for"), ("Moments", "signature_sounds")):

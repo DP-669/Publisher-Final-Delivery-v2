@@ -535,7 +535,10 @@ class IngestionEngine:
         # Catalog card (Nov 2026 method): best-effort, never changes the gate status.
         if os.environ.get("PFD_CATALOG_CARDS", "1") != "0":
             import cards
-            result["card_result"] = cards.make_card(self, client, audio, title, structure)
+            if mix == "SDE":   # sound design element: the short card (2026-11-16)
+                result["card_result"] = cards.make_sfx_card(self, client, audio, title, duration, structure)
+            else:
+                result["card_result"] = cards.make_card(self, client, audio, title, structure)
         return result
 
     # ── Call B + writers ───────────────────────────────────────────────────────

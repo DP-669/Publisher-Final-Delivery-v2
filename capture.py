@@ -179,7 +179,22 @@ def build_zip(app_data: Dict, catalog: str, album_code: str,
         zf.writestr("Album_Names.txt", _names_text(app_data))
         zf.writestr("MailChimp_Intro.txt", app_data.get("mailchimp_intro", ""))
         zf.writestr("Cover_Art_Prompts.txt", app_data.get("cover_art", ""))
+        cards_csv, sa_csv, records = build_card_files(app_data, catalog, album_code)
+        zf.writestr(f"{base}_cards (full detail).csv", cards_csv)
+        zf.writestr(f"{base}_cards SourceAudio-ready.csv", sa_csv)
+        zf.writestr(f"{base}_cards Resonant records.json", records)
     return buf.getvalue(), f"{base}.zip"
+
+
+def build_card_files(app_data: Dict, catalog: str, album_code: str) -> Tuple[bytes, bytes, bytes]:
+    """The catalog card files, same shape as the Nov 2026 cards CSVs and Resonant's catalog records."""
+    import json
+    import cards
+    rows, sa_rows, recs = cards.card_exports(app_data.get("tracks", []), catalog,
+                                             app_data.get("album_name_selected") or "", album_code)
+    full = pd.DataFrame(rows, columns=cards.CARD_CSV_COLUMNS).to_csv(index=False).encode("utf-8-sig")
+    sa = pd.DataFrame(sa_rows, columns=cards.SA_READY_COLUMNS).to_csv(index=False).encode("utf-8-sig")
+    return full, sa, json.dumps(recs, ensure_ascii=False, indent=1, default=str).encode("utf-8")
 
 
 def _names_text(app_data: Dict) -> str:
@@ -305,6 +320,14 @@ def export_album(dbx, app_data: Dict, catalog: str, album_code: str,
     zip_bytes, zip_name = build_zip(app_data, catalog, album_code, reference)
     album = app_data.get("album_name_selected") or "album"
     draft_path = write_draft(dbx, catalog, album_code, album, build_csv(app_data, catalog, reference))
+    try:   # card files beside the DRAFT, so every run (Vesna's, Craig's) lands in the catalog card shape
+        stem = draft_path[: -len("_DRAFT.csv")]
+        for suffix, data in zip(("_cards (full detail).csv", "_cards SourceAudio-ready.csv", "_cards Resonant records.json"),
+                                build_card_files(app_data, catalog, album_code)):
+            dbx.files_upload(data, stem + suffix, mode=_overwrite(), mute=True)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Card files were not saved beside the DRAFT: %s", exc)
     return zip_bytes, zip_name, draft_path
 
 

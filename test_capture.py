@@ -40,9 +40,13 @@ class TestExport(unittest.TestCase):
         dbx = MagicMock()
         zip_bytes, zip_name, draft_path = capture.export_album(dbx, _app_data(gate.BLOCKED), "EPP", "TEST")
         self.assertEqual(draft_path, capture.PFD_ROOT + "/albums/TEST/EPP_TEST_Glass_Hours_DRAFT.csv")
-        dbx.files_upload.assert_called_once()
-        data, path = dbx.files_upload.call_args.args[:2]
-        self.assertEqual(path, draft_path)
+        # the DRAFT first, then the three card files beside it (2026-11-16)
+        uploads = [c.args[1] for c in dbx.files_upload.call_args_list]
+        self.assertEqual(uploads[0], draft_path)
+        stem = draft_path[: -len("_DRAFT.csv")]
+        self.assertEqual(uploads[1:], [stem + "_cards (full detail).csv", stem + "_cards SourceAudio-ready.csv",
+                                       stem + "_cards Resonant records.json"])
+        data, path = dbx.files_upload.call_args_list[0].args[:2]
         df = pd.read_csv(io.BytesIO(data))
         self.assertEqual(list(df.columns[-2:]), ["PFD_Status", "PFD_Block_Reasons"])
         self.assertEqual(df.loc[0, "PFD_Status"], "BLOCKED")
@@ -55,7 +59,10 @@ class TestExport(unittest.TestCase):
     def test_zip_is_one_csv_plus_text_assets(self):
         zip_bytes, _ = capture.build_zip(_app_data(), "EPP", "EPP062")
         names = zipfile.ZipFile(io.BytesIO(zip_bytes)).namelist()
-        self.assertEqual(sum(n.endswith(".csv") for n in names), 1)
+        self.assertEqual(sorted(n for n in names if n.endswith(".csv")),
+                         ["EPP_EPP062_Glass_Hours.csv", "EPP_EPP062_Glass_Hours_cards (full detail).csv",
+                          "EPP_EPP062_Glass_Hours_cards SourceAudio-ready.csv"])
+        self.assertIn("EPP_EPP062_Glass_Hours_cards Resonant records.json", names)
         self.assertEqual(sorted(n for n in names if n.endswith(".txt")),
                          ["Album_Description.txt", "Album_Names.txt", "Cover_Art_Prompts.txt", "MailChimp_Intro.txt"])
         self.assertFalse(any("/" in n for n in names), "no folders in the package")

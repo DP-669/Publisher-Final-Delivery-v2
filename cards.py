@@ -80,3 +80,160 @@ def card_keywords(card: Dict) -> str:
         if k and k not in seen:
             seen.add(k); out.append(k)
     return ", ".join(out)
+
+
+# ── Sound design elements (2026-11-16) ─────────────────────────────────────────
+# A hit or a rise needs a short card, not a music card: what it is, how it moves, how long it rings,
+# and where an editor drops it. Same output columns as the music card so one CSV holds both.
+
+SFX_SYSTEM = """You are a senior trailer editor cataloguing one SOUND DESIGN ELEMENT (a hit, rise, whoosh, drone, pulse, glitch, braam, stinger, riser, downer, texture) from a trailer music library, so editors can find it fast. Describe what you HEAR. Be specific and honest. Use ONLY timestamps from the ALLOWED list (m:ss). Return JSON:
+{"element_type": "one of: hit | impact | boom | braam | rise | riser | downer | whoosh | swell | reverse | drone | pulse | texture | glitch | stinger | transition | other",
+ "what_it_is": "one sentence: the sound and how it is made, as heard (e.g. 'distorted metallic impact with a long sub tail')",
+ "character": "3-6 words: e.g. dark, metallic, cavernous, organic, digital, gritty",
+ "envelope": "how it moves in time, e.g. 'instant attack, 4 s sub tail' or 'slow 6 s build to a hard cut'",
+ "tail": "none | short | medium | long",
+ "key_moment": "m:ss of the hit, peak or cut an editor syncs to",
+ "sound_sources": ["what it is made of: metal, sub, piano, strings, voice, synth, glass, foley..."],
+ "world": "grounded/organic | period/historical | modern hybrid | sci-fi/tech | horror | fantasy/epic | other",
+ "best_for": ["concrete edit moments, e.g. 'title card slam', 'cut to black', 'logo reveal', 'jump scare', 'transition into act two'"],
+ "not_for": ["moments it would be wrong for and why"],
+ "search_text": "40-70 words a search engine can match an editor's request against: type, character, sources, world, uses",
+ "sa_description": "1-2 short sentences for the public catalog in the words trailer editors use: what it is, its character, its tail, best uses. No timecodes, no title, no hype.",
+ "sa_keywords": ["12-20 single words or short phrases editors type: element type, character, sources, world, uses. Lowercase, no duplicates."]}
+"""
+
+SFX_CONFIG = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2,
+                                         system_instruction=SFX_SYSTEM)
+
+
+def is_sound_design(mix_type: str) -> bool:
+    m = (mix_type or "").strip().lower().replace(" ", "_")
+    return m in ("sde", "sound_design", "sound_design_element")
+
+
+def sfx_user(title: str, duration: float, structure: Optional[Dict] = None, parent: str = "") -> str:
+    times = {"0:00", structure_mod.fmt(duration)} if duration else {"0:00"}
+    if structure:
+        try:
+            times |= {structure_mod.fmt(e) for e in structure_mod.event_times(structure)}
+        except Exception:
+            pass
+    meta = {"Title": title, "Parent track": parent, "Length": structure_mod.fmt(duration) if duration else ""}
+    return ("EXISTING METADATA (may be old or wrong; trust your ears):\n" + json.dumps({k: v for k, v in meta.items() if v}) +
+            "\nALLOWED TIMES: " + ", ".join(sorted(times)))
+
+
+def make_sfx_card(engine, client, audio, title: str, duration: float, structure: Optional[Dict] = None,
+                  parent: str = "") -> Dict:
+    """Short card for a sound design element. Same contract as make_card; no measured structure needed."""
+    try:
+        r = client.models.generate_content(model=engine.gemini_model,
+                                           contents=[audio, sfx_user(title, duration, structure, parent)],
+                                           config=SFX_CONFIG)
+        try:
+            from engine import _log_usage
+            _log_usage(engine.gemini_model, r)
+        except Exception:
+            pass
+        card = parse_card(r.text)
+        card["card_type"] = "sound_design"
+        return {"card": card}
+    except Exception as exc:
+        from engine import _is_quota_error
+        if _is_quota_error(exc):
+            raise
+        log.warning("Sound design card failed for %s: %s", title, exc)
+        return {"error": f"{type(exc).__name__}: {str(exc)[:300]}"}
+
+
+# ── Export in the catalog card shape (same columns as the Nov 2026 cards CSV) ───
+
+CARD_CSV_COLUMNS = ["id", "catalog", "version", "parent", "sourceaudio_id", "title", "album", "duration", "has_card",
+                    "vocals", "new_description", "new_keywords", "what_it_is", "emotion", "energy_arc", "world",
+                    "orchestral_vs_electronic_0_10", "sweeping_strings", "percussion_only", "best_for", "not_for",
+                    "signature_sounds", "instruments_heard", "comparable_to", "sections", "search_text",
+                    "old_sourceaudio_description", "old_sourceaudio_tags", "genre", "mood", "bpm", "source_file",
+                    # sound design elements only
+                    "element_type", "character", "tail", "key_moment"]
+SA_READY_COLUMNS = ["SourceAudio ID", "id", "Title", "Album", "Version", "New Description", "New Keywords"]
+
+
+def _j(x) -> str:
+    if isinstance(x, list):
+        return "; ".join(_j(i) for i in x)
+    if isinstance(x, dict):
+        return " ".join(str(v) for v in x.values())
+    return "" if x is None else str(x)
+
+
+def _version(mix_type: str) -> str:
+    m = (mix_type or "").strip().lower()
+    if is_sound_design(m):
+        return "sound_design"
+    if m.startswith("sparse") or m == "sparce":
+        return "sparse"
+    if m.startswith("alt"):
+        return "alt"
+    if m.startswith("cutdown"):
+        return "cutdown"
+    return "full"
+
+
+def _base(title: str) -> str:
+    return re.sub(r"\s*[\(\[]?\s*(sparse|sparce)(\s*mix)?\s*[\)\]]?\s*$", "", (title or "").strip(), flags=re.I).strip().lower()
+
+
+def card_exports(tracks, catalog: str, album: str, album_code: str):
+    """(csv_rows, sa_ready_rows, resonant_records) for every non-skipped track, in album order.
+    ids follow the catalog: albumcode-nnn (e.g. rc061-004); 'new-nnn' until the album has a code."""
+    prefix = (album_code or "new").lower()
+    live = [t for t in tracks if not t.get("PFD_Skipped")]
+    ids = {i: f"{prefix}-{n:03d}" for n, i in enumerate(range(len(live)), 1)}
+    full_by_base = {}
+    for i, t in enumerate(live):
+        if _version(t.get("Mix Type", "")) == "full":
+            full_by_base.setdefault(_base(t.get("Title", "")), ids[i])
+    rows, sa_rows, recs = [], [], []
+    for i, t in enumerate(live):
+        c = t.get("PFD_Card") or {}
+        version = _version(t.get("Mix Type", ""))
+        parent = ""
+        if version != "full":
+            parent = full_by_base.get(_base(t.get("Parent Track") or ""), "") or full_by_base.get(_base(t.get("Title", "")), "")
+        kw = card_keywords(c) if c else ""
+        sfx = c.get("card_type") == "sound_design"
+        row = {k: "" for k in CARD_CSV_COLUMNS}
+        row.update({
+            "id": ids[i], "catalog": catalog, "version": version, "parent": parent, "title": t.get("Title", ""),
+            "album": album, "duration": t.get("Duration Seconds") or "", "has_card": "yes" if c else "no",
+            "vocals": _j(c.get("vocals")), "new_description": c.get("sa_description") or "", "new_keywords": kw,
+            "what_it_is": _j(c.get("what_it_is")), "emotion": _j(c.get("emotion")),
+            "energy_arc": _j(c.get("envelope") if sfx else c.get("energy_arc")), "world": _j(c.get("world")),
+            "orchestral_vs_electronic_0_10": _j(c.get("orchestral_vs_electronic")),
+            "sweeping_strings": _j(c.get("sweeping_strings")), "percussion_only": _j(c.get("percussion_only")),
+            "best_for": _j(c.get("best_for")), "not_for": _j(c.get("not_for")),
+            "signature_sounds": _j(c.get("signature_sounds")),
+            "instruments_heard": _j(c.get("sound_sources") if sfx else c.get("instruments_heard")),
+            "comparable_to": _j(c.get("comparable_to")), "sections": _j(c.get("sections")),
+            "search_text": _j(c.get("search_text")), "source_file": t.get("Source Path", ""),
+            "element_type": _j(c.get("element_type")), "character": _j(c.get("character")),
+            "tail": _j(c.get("tail")), "key_moment": _j(c.get("key_moment")),
+        })
+        rows.append(row)
+        sa_rows.append({"SourceAudio ID": "", "id": row["id"], "Title": row["title"], "Album": album,
+                        "Version": version, "New Description": row["new_description"], "New Keywords": kw})
+        if c:
+            parts = [row["search_text"], "World: " + row["world"]]
+            if sfx:
+                parts += ["Type: " + row["element_type"], "Character: " + row["character"], "Envelope: " + row["energy_arc"]]
+            else:
+                parts += ["Emotion: " + row["emotion"], "Arc: " + row["energy_arc"]]
+            parts += ["Best for: " + row["best_for"], "Not for: " + row["not_for"]]
+            if not sfx:
+                parts.append("Signature: " + row["signature_sounds"])
+            recs.append({"id": row["id"], "catalog": catalog, "sourceaudio_id": None, "title": row["title"], "album": album,
+                         "genre": "", "mood": "", "bpm": 0, "tags": [k for k in kw.split(", ") if k],
+                         "description": row["new_description"], "duration": t.get("Duration Seconds"),
+                         "version": version, "parent": parent or None, "vocals": c.get("vocals"),
+                         "card": " | ".join(parts), "card_json": c, "audio_file": "", "source_file": row["source_file"]})
+    return rows, sa_rows, recs
