@@ -179,21 +179,24 @@ def build_zip(app_data: Dict, catalog: str, album_code: str,
         zf.writestr("Album_Names.txt", _names_text(app_data))
         zf.writestr("MailChimp_Intro.txt", app_data.get("mailchimp_intro", ""))
         zf.writestr("Cover_Art_Prompts.txt", app_data.get("cover_art", ""))
-        cards_csv, sa_csv, records = build_card_files(app_data, catalog, album_code)
-        zf.writestr(f"{base}_cards (full detail).csv", cards_csv)
-        zf.writestr(f"{base}_cards SourceAudio-ready.csv", sa_csv)
-        zf.writestr(f"{base}_cards Resonant records.json", records)
+        for suffix, data in zip(CARD_FILE_SUFFIXES, build_card_files(app_data, catalog, album_code)):
+            zf.writestr(base + suffix, data)
     return buf.getvalue(), f"{base}.zip"
 
 
+# Damir 2026-11-16: one file for SourceAudio (public-safe columns only) and the Resonant version with everything.
+CARD_FILE_SUFFIXES = (" - FOR RESONANT (all fields).csv", " - FOR SOURCEAUDIO.csv",
+                      " - FOR RESONANT (search index).json")
+
+
 def build_card_files(app_data: Dict, catalog: str, album_code: str) -> Tuple[bytes, bytes, bytes]:
-    """The catalog card files, same shape as the Nov 2026 cards CSVs and Resonant's catalog records."""
+    """(Resonant CSV with every card field, SourceAudio CSV, Resonant records JSON), in CARD_FILE_SUFFIXES order."""
     import json
     import cards
     rows, sa_rows, recs = cards.card_exports(app_data.get("tracks", []), catalog,
                                              app_data.get("album_name_selected") or "", album_code)
     full = pd.DataFrame(rows, columns=cards.CARD_CSV_COLUMNS).to_csv(index=False).encode("utf-8-sig")
-    sa = pd.DataFrame(sa_rows, columns=cards.SA_READY_COLUMNS).to_csv(index=False).encode("utf-8-sig")
+    sa = pd.DataFrame(sa_rows, columns=cards.SOURCEAUDIO_COLUMNS).to_csv(index=False).encode("utf-8-sig")
     return full, sa, json.dumps(recs, ensure_ascii=False, indent=1, default=str).encode("utf-8")
 
 
@@ -322,8 +325,7 @@ def export_album(dbx, app_data: Dict, catalog: str, album_code: str,
     draft_path = write_draft(dbx, catalog, album_code, album, build_csv(app_data, catalog, reference))
     try:   # card files beside the DRAFT, so every run (Vesna's, Craig's) lands in the catalog card shape
         stem = draft_path[: -len("_DRAFT.csv")]
-        for suffix, data in zip(("_cards (full detail).csv", "_cards SourceAudio-ready.csv", "_cards Resonant records.json"),
-                                build_card_files(app_data, catalog, album_code)):
+        for suffix, data in zip(CARD_FILE_SUFFIXES, build_card_files(app_data, catalog, album_code)):
             dbx.files_upload(data, stem + suffix, mode=_overwrite(), mute=True)
     except Exception as exc:
         import logging

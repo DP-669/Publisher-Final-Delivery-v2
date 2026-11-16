@@ -155,7 +155,20 @@ CARD_CSV_COLUMNS = ["id", "catalog", "version", "parent", "sourceaudio_id", "tit
                     "old_sourceaudio_description", "old_sourceaudio_tags", "genre", "mood", "bpm", "source_file",
                     # sound design elements only
                     "element_type", "character", "tail", "key_moment"]
-SA_READY_COLUMNS = ["SourceAudio ID", "id", "Title", "Album", "Version", "New Description", "New Keywords"]
+# The SourceAudio file (Damir 2026-11-16): public-safe card fields only. Left out, internal to us:
+# not for, comparable to, sections and key moment (timecodes can be a few seconds off), plus housekeeping.
+# "Search text" goes up as a hidden SourceAudio field (it helps search; clients don't see it).
+SOURCEAUDIO_FIELDS = [("SourceAudio ID", "sourceaudio_id"), ("id", "id"), ("Title", "title"), ("Album", "album"),
+                      ("Version", "version"), ("Parent", "parent"), ("Description", "new_description"),
+                      ("Keywords", "new_keywords"), ("What it is", "what_it_is"), ("Emotion", "emotion"),
+                      ("Energy arc", "energy_arc"), ("World", "world"),
+                      ("Orchestral vs electronic (0-10)", "orchestral_vs_electronic_0_10"),
+                      ("Sweeping strings", "sweeping_strings"), ("Percussion only", "percussion_only"),
+                      ("Vocals", "vocals"), ("Best for", "best_for"), ("Signature sounds", "signature_sounds"),
+                      ("Instruments heard", "instruments_heard"), ("Search text (hidden field)", "search_text"),
+                      ("Element type", "element_type"), ("Character", "character"), ("Tail", "tail")]
+SOURCEAUDIO_COLUMNS = [label for label, _ in SOURCEAUDIO_FIELDS]
+NOT_ON_SOURCEAUDIO = ("not_for", "comparable_to", "sections", "key_moment")
 
 
 def _j(x) -> str:
@@ -220,8 +233,7 @@ def card_exports(tracks, catalog: str, album: str, album_code: str):
             "tail": _j(c.get("tail")), "key_moment": _j(c.get("key_moment")),
         })
         rows.append(row)
-        sa_rows.append({"SourceAudio ID": "", "id": row["id"], "Title": row["title"], "Album": album,
-                        "Version": version, "New Description": row["new_description"], "New Keywords": kw})
+        sa_rows.append({label: row[key] for label, key in SOURCEAUDIO_FIELDS})
         if c:
             parts = [row["search_text"], "World: " + row["world"]]
             if sfx:

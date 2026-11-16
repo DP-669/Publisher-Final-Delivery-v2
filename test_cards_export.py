@@ -48,7 +48,9 @@ class TestCardExports(unittest.TestCase):
         self.assertEqual(len(recs), 3)                      # no record without a card
         self.assertIn("Type: hit", recs[2]["card"])
         self.assertEqual(recs[1]["parent"], "rc070-001")
-        self.assertEqual(sa[2]["New Description"], "A cavernous metal hit.")
+        self.assertEqual(sa[2]["Description"], "A cavernous metal hit.")
+        self.assertEqual(sa[2]["Element type"], "hit")
+        self.assertEqual(sa[1]["Parent"], "rc070-001")
 
     def test_no_album_code_yet(self):
         rows, _, _ = cards.card_exports(tracks()[:1], "rC", "Album ONE", "")
@@ -59,6 +61,18 @@ class TestCardExports(unittest.TestCase):
         header = next(csv.reader(io.StringIO(full.decode("utf-8-sig"))))
         self.assertEqual(header, cards.CARD_CSV_COLUMNS)
         self.assertEqual(len(json.loads(recs)), 3)
+        sa_header = next(csv.reader(io.StringIO(sa.decode("utf-8-sig"))))
+        self.assertEqual(sa_header, cards.SOURCEAUDIO_COLUMNS)
+
+    def test_sourceaudio_file_leaves_out_internal_fields(self):
+        _, sa, _ = capture.build_card_files({"tracks": tracks(), "album_name_selected": "Album ONE"}, "rC", "RC070")
+        text = sa.decode("utf-8-sig")
+        header = next(csv.reader(io.StringIO(text)))
+        for label in ("Not for", "not_for", "Comparable to", "comparable_to", "Sections", "sections", "key_moment", "Key moment"):
+            self.assertNotIn(label, header)
+        self.assertNotIn("comedy", text)            # the not_for value never reaches SourceAudio
+        self.assertNotIn(".m4a", text)
+        self.assertFalse(set(cards.NOT_ON_SOURCEAUDIO) & {k for _, k in cards.SOURCEAUDIO_FIELDS})
 
 
 class TestSoundDesignCard(unittest.TestCase):

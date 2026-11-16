@@ -44,8 +44,8 @@ class TestExport(unittest.TestCase):
         uploads = [c.args[1] for c in dbx.files_upload.call_args_list]
         self.assertEqual(uploads[0], draft_path)
         stem = draft_path[: -len("_DRAFT.csv")]
-        self.assertEqual(uploads[1:], [stem + "_cards (full detail).csv", stem + "_cards SourceAudio-ready.csv",
-                                       stem + "_cards Resonant records.json"])
+        self.assertEqual(uploads[1:], [stem + " - FOR RESONANT (all fields).csv", stem + " - FOR SOURCEAUDIO.csv",
+                                       stem + " - FOR RESONANT (search index).json"])
         data, path = dbx.files_upload.call_args_list[0].args[:2]
         df = pd.read_csv(io.BytesIO(data))
         self.assertEqual(list(df.columns[-2:]), ["PFD_Status", "PFD_Block_Reasons"])
@@ -60,9 +60,9 @@ class TestExport(unittest.TestCase):
         zip_bytes, _ = capture.build_zip(_app_data(), "EPP", "EPP062")
         names = zipfile.ZipFile(io.BytesIO(zip_bytes)).namelist()
         self.assertEqual(sorted(n for n in names if n.endswith(".csv")),
-                         ["EPP_EPP062_Glass_Hours.csv", "EPP_EPP062_Glass_Hours_cards (full detail).csv",
-                          "EPP_EPP062_Glass_Hours_cards SourceAudio-ready.csv"])
-        self.assertIn("EPP_EPP062_Glass_Hours_cards Resonant records.json", names)
+                         ["EPP_EPP062_Glass_Hours - FOR RESONANT (all fields).csv",
+                          "EPP_EPP062_Glass_Hours - FOR SOURCEAUDIO.csv", "EPP_EPP062_Glass_Hours.csv"])
+        self.assertIn("EPP_EPP062_Glass_Hours - FOR RESONANT (search index).json", names)
         self.assertEqual(sorted(n for n in names if n.endswith(".txt")),
                          ["Album_Description.txt", "Album_Names.txt", "Cover_Art_Prompts.txt", "MailChimp_Intro.txt"])
         self.assertFalse(any("/" in n for n in names), "no folders in the package")
